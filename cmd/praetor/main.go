@@ -316,12 +316,17 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reload all Lua scripts
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
+		var reloadErr error
 		if err := w.gc.Engine.ReloadAllModes(); err != nil {
 			log.Printf("reload all error: %v", err)
+			reloadErr = err
 		} else {
 			log.Printf("all scripts reloaded")
 		}
-		return w, cmd
+		// Send confirmation back to UI
+		newApp2, cmd2 := w.app.Update(ui.ScriptsReloadedMsg{Error: reloadErr})
+		w.app = newApp2.(ui.App)
+		return w, tea.Batch(cmd, cmd2)
 
 	case ui.ScriptDirsCloseMsg:
 		newApp, cmd := w.app.Update(msg)

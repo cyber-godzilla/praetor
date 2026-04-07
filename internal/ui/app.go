@@ -382,6 +382,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Stay on menu — main.go wrapper handles the actual reload.
 		return a, nil
 
+	case ScriptsReloadedMsg:
+		if msg.Error != nil {
+			a.menu.SetMessage("Reload failed: " + msg.Error.Error())
+		} else {
+			a.menu.SetMessage("Scripts reloaded successfully")
+		}
+		return a, nil
+
 	case MenuScriptDirsMsg:
 		a.scriptDirsScreen = NewScriptDirsScreen(a.scriptDirsList)
 		a.scriptDirsScreen.SetSize(a.width, a.height)

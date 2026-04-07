@@ -19,6 +19,11 @@ type MenuLogPathMsg struct {
 	Path string
 }
 type MenuQuitMsg struct{}
+
+// ScriptsReloadedMsg is sent by the wrapper after scripts have been reloaded.
+type ScriptsReloadedMsg struct {
+	Error error
+}
 type MenuCloseMsg struct{} // close menu without action
 
 // menuItem is a single menu entry — either a selectable item or a section header.
@@ -36,6 +41,7 @@ type Menu struct {
 	height      int
 	editingPath bool   // true when editing log path inline
 	pathBuf     string // buffer for path editing
+	message     string // transient status message, cleared on next keypress
 }
 
 func NewMenu(colorWords, echo, autoReconnect, hideIPs, gameLogs bool, logPath string) Menu {
@@ -118,7 +124,15 @@ func (m *Menu) SetSize(w, h int) {
 	m.height = h
 }
 
+// SetMessage sets a transient status message on the menu.
+func (m *Menu) SetMessage(msg string) {
+	m.message = msg
+}
+
 func (m Menu) Update(msg tea.KeyMsg) (Menu, tea.Cmd) {
+	// Clear transient message on any keypress.
+	m.message = ""
+
 	if m.editingPath {
 		return m.updatePathEdit(msg)
 	}
@@ -235,6 +249,10 @@ func (m Menu) View() string {
 		b.WriteByte('\n')
 	}
 
+	if m.message != "" {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Render("  " + m.message))
+	}
 	b.WriteString("\n")
 	if !m.editingPath {
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).

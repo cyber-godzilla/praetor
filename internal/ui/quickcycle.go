@@ -150,6 +150,15 @@ func (mp ModePicker) View() string {
 		end = len(mp.allModes)
 	}
 
+	arrowStyle := lipgloss.NewStyle().Foreground(colorDim)
+	hasAbove := start > 0
+	hasBelow := end < len(mp.allModes)
+
+	if hasAbove {
+		b.WriteString(arrowStyle.Render("      ▲"))
+		b.WriteByte('\n')
+	}
+
 	for i := start; i < end; i++ {
 		mode := mp.allModes[i]
 		check := "  "
@@ -166,6 +175,11 @@ func (mp ModePicker) View() string {
 		}
 		b.WriteString(check)
 		b.WriteString(style.Render(label))
+		b.WriteByte('\n')
+	}
+
+	if hasBelow {
+		b.WriteString(arrowStyle.Render("      ▼"))
 		b.WriteByte('\n')
 	}
 
