@@ -349,8 +349,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case HelpCloseMsg:
-		a.state = stateGame
-		return a, a.input.Focus()
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
 
 	case HelpSearchMsg:
 		// Handled by wrapper — sends ?query to server or opens wiki.
@@ -358,8 +360,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HighlightsCloseMsg:
 		a.highlights = msg.Highlights
-		a.state = stateGame
-		return a, a.input.Focus()
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
 
 	case OpenModePickerMsg:
 		a.modePicker = NewModePicker(msg.AllModes, a.quickCycle.Modes())
@@ -369,12 +373,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ModePickerCloseMsg:
 		a.quickCycle.SetModes(msg.Modes)
-		a.state = stateGame
-		return a, a.input.Focus()
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
 
 	case MenuReloadScriptsMsg:
-		a.state = stateGame
-		return a, a.input.Focus()
+		// Stay on menu — main.go wrapper handles the actual reload.
+		return a, nil
 
 	case MenuScriptDirsMsg:
 		a.scriptDirsScreen = NewScriptDirsScreen(a.scriptDirsList)
@@ -429,8 +435,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.activeTab = 0
 		}
 		a.recalcLayout()
-		a.state = stateGame
-		return a, a.input.Focus()
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
 
 	case MenuPersistentDataMsg:
 		// Handled by main.go — it snapshots data and sends PersistentDataSnapshotMsg.
