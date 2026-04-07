@@ -142,6 +142,10 @@ The pause menu provides access to all settings:
 - **Logs** — Game log toggle and log location
 - **Data** — Persistent data viewer with export/clear
 
+## How-To Guide
+
+See [docs/how-to.md](docs/how-to.md) for step-by-step guides on setting up custom tabs, highlights, script directories, quick-cycle modes, and more.
+
 ## Configuration
 
 Config file: `~/.config/praetor/config.yaml`
