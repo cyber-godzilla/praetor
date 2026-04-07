@@ -39,6 +39,50 @@ On first launch, Praetor creates a default config at `~/.config/praetor/config.y
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install cyber-godzilla/tap/praetor
+```
+
+### Apt (Debian / Ubuntu)
+
+```bash
+# Add the GPG key
+curl -fsSL "https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/gpgkey" | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/praetor-archive-keyring.gpg
+
+# Add the repository
+echo "deb [signed-by=/etc/apt/keyrings/praetor-archive-keyring.gpg] https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/any/ any main" | \
+  sudo tee /etc/apt/sources.list.d/praetor.list
+
+# Install
+sudo apt update && sudo apt install praetor
+```
+
+### Yum (Fedora / RHEL / CentOS)
+
+```bash
+# Add the repository
+sudo tee /etc/yum.repos.d/praetor.repo <<'EOF'
+[praetor]
+name=Praetor
+baseurl=https://packages.buildkite.com/cybergodzilla-2099/praetor-rpm/rpm_any/rpm_any/$basearch
+enabled=1
+repo_gpgcheck=1
+gpgcheck=0
+gpgkey=https://packages.buildkite.com/cybergodzilla-2099/praetor-rpm/gpgkey
+priority=1
+EOF
+
+# Install
+sudo yum install praetor
+```
+
+### GitHub Releases
+
+Download pre-built binaries from the [releases page](https://github.com/cyber-godzilla/praetor/releases).
+
 ### From Source
 
 ```bash
