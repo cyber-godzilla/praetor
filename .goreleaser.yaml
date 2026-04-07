@@ -1,0 +1,71 @@
+version: 2
+
+project_name: praetor
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - main: ./cmd/praetor
+    binary: praetor
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+nfpms:
+  - id: praetor
+    package_name: praetor
+    vendor: CyberGodzilla
+    homepage: https://github.com/cyber-godzilla/praetor
+    maintainer: CyberGodzilla 2099 <cg@cybergodzilla.com>
+    description: Terminal-based game client for The Eternal City
+    license: GPL-3.0
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/bin
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+
+brews:
+  - repository:
+      owner: cyber-godzilla
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/cyber-godzilla/praetor
+    description: Terminal-based game client for The Eternal City
+    license: GPL-3.0
+    install: |
+      bin.install "praetor"
+
+release:
+  github:
+    owner: cyber-godzilla
+    name: praetor

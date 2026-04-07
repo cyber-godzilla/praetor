@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Push .deb to Buildkite
+        run: |
+          for f in dist/*.deb; do
+            echo "Uploading $f to Buildkite Debian registry..."
+            curl -X POST \
+              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-debian/packages" \
+              -H "Authorization: Bearer ${{ secrets.BUILDKITE_DEB_TOKEN }}" \
+              -F "file=@$f"
+          done
+
+      - name: Push .rpm to Buildkite
+        run: |
+          for f in dist/*.rpm; do
+            echo "Uploading $f to Buildkite RPM registry..."
+            curl -X POST \
+              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-rpm/packages" \
+              -H "Authorization: Bearer ${{ secrets.BUILDKITE_RPM_TOKEN }}" \
+              -F "file=@$f"
+          done
