@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"sync"
 	"time"
@@ -352,12 +353,45 @@ func (e *Engine) ReloadMode(name string) error {
 }
 
 // ReloadAllModes hot-reloads every loaded mode from disk.
+// Modes that no longer exist are removed. If the current mode was removed,
+// it is disabled. Returns an error only if reloading a still-existing mode fails.
 func (e *Engine) ReloadAllModes() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
 	names := e.vm.ModeNames()
+	var errs []string
+	var removed []string
 	for _, name := range names {
-		if err := e.ReloadMode(name); err != nil {
-			return fmt.Errorf("reloading %s: %w", name, err)
+		err := e.vm.ReloadMode(name)
+		if err != nil {
+			// Check if the mode file simply no longer exists
+			if e.vm.ModeFileExists(name) {
+				errs = append(errs, fmt.Sprintf("%s: %v", name, err))
+			} else {
+				e.vm.RemoveMode(name)
+				removed = append(removed, name)
+			}
 		}
+	}
+
+	// If the current mode was removed, disable it without clearing
+	// modes that still exist.
+	if e.currentMode != "" && e.currentMode != "disable" {
+		modeRemoved := false
+		for _, name := range removed {
+			if name == e.currentMode {
+				modeRemoved = true
+				break
+			}
+		}
+		if modeRemoved {
+			e.setModeLocked("disable", nil)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("reload errors: %s", strings.Join(errs, "; "))
 	}
 	return nil
 }

@@ -150,6 +150,27 @@ func (vm *LuaVM) ReloadMode(name string) error {
 	return fmt.Errorf("mode %s not found in any script directory", name)
 }
 
+// ModeFileExists checks whether the mode's .lua file exists in any script directory.
+func (vm *LuaVM) ModeFileExists(name string) bool {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+
+	for _, dir := range vm.scriptDirs {
+		path := filepath.Join(dir, name+".lua")
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// RemoveMode removes a mode from the loaded modes map.
+func (vm *LuaVM) RemoveMode(name string) {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	delete(vm.modes, name)
+}
+
 // clearLibCache removes all entries from Lua's package.loaded table
 // so that subsequent require() calls re-read files from disk.
 func (vm *LuaVM) clearLibCache() {
