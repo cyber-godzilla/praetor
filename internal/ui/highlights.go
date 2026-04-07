@@ -171,11 +171,15 @@ func (hm HighlightsManager) updateEditing(msg tea.KeyMsg) (HighlightsManager, te
 
 func (hm HighlightsManager) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	boxWidth := hm.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 2).
-		Width(50)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Highlights"))

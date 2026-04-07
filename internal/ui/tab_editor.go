@@ -227,11 +227,15 @@ func (te TabEditor) View() string {
 
 func (te TabEditor) viewList() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	boxWidth := te.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 2).
-		Width(50)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Custom Tabs"))
@@ -275,11 +279,15 @@ func (te TabEditor) viewList() string {
 func (te TabEditor) viewEdit() string {
 	tab := te.tabs[te.editIdx]
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	boxWidth := te.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 2).
-		Width(60)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit: " + tab.Name))
@@ -326,11 +334,15 @@ func (te TabEditor) viewEdit() string {
 
 func (te TabEditor) viewNewTab() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	boxWidth := te.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 2).
-		Width(50)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("New Tab"))

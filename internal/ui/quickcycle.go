@@ -124,11 +124,15 @@ func (mp ModePicker) Update(msg tea.KeyMsg) (ModePicker, tea.Cmd) {
 
 func (mp ModePicker) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	boxWidth := mp.width - 10
+	if boxWidth < 36 {
+		boxWidth = 36
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 2).
-		Width(36)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Quick-Cycle Modes"))

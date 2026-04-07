@@ -954,6 +954,9 @@ func (a *App) recalcLayout() {
 	a.persistentData.SetSize(a.width, a.height)
 	a.scriptDirsScreen.SetSize(a.width, a.height)
 	a.priorityCmdsScreen.SetSize(a.width, a.height)
+	a.highlightsMgr.SetSize(a.width, a.height)
+	a.tabEditor.SetSize(a.width, a.height)
+	a.help.SetSize(a.width, a.height)
 }
 
 // contentHeight returns the available content height.
