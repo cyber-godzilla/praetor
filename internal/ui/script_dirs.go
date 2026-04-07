@@ -144,7 +144,17 @@ func (s ScriptDirsScreen) View() string {
 		b.WriteString(dimStyle.Render("  No directories configured"))
 		b.WriteByte('\n')
 	} else {
-		for i, dir := range s.dirs {
+		maxVisible := s.height - 14
+		if maxVisible < 3 {
+			maxVisible = 3
+		}
+		start := viewportWindow(len(s.dirs), maxVisible, s.cursor)
+		end := start + maxVisible
+		if end > len(s.dirs) {
+			end = len(s.dirs)
+		}
+		for i := start; i < end; i++ {
+			dir := s.dirs[i]
 			line := fmt.Sprintf("%d. %s", i+1, dir)
 			if i == s.cursor {
 				b.WriteString(selectedStyle.Render("> " + line))

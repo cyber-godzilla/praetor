@@ -140,12 +140,22 @@ func (mp ModePicker) View() string {
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("Space/Enter to toggle, Esc to save"))
 	b.WriteString("\n\n")
 
-	for i, mode := range mp.allModes {
+	maxVisible := mp.height - 12
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	start := viewportWindow(len(mp.allModes), maxVisible, mp.cursor)
+	end := start + maxVisible
+	if end > len(mp.allModes) {
+		end = len(mp.allModes)
+	}
+
+	for i := start; i < end; i++ {
+		mode := mp.allModes[i]
 		check := "  "
 		if mp.selected[mode] {
 			check = lipgloss.NewStyle().Foreground(colorGreen).Render("✓ ")
 		}
-
 		label := mode
 		style := lipgloss.NewStyle().Foreground(colorDim)
 		if i == mp.cursor {
@@ -154,7 +164,6 @@ func (mp ModePicker) View() string {
 		} else {
 			label = "  " + label
 		}
-
 		b.WriteString(check)
 		b.WriteString(style.Render(label))
 		b.WriteByte('\n')

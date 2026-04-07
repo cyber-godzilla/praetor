@@ -146,7 +146,17 @@ func (s PriorityCmdsScreen) View() string {
 		b.WriteString(dimStyle.Render("  No priority commands configured"))
 		b.WriteByte('\n')
 	} else {
-		for i, cmd := range s.cmds {
+		maxVisible := s.height - 14
+		if maxVisible < 3 {
+			maxVisible = 3
+		}
+		start := viewportWindow(len(s.cmds), maxVisible, s.cursor)
+		end := start + maxVisible
+		if end > len(s.cmds) {
+			end = len(s.cmds)
+		}
+		for i := start; i < end; i++ {
+			cmd := s.cmds[i]
 			line := fmt.Sprintf("%d. %s", i+1, cmd)
 			if i == s.cursor {
 				b.WriteString(selectedStyle.Render("> " + line))

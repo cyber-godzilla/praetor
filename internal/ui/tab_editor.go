@@ -244,33 +244,44 @@ func (te TabEditor) viewList() string {
 		Render("[Space] show/hide  [D] delete  [Enter] edit  [Esc] save"))
 	b.WriteString("\n\n")
 
-	for i, tab := range te.tabs {
-		vis := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
-		if tab.Visible {
-			vis = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
-		}
-
-		nameStyle := lipgloss.NewStyle().Foreground(colorDim)
-		cursor := "  "
-		if i == te.cursor {
-			nameStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-			cursor = "> "
-		}
-
-		ruleCount := lipgloss.NewStyle().Foreground(colorDim).
-			Render("(" + strconv.Itoa(len(tab.Rules)) + " rules)")
-
-		b.WriteString(cursor + vis + nameStyle.Render(tab.Name) + " " + ruleCount)
-		b.WriteByte('\n')
+	totalItems := len(te.tabs) + 1
+	maxVisible := te.height - 12
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	start := viewportWindow(totalItems, maxVisible, te.cursor)
+	end := start + maxVisible
+	if end > totalItems {
+		end = totalItems
 	}
 
-	// "Add new tab"
-	if te.cursor == len(te.tabs) {
-		b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new tab..."))
-	} else {
-		b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new tab..."))
+	for idx := start; idx < end; idx++ {
+		if idx < len(te.tabs) {
+			i := idx
+			tab := te.tabs[i]
+			vis := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
+			if tab.Visible {
+				vis = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
+			}
+			nameStyle := lipgloss.NewStyle().Foreground(colorDim)
+			cursor := "  "
+			if i == te.cursor {
+				nameStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+				cursor = "> "
+			}
+			ruleCount := lipgloss.NewStyle().Foreground(colorDim).
+				Render("(" + strconv.Itoa(len(tab.Rules)) + " rules)")
+			b.WriteString(cursor + vis + nameStyle.Render(tab.Name) + " " + ruleCount)
+			b.WriteByte('\n')
+		} else {
+			if te.cursor == len(te.tabs) {
+				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new tab..."))
+			} else {
+				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new tab..."))
+			}
+			b.WriteByte('\n')
+		}
 	}
-	b.WriteByte('\n')
 
 	return lipgloss.Place(te.width, te.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
@@ -296,37 +307,48 @@ func (te TabEditor) viewEdit() string {
 		Render("[Space] enable/disable  [T] toggle match/exclude  [D] delete  [Esc] back"))
 	b.WriteString("\n\n")
 
-	for i, rule := range tab.Rules {
-		active := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
-		if rule.Active {
-			active = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
-		}
-
-		matchType := lipgloss.NewStyle().Foreground(colorGreen).Render("MATCH  ")
-		if !rule.Include {
-			matchType = lipgloss.NewStyle().Foreground(colorRed).Render("EXCLUDE")
-		}
-
-		patStyle := lipgloss.NewStyle().Foreground(colorDim)
-		cursor := "  "
-		if i == te.editCur {
-			patStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-			cursor = "> "
-		}
-
-		b.WriteString(cursor + active + matchType + " " + patStyle.Render(rule.Pattern))
-		b.WriteByte('\n')
+	totalItems := len(tab.Rules) + 1
+	maxVisible := te.height - 12
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	start := viewportWindow(totalItems, maxVisible, te.editCur)
+	end := start + maxVisible
+	if end > totalItems {
+		end = totalItems
 	}
 
-	// "Add match"
-	if te.mode == temAddRule {
-		b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+te.inputBuf+"█"))
-	} else if te.editCur == len(tab.Rules) {
-		b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add match..."))
-	} else {
-		b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add match..."))
+	for idx := start; idx < end; idx++ {
+		if idx < len(tab.Rules) {
+			i := idx
+			rule := tab.Rules[i]
+			active := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
+			if rule.Active {
+				active = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
+			}
+			matchType := lipgloss.NewStyle().Foreground(colorGreen).Render("MATCH  ")
+			if !rule.Include {
+				matchType = lipgloss.NewStyle().Foreground(colorRed).Render("EXCLUDE")
+			}
+			patStyle := lipgloss.NewStyle().Foreground(colorDim)
+			cursor := "  "
+			if i == te.editCur {
+				patStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+				cursor = "> "
+			}
+			b.WriteString(cursor + active + matchType + " " + patStyle.Render(rule.Pattern))
+			b.WriteByte('\n')
+		} else {
+			if te.mode == temAddRule {
+				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+te.inputBuf+"█"))
+			} else if te.editCur == len(tab.Rules) {
+				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add match..."))
+			} else {
+				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add match..."))
+			}
+			b.WriteByte('\n')
+		}
 	}
-	b.WriteByte('\n')
 
 	return lipgloss.Place(te.width, te.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))

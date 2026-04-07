@@ -142,7 +142,17 @@ func (p PersistentDataScreen) View() string {
 		b.WriteString(dimStyle.Render("  No persistent data"))
 		b.WriteByte('\n')
 	} else {
-		for i, key := range p.keys {
+		maxVisible := p.height - 14
+		if maxVisible < 3 {
+			maxVisible = 3
+		}
+		start := viewportWindow(len(p.keys), maxVisible, p.cursor)
+		end := start + maxVisible
+		if end > len(p.keys) {
+			end = len(p.keys)
+		}
+		for i := start; i < end; i++ {
+			key := p.keys[i]
 			check := "[ ]"
 			if p.selected[i] {
 				check = "[x]"

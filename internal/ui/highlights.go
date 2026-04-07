@@ -188,47 +188,57 @@ func (hm HighlightsManager) View() string {
 		Render("[Space] toggle  [S] style  [D] delete  [Esc] save"))
 	b.WriteString("\n\n")
 
-	for i, h := range hm.highlights {
-		// Active indicator.
-		check := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
-		if h.Active {
-			check = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
-		}
-
-		// Style preview.
-		style, ok := highlightStyles[h.Style]
-		if !ok {
-			style = highlightStyles["gold"]
-		}
-		preview := style.Render(" " + h.Style + " ")
-
-		// Pattern text.
-		patternStyle := lipgloss.NewStyle().Foreground(colorDim)
-		cursor := "  "
-		if i == hm.cursor {
-			patternStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-			cursor = "> "
-		}
-
-		b.WriteString(cursor + check + preview + " " + patternStyle.Render(h.Pattern))
-		b.WriteByte('\n')
+	// Calculate viewport
+	totalItems := len(hm.highlights) + 1 // +1 for "Add new" item
+	maxVisible := hm.height - 12
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	start := viewportWindow(totalItems, maxVisible, hm.cursor)
+	end := start + maxVisible
+	if end > totalItems {
+		end = totalItems
 	}
 
-	// "Add new" item.
-	if hm.cursor == len(hm.highlights) {
-		if hm.editing {
-			b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+hm.editBuf+"█"))
+	for idx := start; idx < end; idx++ {
+		if idx < len(hm.highlights) {
+			i := idx
+			h := hm.highlights[i]
+			check := lipgloss.NewStyle().Foreground(lipgloss.Color("#333333")).Render("○ ")
+			if h.Active {
+				check = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
+			}
+			style, ok := highlightStyles[h.Style]
+			if !ok {
+				style = highlightStyles["gold"]
+			}
+			preview := style.Render(" " + h.Style + " ")
+			patternStyle := lipgloss.NewStyle().Foreground(colorDim)
+			cursor := "  "
+			if i == hm.cursor {
+				patternStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+				cursor = "> "
+			}
+			b.WriteString(cursor + check + preview + " " + patternStyle.Render(h.Pattern))
+			b.WriteByte('\n')
 		} else {
-			b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new highlight..."))
-		}
-	} else {
-		if hm.editing {
-			b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Pattern: "+hm.editBuf+"█"))
-		} else {
-			b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new highlight..."))
+			// "Add new" item
+			if hm.cursor == len(hm.highlights) {
+				if hm.editing {
+					b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+hm.editBuf+"█"))
+				} else {
+					b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new highlight..."))
+				}
+			} else {
+				if hm.editing {
+					b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Pattern: "+hm.editBuf+"█"))
+				} else {
+					b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new highlight..."))
+				}
+			}
+			b.WriteByte('\n')
 		}
 	}
-	b.WriteByte('\n')
 
 	return lipgloss.Place(hm.width, hm.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
