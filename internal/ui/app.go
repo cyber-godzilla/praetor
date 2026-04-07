@@ -108,14 +108,14 @@ type App struct {
 	logPath       string
 	unread        []bool
 
-	splash           Splash
-	credentialPrompt CredentialPrompt
-	persistentData   PersistentDataScreen
-	scriptDirsScreen  ScriptDirsScreen
-	scriptDirsList    []string
+	splash             Splash
+	credentialPrompt   CredentialPrompt
+	persistentData     PersistentDataScreen
+	scriptDirsScreen   ScriptDirsScreen
+	scriptDirsList     []string
 	priorityCmdsScreen PriorityCmdsScreen
 	priorityCmdsList   []string
-	version          string
+	version            string
 }
 
 // NewApp creates a new App with the specified initial configuration.
@@ -159,10 +159,10 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		logPath:       logPath,
 		unread:        make([]bool, len(tabs)),
 
-		splash:         NewSplash(version),
-		scriptDirsList:  scriptDirs,
+		splash:           NewSplash(version),
+		scriptDirsList:   scriptDirs,
 		priorityCmdsList: priorityCmds,
-		version:        version,
+		version:          version,
 	}
 	a.login.hasAccounts = len(accounts) > 0
 	return a
