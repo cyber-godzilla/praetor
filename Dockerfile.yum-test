@@ -1,0 +1,11 @@
+FROM fedora:latest
+
+RUN printf '[praetor]\n\
+name=Praetor\n\
+baseurl=https://packages.buildkite.com/cybergodzilla-2099/praetor-rpm/rpm_any/rpm_any/\$basearch\n\
+enabled=1\n\
+repo_gpgcheck=0\n\
+gpgcheck=0\n\
+priority=1\n' > /etc/yum.repos.d/praetor.repo
+
+RUN yum install -y praetor && praetor --version

@@ -69,9 +69,8 @@ sudo tee /etc/yum.repos.d/praetor.repo <<'EOF'
 name=Praetor
 baseurl=https://packages.buildkite.com/cybergodzilla-2099/praetor-rpm/rpm_any/rpm_any/$basearch
 enabled=1
-repo_gpgcheck=1
+repo_gpgcheck=0
 gpgcheck=0
-gpgkey=https://packages.buildkite.com/cybergodzilla-2099/praetor-rpm/gpgkey
 priority=1
 EOF
 
