@@ -401,6 +401,12 @@ func (e *Engine) ModeNames() []string {
 	return e.vm.ModeNames()
 }
 
+// HasMode reports whether a mode with the given name is loaded.
+func (e *Engine) HasMode(name string) bool {
+	_, ok := e.vm.GetMode(name)
+	return ok
+}
+
 // --- BridgeCallbacks implementation ---
 
 // OnSend queues a command.

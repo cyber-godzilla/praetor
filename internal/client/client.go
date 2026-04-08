@@ -315,9 +315,6 @@ func (c *Client) handleGameText(line string) {
 
 	result := protocol.ParseHTMLWithIndent(line, c.htmlIndent)
 	c.htmlIndent = result.IndentLevel
-	if result.Text == "" && !result.HasHR {
-		return
-	}
 
 	// Emit a blank line before section breaks (</pre> boundaries).
 	if result.SectionBreak {

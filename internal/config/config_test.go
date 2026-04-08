@@ -246,8 +246,8 @@ server:
 	if cfg.Server.Port != 8080 {
 		t.Errorf("default Server.Port = %d, want 8080", cfg.Server.Port)
 	}
-	if cfg.Commands.DefaultDelay.String() != "900ms" {
-		t.Errorf("default DefaultDelay = %v, want 900ms", cfg.Commands.DefaultDelay)
+	if cfg.Commands.DefaultDelay.String() != "1s" {
+		t.Errorf("default DefaultDelay = %v, want 1s", cfg.Commands.DefaultDelay)
 	}
 	if cfg.UI.Scrollback != 5000 {
 		t.Errorf("default Scrollback = %d, want 5000", cfg.UI.Scrollback)

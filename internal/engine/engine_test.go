@@ -313,6 +313,25 @@ func TestEngine_SetModeNonexistent(t *testing.T) {
 	}
 }
 
+func TestEngine_HasMode(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+
+	writeEngineMode(t, modesDir, "exists", `
+local M = {}
+M.reactions = {}
+return M
+`)
+
+	e := newTestEngine(t, modesDir, libDir)
+
+	if !e.HasMode("exists") {
+		t.Error("HasMode('exists') = false, want true")
+	}
+	if e.HasMode("nope") {
+		t.Error("HasMode('nope') = true, want false")
+	}
+}
+
 func TestEngine_SetModeDisable(t *testing.T) {
 	modesDir, libDir := setupEngineTestDirs(t)
 

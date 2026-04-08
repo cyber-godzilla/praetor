@@ -187,6 +187,27 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.app.ShowModeList(modes)
 			return w, nil
 		}
+		// Handle /mode and /sm locally so we can validate before switching.
+		if strings.HasPrefix(inputCmd, "/mode ") || strings.HasPrefix(inputCmd, "/sm ") {
+			parts := strings.Fields(msg.Value)
+			if len(parts) >= 2 {
+				mode := parts[1]
+				var args []string
+				if len(parts) > 2 {
+					args = parts[2:]
+				}
+				if mode != "disable" && mode != "" && !w.gc.Engine.HasMode(mode) {
+					w.app.ShowModeError(mode, w.gc.Engine.ModeNames())
+					cur := w.gc.Engine.CurrentMode()
+					if cur == "" || cur == "disable" {
+						w.gc.Engine.SetMode("disable", nil)
+					}
+					return w, nil
+				}
+				w.gc.Engine.SetMode(mode, args)
+			}
+			return w, nil
+		}
 		// Route user commands to the client
 		w.gc.SendCommand(msg.Value)
 		// Still let the app process it (for state tracking)
@@ -367,6 +388,14 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ui.SetModeMsg:
 		// Alt+M cycle or Alt+I quick-set triggered a mode change.
+		if msg.Mode != "disable" && msg.Mode != "" && !w.gc.Engine.HasMode(msg.Mode) {
+			w.app.ShowModeError(msg.Mode, w.gc.Engine.ModeNames())
+			cur := w.gc.Engine.CurrentMode()
+			if cur == "" || cur == "disable" {
+				w.gc.Engine.SetMode("disable", nil)
+			}
+			return w, nil
+		}
 		w.gc.Engine.SetMode(msg.Mode, msg.Args)
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
@@ -586,24 +615,43 @@ func main() {
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
-	// Bridge game events to the Bubbletea program.
+	// Bridge game events to the Bubbletea program. We drain all available
+	// events from the channel into a single batch so Bubbletea renders once
+	// per burst instead of once per line.
 	go func() {
 		for event := range gc.Events() {
-			switch ev := event.(type) {
-			case types.GameTextEvent:
-				if sessLog != nil {
-					sessLog.Log(ev.Timestamp, ev.Text)
-				}
-				desktopNotify.CheckText(ev.Text)
-			case types.SKOOTUpdateEvent:
-				if ev.Health != nil {
-					desktopNotify.CheckHealth(*ev.Health)
-				}
-				if ev.Fatigue != nil {
-					desktopNotify.CheckFatigue(*ev.Fatigue)
+			batch := []types.Event{event}
+			// Drain any additional events already queued.
+		drain:
+			for {
+				select {
+				case ev, ok := <-gc.Events():
+					if !ok {
+						break drain
+					}
+					batch = append(batch, ev)
+				default:
+					break drain
 				}
 			}
-			p.Send(ui.EventMsg{Event: event})
+			// Side effects (logging, notifications) for the whole batch.
+			for _, ev := range batch {
+				switch e := ev.(type) {
+				case types.GameTextEvent:
+					if sessLog != nil {
+						sessLog.Log(e.Timestamp, e.Text)
+					}
+					desktopNotify.CheckText(e.Text)
+				case types.SKOOTUpdateEvent:
+					if e.Health != nil {
+						desktopNotify.CheckHealth(*e.Health)
+					}
+					if e.Fatigue != nil {
+						desktopNotify.CheckFatigue(*e.Fatigue)
+					}
+				}
+			}
+			p.Send(ui.EventMsg{Events: batch})
 		}
 	}()
 

@@ -145,8 +145,8 @@ func Defaults() *Config {
 			BackoffMultiplier: 2,
 		},
 		Commands: CommandsConfig{
-			DefaultDelay: Duration{900 * time.Millisecond},
-			MinInterval:  Duration{400 * time.Millisecond},
+			DefaultDelay: Duration{1000 * time.Millisecond},
+			MinInterval:  Duration{500 * time.Millisecond},
 			MaxQueueSize: 20,
 			HighPriority: []string{},
 		},

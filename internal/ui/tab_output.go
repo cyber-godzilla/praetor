@@ -14,6 +14,12 @@ type OutputPane struct {
 	width     int
 	height    int
 	scrollPos int // 0 = bottom (auto-scroll)
+
+	// Render cache: we keep previously rendered display rows so View()
+	// only needs to render lines appended since the last call.
+	cachedRows  []string // rendered display rows
+	cachedLines int      // number of logical lines already rendered
+	cacheWidth  int      // width used for cached renders (invalidate on change)
 }
 
 // NewOutputPane creates a new OutputPane with the given scrollback limit.
@@ -33,6 +39,10 @@ func (o *OutputPane) Append(segments []types.StyledSegment) {
 	if len(o.lines) > o.maxLines {
 		excess := len(o.lines) - o.maxLines
 		o.lines = o.lines[excess:]
+		// Invalidate render cache — we can't cheaply trim cached rows
+		// without per-line row counts. This only fires at scrollback capacity.
+		o.cachedRows = nil
+		o.cachedLines = 0
 		if o.scrollPos > 0 {
 			o.scrollPos -= excess
 			if o.scrollPos < 0 {
@@ -58,12 +68,17 @@ func (o *OutputPane) ScrollDown(n int) {
 
 // SetSize updates the dimensions for the output pane.
 func (o *OutputPane) SetSize(w, h int) {
+	if w != o.width {
+		// Width changed — word-wrap positions are different, invalidate cache.
+		o.cachedRows = nil
+		o.cachedLines = 0
+	}
 	o.width = w
 	o.height = h
 }
 
 // View renders the visible portion of the output buffer with word wrapping.
-func (o OutputPane) View() string {
+func (o *OutputPane) View() string {
 	if o.height <= 0 || o.width <= 0 {
 		return ""
 	}
@@ -72,23 +87,24 @@ func (o OutputPane) View() string {
 		return strings.Repeat("\n", o.height-1)
 	}
 
-	// Pre-render all lines into display rows (wrapped strings).
-	// Each logical line may produce 1+ display rows.
-	type displayRow struct {
-		text string // already styled
+	// Invalidate cache if width changed.
+	if o.cacheWidth != o.width {
+		o.cachedRows = nil
+		o.cachedLines = 0
+		o.cacheWidth = o.width
 	}
-	var allRows []displayRow
 
-	for _, segments := range o.lines {
-		rendered := renderSegments(segments, o.width)
-		// Split the rendered output into display rows.
-		parts := strings.Split(rendered, "\n")
-		for _, p := range parts {
-			allRows = append(allRows, displayRow{text: p})
+	// Render only lines added since the last call.
+	if o.cachedLines < len(o.lines) {
+		for _, segments := range o.lines[o.cachedLines:] {
+			rendered := renderSegments(segments, o.width)
+			parts := strings.Split(rendered, "\n")
+			o.cachedRows = append(o.cachedRows, parts...)
 		}
+		o.cachedLines = len(o.lines)
 	}
 
-	totalRows := len(allRows)
+	totalRows := len(o.cachedRows)
 
 	// Clamp scrollPos.
 	maxScroll := totalRows - o.height
@@ -110,14 +126,14 @@ func (o OutputPane) View() string {
 		end = totalRows
 	}
 
-	visible := allRows[start:end]
+	visible := o.cachedRows[start:end]
 
 	var b strings.Builder
 	for i, row := range visible {
 		if i > 0 {
 			b.WriteByte('\n')
 		}
-		b.WriteString(row.text)
+		b.WriteString(row)
 	}
 
 	// Pad with empty lines if we have fewer rows than height.

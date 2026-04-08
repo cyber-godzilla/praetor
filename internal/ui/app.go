@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/compass"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
@@ -18,9 +19,12 @@ import (
 // Tab constants for special tab kinds (looked up by kind, not index).
 // Custom tabs are accessed by dynamic index.
 
-// EventMsg wraps a game event for delivery to the TUI.
+// EventMsg wraps a batch of game events for delivery to the TUI.
+// The event bridge in main.go drains all available events from the client
+// channel before sending a single EventMsg, so that Bubbletea renders once
+// per batch instead of once per line.
 type EventMsg struct {
-	Event types.Event
+	Events []types.Event
 }
 
 // AuthResultMsg is sent after the HTTP login attempt completes.
@@ -761,65 +765,71 @@ func (a App) updateHighlights(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
-	switch ev := msg.Event.(type) {
+	gotText := false
+	for _, event := range msg.Events {
+		switch ev := event.(type) {
 
-	case types.GameTextEvent:
-		// Apply color words first (if enabled), then highlights on top.
-		styled := ev.Styled
-		if a.colorWords {
-			styled = colorwords.ApplyColorWords(styled)
+		case types.GameTextEvent:
+			// Apply color words first (if enabled), then highlights on top.
+			styled := ev.Styled
+			if a.colorWords {
+				styled = colorwords.ApplyColorWords(styled)
+			}
+			styled = applyHighlights(styled, a.highlights)
+			if a.hideIPs {
+				styled = maskIPs(styled)
+			}
+
+			// Route text to All + matching custom tabs.
+			RouteText(a.tabs, styled, ev.Text)
+			gotText = true
+
+		case types.SKOOTUpdateEvent:
+			a.debug.UpdateSKOOT(ev)
+			a.sidebar.UpdateVitals(ev.Health, ev.Fatigue, ev.Encumbrance, ev.Satiation)
+			a.status.UpdateVitals(ev.Health, ev.Fatigue, ev.Encumbrance)
+			if ev.Exits != nil {
+				a.sidebar.UpdateExits(*ev.Exits)
+			}
+			if ev.Lighting != nil {
+				a.sidebar.UpdateLighting(*ev.Lighting, ev.LightingRaw)
+			}
+			if len(ev.Rooms) > 0 || len(ev.Walls) > 0 {
+				a.sidebar.UpdateMinimap(ev.Rooms, ev.Walls)
+			}
+
+		case types.MapURLEvent:
+			a.sidebar.UpdateMapURL(ev.URL)
+
+		case types.ModeChangeEvent:
+			a.sidebar.UpdateMode(ev.NewMode)
+			a.status.UpdateMode(ev.NewMode)
+
+		case types.StatusUpdateEvent:
+			a.sidebar.UpdateMode(ev.Mode)
+			a.sidebar.UpdateDisplayState(ev.DisplayState)
+			a.status.UpdateMode(ev.Mode)
+			a.metrics.UpdateStatus(ev)
+			a.metrics.UpdateMetrics(ev.MetricsCurrent, ev.MetricsHistory)
+
+		case types.ConnectedEvent:
+			a.status.SetConnected(true)
+
+		case types.DisconnectedEvent:
+			a.status.SetConnected(false)
+
+		case types.ReconnectingEvent:
+			a.status.SetReconnecting(ev.Attempt, ev.NextDelay)
 		}
-		styled = applyHighlights(styled, a.highlights)
-		if a.hideIPs {
-			styled = maskIPs(styled)
-		}
+	}
 
-		// Route text to All + matching custom tabs.
-		RouteText(a.tabs, styled, ev.Text)
-
-		// Mark unread for non-active tabs that received text.
+	// Mark unread once for the whole batch rather than per-line.
+	if gotText {
 		for i := range a.tabs {
 			if i != a.activeTab {
 				a.unread[i] = true
 			}
 		}
-
-	case types.SKOOTUpdateEvent:
-		a.debug.UpdateSKOOT(ev)
-		a.sidebar.UpdateVitals(ev.Health, ev.Fatigue, ev.Encumbrance, ev.Satiation)
-		a.status.UpdateVitals(ev.Health, ev.Fatigue, ev.Encumbrance)
-		if ev.Exits != nil {
-			a.sidebar.UpdateExits(*ev.Exits)
-		}
-		if ev.Lighting != nil {
-			a.sidebar.UpdateLighting(*ev.Lighting, ev.LightingRaw)
-		}
-		if len(ev.Rooms) > 0 || len(ev.Walls) > 0 {
-			a.sidebar.UpdateMinimap(ev.Rooms, ev.Walls)
-		}
-
-	case types.MapURLEvent:
-		a.sidebar.UpdateMapURL(ev.URL)
-
-	case types.ModeChangeEvent:
-		a.sidebar.UpdateMode(ev.NewMode)
-		a.status.UpdateMode(ev.NewMode)
-
-	case types.StatusUpdateEvent:
-		a.sidebar.UpdateMode(ev.Mode)
-		a.sidebar.UpdateDisplayState(ev.DisplayState)
-		a.status.UpdateMode(ev.Mode)
-		a.metrics.UpdateStatus(ev)
-		a.metrics.UpdateMetrics(ev.MetricsCurrent, ev.MetricsHistory)
-
-	case types.ConnectedEvent:
-		a.status.SetConnected(true)
-
-	case types.DisconnectedEvent:
-		a.status.SetConnected(false)
-
-	case types.ReconnectingEvent:
-		a.status.SetReconnecting(ev.Attempt, ev.NextDelay)
 	}
 
 	return a, nil
@@ -830,6 +840,46 @@ func (a *App) ShowHelp() {
 	a.help = NewHelpScreen()
 	a.help.SetSize(a.width, a.height)
 	a.state = stateHelp
+}
+
+// ShowModeError displays a mode-not-found error as a system message in the output.
+// If any loaded modes are within edit distance 3 of the input, they are suggested.
+func (a *App) ShowModeError(name string, modes []string) {
+	var segments []types.StyledSegment
+	segments = append(segments, types.StyledSegment{
+		Text:  fmt.Sprintf("Mode %q not found.", name),
+		Bold:  true,
+		Color: "#ff5555",
+	})
+
+	// Find similar modes using Levenshtein distance.
+	var similar []string
+	for _, m := range modes {
+		if textutil.Levenshtein(strings.ToLower(name), strings.ToLower(m)) <= 3 {
+			similar = append(similar, m)
+		}
+	}
+	if len(similar) > 0 {
+		segments = append(segments, types.StyledSegment{
+			Text:  " Did you mean: ",
+			Color: "#e8a838",
+		})
+		for i, m := range similar {
+			if i > 0 {
+				segments = append(segments, types.StyledSegment{Text: ", "})
+			}
+			segments = append(segments, types.StyledSegment{
+				Text:  m,
+				Color: "#55cc55",
+			})
+		}
+		segments = append(segments, types.StyledSegment{Text: "?"})
+	}
+
+	hr := []types.StyledSegment{{IsHR: true}}
+	a.tabs[0].Pane.Append(hr)
+	a.tabs[0].Pane.Append(segments)
+	a.tabs[0].Pane.Append(hr)
 }
 
 // ShowModeList displays available modes as a system message in the output.
