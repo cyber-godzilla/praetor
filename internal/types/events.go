@@ -14,12 +14,14 @@ type StyledSegment struct {
 type LightingLevel int
 
 const (
-	LightExtremelyBright LightingLevel = iota
+	LightBlindinglyBright LightingLevel = iota
 	LightVeryBright
 	LightBright
-	LightDim
-	LightDark
-	LightPitch
+	LightFairlyLit
+	LightSomewhatDark
+	LightVeryDark
+	LightExtremelyDark
+	LightPitchBlack
 )
 
 type Exits struct {

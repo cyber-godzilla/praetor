@@ -167,34 +167,42 @@ func (s Sidebar) renderLighting() string {
 	var color lipgloss.Color
 
 	switch s.lighting {
-	case types.LightExtremelyBright:
+	case types.LightBlindinglyBright:
 		symbol = "☀"
-		label = "Extremely Bright"
+		label = "Blindingly Bright"
 		color = lipgloss.Color("#ffffff")
 	case types.LightVeryBright:
 		symbol = "☀"
-		label = "Very Bright"
+		label = "Very Brightly Lit"
 		color = lipgloss.Color("#ffee66")
 	case types.LightBright:
 		symbol = "☀"
-		label = "Bright"
+		label = "Brightly Lit"
 		color = lipgloss.Color("#ffcc00")
-	case types.LightDim:
+	case types.LightFairlyLit:
 		symbol = "◐"
-		label = "Dim"
+		label = "Fairly Well-Lit"
 		color = lipgloss.Color("#aa8800")
-	case types.LightDark:
+	case types.LightSomewhatDark:
+		symbol = "◐"
+		label = "Somewhat Dark"
+		color = lipgloss.Color("#887744")
+	case types.LightVeryDark:
 		symbol = "☽"
-		label = "Dark"
+		label = "Very Dark"
 		color = lipgloss.Color("#6666aa")
-	case types.LightPitch:
+	case types.LightExtremelyDark:
+		symbol = "☽"
+		label = "Extremely Dark"
+		color = lipgloss.Color("#555588")
+	case types.LightPitchBlack:
 		symbol = "●"
-		label = "Pitch"
+		label = "Pitch Black"
 		color = lipgloss.Color("#444444")
 	default:
-		symbol = "☀"
-		label = "Bright"
-		color = lipgloss.Color("#ffcc00")
+		symbol = "◐"
+		label = "Fairly Well-Lit"
+		color = lipgloss.Color("#aa8800")
 	}
 
 	return lipgloss.NewStyle().Foreground(color).Render(fmt.Sprintf(" %s %s (%d)", symbol, label, s.lightingRaw))

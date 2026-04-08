@@ -158,63 +158,83 @@ func TestInterpretSkoot_StatusUnknownName(t *testing.T) {
 
 // --- Lighting (channel 9) ---
 
-func TestInterpretSkoot_LightingExtremelyBright(t *testing.T) {
+func TestInterpretSkoot_LightingBlindinglyBright(t *testing.T) {
 	ev := InterpretSkoot(9, "150")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
-	if *ev.Lighting != types.LightExtremelyBright {
-		t.Errorf("expected LightExtremelyBright for 150, got %d", *ev.Lighting)
+	if *ev.Lighting != types.LightBlindinglyBright {
+		t.Errorf("expected LightBlindinglyBright for 150, got %d", *ev.Lighting)
 	}
 }
 
 func TestInterpretSkoot_LightingVeryBright(t *testing.T) {
-	ev := InterpretSkoot(9, "61")
+	ev := InterpretSkoot(9, "90")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
 	if *ev.Lighting != types.LightVeryBright {
-		t.Errorf("expected LightVeryBright for 61, got %d", *ev.Lighting)
+		t.Errorf("expected LightVeryBright for 90, got %d", *ev.Lighting)
 	}
 }
 
 func TestInterpretSkoot_LightingBright(t *testing.T) {
-	ev := InterpretSkoot(9, "24")
+	ev := InterpretSkoot(9, "60")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
 	if *ev.Lighting != types.LightBright {
-		t.Errorf("expected LightBright for 24, got %d", *ev.Lighting)
+		t.Errorf("expected LightBright for 60, got %d", *ev.Lighting)
 	}
 }
 
-func TestInterpretSkoot_LightingDim(t *testing.T) {
+func TestInterpretSkoot_LightingFairlyLit(t *testing.T) {
+	ev := InterpretSkoot(9, "30")
+	if ev == nil || ev.Lighting == nil {
+		t.Fatal("expected lighting event")
+	}
+	if *ev.Lighting != types.LightFairlyLit {
+		t.Errorf("expected LightFairlyLit for 30, got %d", *ev.Lighting)
+	}
+}
+
+func TestInterpretSkoot_LightingSomewhatDark(t *testing.T) {
 	ev := InterpretSkoot(9, "15")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
-	if *ev.Lighting != types.LightDim {
-		t.Errorf("expected LightDim for 15, got %d", *ev.Lighting)
+	if *ev.Lighting != types.LightSomewhatDark {
+		t.Errorf("expected LightSomewhatDark for 15, got %d", *ev.Lighting)
 	}
 }
 
-func TestInterpretSkoot_LightingDark(t *testing.T) {
-	ev := InterpretSkoot(9, "5")
+func TestInterpretSkoot_LightingVeryDark(t *testing.T) {
+	ev := InterpretSkoot(9, "4")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
-	if *ev.Lighting != types.LightDark {
-		t.Errorf("expected LightDark for 5, got %d", *ev.Lighting)
+	if *ev.Lighting != types.LightVeryDark {
+		t.Errorf("expected LightVeryDark for 4, got %d", *ev.Lighting)
 	}
 }
 
-func TestInterpretSkoot_LightingPitch(t *testing.T) {
+func TestInterpretSkoot_LightingExtremelyDark(t *testing.T) {
+	ev := InterpretSkoot(9, "2")
+	if ev == nil || ev.Lighting == nil {
+		t.Fatal("expected lighting event")
+	}
+	if *ev.Lighting != types.LightExtremelyDark {
+		t.Errorf("expected LightExtremelyDark for 2, got %d", *ev.Lighting)
+	}
+}
+
+func TestInterpretSkoot_LightingPitchBlack(t *testing.T) {
 	ev := InterpretSkoot(9, "0")
 	if ev == nil || ev.Lighting == nil {
 		t.Fatal("expected lighting event")
 	}
-	if *ev.Lighting != types.LightPitch {
-		t.Errorf("expected LightPitch for 0, got %d", *ev.Lighting)
+	if *ev.Lighting != types.LightPitchBlack {
+		t.Errorf("expected LightPitchBlack for 0, got %d", *ev.Lighting)
 	}
 }
 

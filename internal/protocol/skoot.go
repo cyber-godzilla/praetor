@@ -213,18 +213,22 @@ func parseLighting(payload string) *types.SKOOTUpdateEvent {
 
 	var level types.LightingLevel
 	switch {
-	case value >= 100:
-		level = types.LightExtremelyBright
-	case value >= 30:
+	case value >= 122:
+		level = types.LightBlindinglyBright
+	case value >= 86:
 		level = types.LightVeryBright
-	case value >= 20:
+	case value >= 46:
 		level = types.LightBright
-	case value >= 10:
-		level = types.LightDim
+	case value >= 26:
+		level = types.LightFairlyLit
+	case value >= 6:
+		level = types.LightSomewhatDark
 	case value >= 3:
-		level = types.LightDark
+		level = types.LightVeryDark
+	case value >= 1:
+		level = types.LightExtremelyDark
 	default:
-		level = types.LightPitch
+		level = types.LightPitchBlack
 	}
 	return &types.SKOOTUpdateEvent{Lighting: &level, LightingRaw: value}
 }
