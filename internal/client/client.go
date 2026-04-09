@@ -316,6 +316,17 @@ func (c *Client) handleGameText(line string) {
 	result := protocol.ParseHTMLWithIndent(line, c.htmlIndent)
 	c.htmlIndent = result.IndentLevel
 
+	// Filter protocol lines that arrived wrapped in HTML — ClassifyLine
+	// missed them because the raw line started with a tag, not "SKOOT ".
+	stripped := strings.TrimSpace(result.Text)
+	if strings.HasPrefix(stripped, "SKOOT ") || strings.HasPrefix(stripped, "MAPURL ") {
+		log.Printf("[CLIENT] filtered HTML-wrapped protocol line: %s", stripped)
+		if strings.HasPrefix(stripped, "SKOOT ") {
+			c.handleSkoot(stripped)
+		}
+		return
+	}
+
 	// Emit a blank line before section breaks (</pre> boundaries).
 	if result.SectionBreak {
 		c.emit(types.GameTextEvent{
