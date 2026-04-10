@@ -765,7 +765,7 @@ func (a App) updateHighlights(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
-	gotText := false
+	var routedTabs uint64
 	for _, event := range msg.Events {
 		switch ev := event.(type) {
 
@@ -781,8 +781,11 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			}
 
 			// Route text to All + matching custom tabs.
-			RouteText(a.tabs, styled, ev.Text)
-			gotText = true
+			routed := RouteText(a.tabs, styled, ev.Text)
+			// Only count non-empty text for unread markers.
+			if ev.Text != "" {
+				routedTabs |= routed
+			}
 
 		case types.SKOOTUpdateEvent:
 			a.debug.UpdateSKOOT(ev)
@@ -823,10 +826,10 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	// Mark unread once for the whole batch rather than per-line.
-	if gotText {
+	// Mark unread only for tabs that actually received non-empty text.
+	if routedTabs != 0 {
 		for i := range a.tabs {
-			if i != a.activeTab {
+			if i != a.activeTab && routedTabs&(1<<uint(i)) != 0 {
 				a.unread[i] = true
 			}
 		}

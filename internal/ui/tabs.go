@@ -132,17 +132,22 @@ func MatchesTab(text string, rules []TabRule) bool {
 }
 
 // RouteText sends styled segments to all matching custom tabs.
-func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string) {
+// Returns a bitmask of tab indices that received text.
+func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string) uint64 {
+	var routed uint64
 	for i := range tabs {
 		switch tabs[i].Kind {
 		case TabKindAll:
 			tabs[i].Pane.Append(segments)
+			routed |= 1 << uint(i)
 		case TabKindCustom:
 			if tabs[i].Visible && MatchesTab(plainText, tabs[i].Rules) {
 				tabs[i].Pane.Append(segments)
+				routed |= 1 << uint(i)
 			}
 		}
 	}
+	return routed
 }
 
 // TabsToConfig converts the current tab state back to config for saving.
