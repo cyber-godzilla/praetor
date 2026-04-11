@@ -456,6 +456,21 @@ func TestColorWords_SuffixLined(t *testing.T) {
 	}
 }
 
+func TestColorWords_SuffixBanded(t *testing.T) {
+	seg := types.StyledSegment{Text: "A gold-banded shield"}
+	result := splitColorWords(seg)
+
+	found := false
+	for _, s := range result {
+		if s.Text == "gold-banded" && s.Color != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("gold-banded not matched, got: %+v", result)
+	}
+}
+
 func TestColorWords_Bloodstained(t *testing.T) {
 	for _, text := range []string{"A bloodstained rag", "A blood-stained cloth"} {
 		seg := types.StyledSegment{Text: text}
