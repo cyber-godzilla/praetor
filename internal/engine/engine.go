@@ -3,7 +3,6 @@ package engine
 import (
 	"fmt"
 	"log"
-	"strings"
 
 	"sync"
 	"time"
@@ -319,30 +318,12 @@ func (e *Engine) Status() *StatusValues {
 }
 
 // UpdateScriptDirs replaces the script directories and reloads all modes.
+// If the current mode still exists after reload it is preserved; otherwise
+// it is disabled.
 func (e *Engine) UpdateScriptDirs(dirs []string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	newVM := NewLuaVM(dirs)
-	L := newVM.State()
-	e.timers = NewTimerManager(L, &e.mu)
-	RegisterBridge(L, e, e.status, e.timers)
-	RegisterStateAPI(L, e.state)
-
-	if err := newVM.LoadModes(); err != nil {
-		newVM.Close()
-		return fmt.Errorf("loading modes from new dirs: %w", err)
-	}
-
-	if e.vm != nil {
-		e.vm.Close()
-	}
-	e.vm = newVM
-	e.matcher = newVM.Matcher()
-	e.currentMode = ""
-	e.modeObj = nil
-
-	return nil
+	return e.rebuildVM(dirs)
 }
 
 // ReloadMode hot-reloads a single mode from disk.
@@ -352,47 +333,51 @@ func (e *Engine) ReloadMode(name string) error {
 	return e.vm.ReloadMode(name)
 }
 
-// ReloadAllModes hot-reloads every loaded mode from disk.
-// Modes that no longer exist are removed. If the current mode was removed,
-// it is disabled. Returns an error only if reloading a still-existing mode fails.
+// ReloadAllModes rebuilds the Lua VM from scratch, rescanning all script
+// directories for mode files. This discovers new files, removes deleted ones,
+// and reloads changed ones.
 func (e *Engine) ReloadAllModes() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.rebuildVM(e.vm.ScriptDirs())
+}
 
-	names := e.vm.ModeNames()
-	var errs []string
-	var removed []string
-	for _, name := range names {
-		err := e.vm.ReloadMode(name)
-		if err != nil {
-			// Check if the mode file simply no longer exists
-			if e.vm.ModeFileExists(name) {
-				errs = append(errs, fmt.Sprintf("%s: %v", name, err))
-			} else {
-				e.vm.RemoveMode(name)
-				removed = append(removed, name)
-			}
-		}
+// rebuildVM creates a fresh Lua VM with the given directories. If the current
+// mode still exists after reload it is preserved; otherwise it is disabled.
+// Must be called with e.mu held.
+func (e *Engine) rebuildVM(dirs []string) error {
+	prevMode := e.currentMode
+
+	newVM := NewLuaVM(dirs)
+	L := newVM.State()
+	e.timers = NewTimerManager(L, &e.mu)
+	RegisterBridge(L, e, e.status, e.timers)
+	RegisterStateAPI(L, e.state)
+
+	if err := newVM.LoadModes(); err != nil {
+		newVM.Close()
+		return fmt.Errorf("loading modes: %w", err)
 	}
 
-	// If the current mode was removed, disable it without clearing
-	// modes that still exist.
-	if e.currentMode != "" && e.currentMode != "disable" {
-		modeRemoved := false
-		for _, name := range removed {
-			if name == e.currentMode {
-				modeRemoved = true
-				break
-			}
-		}
-		if modeRemoved {
+	if e.vm != nil {
+		e.vm.Close()
+	}
+	e.vm = newVM
+	e.matcher = newVM.Matcher()
+
+	// Preserve current mode if it still exists, otherwise disable.
+	if prevMode != "" && prevMode != "disable" {
+		if _, ok := newVM.GetMode(prevMode); ok {
+			e.currentMode = prevMode
+			e.modeObj, _ = newVM.GetMode(prevMode)
+		} else {
 			e.setModeLocked("disable", nil)
 		}
+	} else {
+		e.currentMode = prevMode
+		e.modeObj = nil
 	}
 
-	if len(errs) > 0 {
-		return fmt.Errorf("reload errors: %s", strings.Join(errs, "; "))
-	}
 	return nil
 }
 

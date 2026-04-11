@@ -150,6 +150,13 @@ func (vm *LuaVM) ReloadMode(name string) error {
 	return fmt.Errorf("mode %s not found in any script directory", name)
 }
 
+// ScriptDirs returns the configured script directories.
+func (vm *LuaVM) ScriptDirs() []string {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	return vm.scriptDirs
+}
+
 // ModeFileExists checks whether the mode's .lua file exists in any script directory.
 func (vm *LuaVM) ModeFileExists(name string) bool {
 	vm.mu.Lock()
