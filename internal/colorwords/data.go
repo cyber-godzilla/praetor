@@ -135,11 +135,12 @@ var colorWordMap = map[string]string{
 	"violet-blue":       "#5533aa",
 	"blue-violet":       "#6644aa",
 	"ice-blue":          "#88bbdd",
-	"greenish-blue":     "#449988",
+	"greenish-blue":     "#448899",
 	"green-yellow":      "#99aa22",
 	"granite-gray":      "#888899",
 	"granite-grey":      "#888899",
-	"wine-dark":         "#553322",
+	"navy blue":         "#000066",
+	"wine-dark":         "#442233",
 	"ashen blue":        "#8899aa",
 	"azurite blue":      "#2266bb",
 	"clay brown":        "#886644",
@@ -158,6 +159,23 @@ var colorWordMap = map[string]string{
 	"dusk rose":         "#aa6677",
 	"sunshine yellow":   "#ddcc22",
 	"yellow ochre":      "#cc9922",
+
+	// Dye colors + game text color combos
+	"cinnabar red":      "#cc3322",
+	"iron grey":         "#888899",
+	"iron gray":         "#888899",
+	"umber black":       "#332211",
+	"red ochre":         "#aa4422",
+	"saffron gold":      "#ddaa22",
+	"smoke blue":        "#6688aa",
+	"malachite green":   "#00aa55",
+	"moss green":        "#667744",
+	"coal black":        "#111111",
+	"honey-brown":       "#aa7744",
+	"pinkish-peach":     "#dd9999",
+	"emerald green":     "#00aa44",
+	"olive green":       "#668800",
+	"red porphyry":      "#994455",
 
 	// Reds
 	"red":         "#cc0000",
@@ -517,6 +535,7 @@ var colorAdjectives = map[string]bool{
 	"coloured":      true,
 	"pure":          true,
 	"sickly":        true,
+	"bold":          true,
 }
 
 // rainbowWords are color words that get per-character rainbow coloring.
@@ -569,6 +588,7 @@ var colorSuffixes = []string{
 	"-beaded",
 	"-washed",
 	"-carpeted",
+	"-tinged",
 }
 
 // sortedColorPhrases is sorted by length (longest first) for matching.

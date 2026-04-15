@@ -123,9 +123,9 @@ func MatchesTab(text string, rules []TabRule) bool {
 		}
 	}
 
-	// If there are no include rules, nothing matches.
+	// If there are no include rules, accept everything not excluded.
 	if !hasIncludes {
-		return false
+		return true
 	}
 
 	return matched
