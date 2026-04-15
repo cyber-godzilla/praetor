@@ -33,6 +33,7 @@ type Engine struct {
 	modeChangeCh chan ModeChange // non-blocking notifications of mode switches
 	dataDir      string
 	persistStore *PersistentStore
+	actionGen    uint64 // incremented on mode switch/reload to cancel stale delayed actions
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -156,8 +157,9 @@ func (e *Engine) setModeLocked(name string, args []string) {
 		}
 	}
 
-	// Cancel all active timers from previous mode
+	// Cancel all active timers and delayed actions from previous mode.
 	e.timers.ClearAll()
+	e.actionGen++
 
 	// End metrics session if one is active.
 	e.metrics.EndSession()
@@ -257,10 +259,14 @@ func (e *Engine) Process(text string) {
 			actionRef := reaction.actionRef
 			delayMs := reaction.DelayMs
 			capturedText := luaText
+			gen := e.actionGen
 			go func() {
 				time.Sleep(time.Duration(delayMs) * time.Millisecond)
 				e.mu.Lock()
 				defer e.mu.Unlock()
+				if e.actionGen != gen {
+					return // mode switched or VM reloaded — discard stale action
+				}
 				if err := L.CallByParam(lua.P{
 					Fn:      actionRef,
 					NRet:    0,
@@ -358,6 +364,9 @@ func (e *Engine) rebuildVM(dirs []string) error {
 		newVM.Close()
 		return fmt.Errorf("loading modes: %w", err)
 	}
+
+	// Cancel any delayed actions from the old VM before closing it.
+	e.actionGen++
 
 	if e.vm != nil {
 		e.vm.Close()

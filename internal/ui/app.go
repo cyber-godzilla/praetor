@@ -93,7 +93,7 @@ type App struct {
 	metrics       MetricsPane
 	debug         DebugPane
 	tabEditor     TabEditor
-	sidebar       Sidebar
+	sidebar       *Sidebar
 	status        StatusBar
 	input         Input
 	login         LoginScreen
@@ -147,7 +147,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		tabs:          tabs,
 		metrics:       NewMetricsPane(),
 		debug:         NewDebugPane(),
-		sidebar:       NewSidebar(minimapScale, minimapHeight),
+		sidebar:       newSidebarPtr(minimapScale, minimapHeight),
 		status:        NewStatusBar(),
 		input:         NewInput(),
 		login:         NewLoginScreen(),

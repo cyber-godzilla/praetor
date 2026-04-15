@@ -27,6 +27,12 @@ type Sidebar struct {
 	displayState  []types.StateDisplayItem
 	mapURL        string
 	minimap       minimap.Minimap
+
+	// Kitty graphics cache — avoid re-rendering every frame.
+	kittyDirty        bool
+	cachedMinimapEsc  string
+	cachedCompassEsc  string
+	cachedPlaceholder string
 }
 
 // NewSidebar creates a new Sidebar with the given minimap scale and height.
@@ -40,11 +46,21 @@ func NewSidebar(minimapScale float64, minimapHeight int) Sidebar {
 		satiation:     100,
 		minimapHeight: minimapHeight,
 		minimap:       mm,
+		kittyDirty:    true,
 	}
+}
+
+// newSidebarPtr returns a pointer to a new Sidebar (for embedding in App).
+func newSidebarPtr(minimapScale float64, minimapHeight int) *Sidebar {
+	s := NewSidebar(minimapScale, minimapHeight)
+	return &s
 }
 
 // SetSize updates the sidebar dimensions.
 func (s *Sidebar) SetSize(w, h int) {
+	if s.width != w || s.height != h {
+		s.kittyDirty = true
+	}
 	s.width = w
 	s.height = h
 	innerW := w - 2
@@ -61,6 +77,9 @@ func (s *Sidebar) SetCompact(compact bool) {
 
 // UpdateExits updates the available exits for the compass rose.
 func (s *Sidebar) UpdateExits(exits types.Exits) {
+	if s.exits != exits {
+		s.kittyDirty = true
+	}
 	s.exits = exits
 }
 
@@ -104,6 +123,7 @@ func (s *Sidebar) UpdateMapURL(url string) {
 // UpdateMinimap updates the minimap room and wall data.
 func (s *Sidebar) UpdateMinimap(rooms []types.MinimapRoom, walls []types.MinimapWall) {
 	s.minimap.Update(rooms, walls)
+	s.kittyDirty = true
 }
 
 // MinimapHeight returns the minimap display height in terminal rows.
@@ -111,20 +131,29 @@ func (s Sidebar) MinimapHeight() int {
 	return s.minimapHeight
 }
 
-// KittyEscapes returns Kitty graphics escape sequences for minimap and compass.
-// Must be injected into the final output OUTSIDE of Lipgloss rendering.
-// Returns (minimapEscape, compassEscape).
-func (s Sidebar) KittyEscapes() (string, string) {
+// rebuildKittyCache re-renders minimap and compass images and caches the results.
+func (s *Sidebar) rebuildKittyCache() {
 	innerW := s.width - 2
 	if innerW < 4 {
 		innerW = 4
 	}
-	_, kittyMap := s.minimap.Render()
-	return kittyMap, compass.KittyEscape(s.exits, innerW)
+	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render()
+	s.cachedCompassEsc = compass.KittyEscape(s.exits, innerW)
+	s.kittyDirty = false
+}
+
+// KittyEscapes returns Kitty graphics escape sequences for minimap and compass.
+// Must be injected into the final output OUTSIDE of Lipgloss rendering.
+// Returns (minimapEscape, compassEscape).
+func (s *Sidebar) KittyEscapes() (string, string) {
+	if s.kittyDirty {
+		s.rebuildKittyCache()
+	}
+	return s.cachedMinimapEsc, s.cachedCompassEsc
 }
 
 // View renders the sidebar content.
-func (s Sidebar) View() string {
+func (s *Sidebar) View() string {
 	if s.width <= 0 || s.height <= 0 {
 		return ""
 	}
@@ -137,9 +166,11 @@ func (s Sidebar) View() string {
 	var sections []string
 
 	// Minimap (placeholder for Kitty image)
-	placeholder, _ := s.minimap.Render()
-	if placeholder != "" {
-		sections = append(sections, placeholder)
+	if s.kittyDirty {
+		s.rebuildKittyCache()
+	}
+	if s.cachedPlaceholder != "" {
+		sections = append(sections, s.cachedPlaceholder)
 	}
 
 	// Compass rose (rendered as Kitty graphic, placeholder for layout)

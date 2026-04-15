@@ -100,6 +100,19 @@ func (dn *DesktopNotifier) CheckText(text string) {
 	}
 }
 
+// Prune removes stale dedup entries older than the cooldown window.
+func (dn *DesktopNotifier) Prune() {
+	dn.mu.Lock()
+	defer dn.mu.Unlock()
+
+	now := time.Now()
+	for key, last := range dn.lastSent {
+		if now.Sub(last) >= dn.cooldown {
+			delete(dn.lastSent, key)
+		}
+	}
+}
+
 // send dispatches a desktop notification with rate limiting.
 func (dn *DesktopNotifier) send(title, message, dedupKey string) {
 	dn.mu.Lock()

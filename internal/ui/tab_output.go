@@ -17,7 +17,11 @@ type OutputPane struct {
 
 	// Render cache: we keep previously rendered display rows so View()
 	// only needs to render lines appended since the last call.
+	// rowCounts tracks how many display rows each logical line produced,
+	// allowing us to trim cachedRows in sync with lines instead of
+	// invalidating the entire cache at scrollback capacity.
 	cachedRows  []string // rendered display rows
+	rowCounts   []int    // display rows per logical line (parallel to lines)
 	cachedLines int      // number of logical lines already rendered
 	cacheWidth  int      // width used for cached renders (invalidate on change)
 }
@@ -39,10 +43,26 @@ func (o *OutputPane) Append(segments []types.StyledSegment) {
 	if len(o.lines) > o.maxLines {
 		excess := len(o.lines) - o.maxLines
 		o.lines = o.lines[excess:]
-		// Invalidate render cache — we can't cheaply trim cached rows
-		// without per-line row counts. This only fires at scrollback capacity.
-		o.cachedRows = nil
-		o.cachedLines = 0
+
+		// Trim cachedRows in sync using per-line row counts.
+		if len(o.rowCounts) >= excess {
+			trimRows := 0
+			for _, n := range o.rowCounts[:excess] {
+				trimRows += n
+			}
+			o.rowCounts = o.rowCounts[excess:]
+			o.cachedRows = o.cachedRows[trimRows:]
+			o.cachedLines -= excess
+			if o.cachedLines < 0 {
+				o.cachedLines = 0
+			}
+		} else {
+			// Row counts out of sync — full invalidation as fallback.
+			o.cachedRows = nil
+			o.rowCounts = nil
+			o.cachedLines = 0
+		}
+
 		if o.scrollPos > 0 {
 			o.scrollPos -= excess
 			if o.scrollPos < 0 {
@@ -71,6 +91,7 @@ func (o *OutputPane) SetSize(w, h int) {
 	if w != o.width {
 		// Width changed — word-wrap positions are different, invalidate cache.
 		o.cachedRows = nil
+		o.rowCounts = nil
 		o.cachedLines = 0
 	}
 	o.width = w
@@ -90,6 +111,7 @@ func (o *OutputPane) View() string {
 	// Invalidate cache if width changed.
 	if o.cacheWidth != o.width {
 		o.cachedRows = nil
+		o.rowCounts = nil
 		o.cachedLines = 0
 		o.cacheWidth = o.width
 	}
@@ -100,6 +122,7 @@ func (o *OutputPane) View() string {
 			rendered := renderSegments(segments, o.width)
 			parts := strings.Split(rendered, "\n")
 			o.cachedRows = append(o.cachedRows, parts...)
+			o.rowCounts = append(o.rowCounts, len(parts))
 		}
 		o.cachedLines = len(o.lines)
 	}

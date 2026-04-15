@@ -649,6 +649,8 @@ func main() {
 					if e.Fatigue != nil {
 						desktopNotify.CheckFatigue(*e.Fatigue)
 					}
+				case types.ModeChangeEvent:
+					desktopNotify.Prune()
 				}
 			}
 			p.Send(ui.EventMsg{Events: batch})
