@@ -59,6 +59,33 @@ func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier 
 	return dn
 }
 
+// UpdateConfig replaces the notifier's configuration and recompiles patterns.
+// The dedup map (lastSent) is preserved so cooldowns survive config reloads.
+func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
+	dn.mu.Lock()
+	defer dn.mu.Unlock()
+
+	dn.cfg = cfg
+
+	dn.patterns = nil
+	for _, p := range cfg.Patterns {
+		escaped := regexp.QuoteMeta(p.Pattern)
+		escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
+		escaped = strings.ReplaceAll(escaped, `\?`, `.`)
+		re, err := regexp.Compile("(?i)" + escaped)
+		if err != nil {
+			continue
+		}
+		dn.patterns = append(dn.patterns, &compiledNotifyPattern{
+			pattern: p.Pattern,
+			title:   p.Title,
+			message: p.Message,
+			regex:   re,
+			enabled: p.Enabled,
+		})
+	}
+}
+
 // CheckHealth sends a desktop notification if health drops below threshold.
 func (dn *DesktopNotifier) CheckHealth(health int) {
 	if !dn.cfg.HealthBelow.Enabled {
