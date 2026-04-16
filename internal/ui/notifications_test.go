@@ -304,7 +304,29 @@ func TestEscReturnsConfig(t *testing.T) {
 	if len(closeMsg.Config.Patterns) != 2 {
 		t.Fatalf("expected 2 patterns in returned config, got %d", len(closeMsg.Config.Patterns))
 	}
+	if !closeMsg.Changed {
+		t.Fatal("expected Changed=true after toggling health")
+	}
 	_ = s
+}
+
+func TestEscWithoutChanges(t *testing.T) {
+	s := NewNotificationSettingsScreen(notifyCfg())
+
+	// Esc immediately without any changes.
+	_, cmd := s.Update(keyMsg(tea.KeyEscape))
+	if cmd == nil {
+		t.Fatal("expected a Cmd from Esc")
+	}
+
+	msg := cmd()
+	closeMsg, ok := msg.(NotificationSettingsCloseMsg)
+	if !ok {
+		t.Fatalf("expected NotificationSettingsCloseMsg, got %T", msg)
+	}
+	if closeMsg.Changed {
+		t.Fatal("expected Changed=false when no edits were made")
+	}
 }
 
 func TestEscDuringEditCancels(t *testing.T) {

@@ -387,14 +387,16 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.NotificationSettingsCloseMsg:
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
-		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.Notifications.Desktop = msg.Config
-			if err := config.Save(w.cfg, w.cfgPath); err != nil {
-				log.Printf("saving config: %v", err)
+		if msg.Changed {
+			if w.cfg != nil && w.cfgPath != "" {
+				w.cfg.Notifications.Desktop = msg.Config
+				if err := config.Save(w.cfg, w.cfgPath); err != nil {
+					log.Printf("saving config: %v", err)
+				}
 			}
-		}
-		if w.desktopNotify != nil {
-			w.desktopNotify.UpdateConfig(msg.Config)
+			if w.desktopNotify != nil {
+				w.desktopNotify.UpdateConfig(msg.Config)
+			}
 		}
 		return w, cmd
 

@@ -12,7 +12,8 @@ import (
 
 // NotificationSettingsCloseMsg is sent when the notification settings screen is dismissed.
 type NotificationSettingsCloseMsg struct {
-	Config config.DesktopNotificationsConfig
+	Config  config.DesktopNotificationsConfig
+	Changed bool
 }
 
 // notifyItemKind distinguishes item types in the list.
@@ -53,6 +54,7 @@ type NotificationSettingsScreen struct {
 	editField notifyField
 
 	confirm bool
+	changed bool
 
 	width  int
 	height int
@@ -121,7 +123,8 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 	switch msg.Type {
 	case tea.KeyEscape:
 		cfg := s.currentConfig()
-		return s, func() tea.Msg { return NotificationSettingsCloseMsg{Config: cfg} }
+		changed := s.changed
+		return s, func() tea.Msg { return NotificationSettingsCloseMsg{Config: cfg, Changed: changed} }
 
 	case tea.KeyUp:
 		if s.cursor > 0 {
@@ -141,8 +144,10 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 		case notifyItemThreshold:
 			t := s.thresholdByIndex(item.index)
 			t.Enabled = !t.Enabled
+			s.changed = true
 		case notifyItemPattern:
 			s.patterns[item.index].Enabled = !s.patterns[item.index].Enabled
+			s.changed = true
 		}
 		return s, nil
 
@@ -158,6 +163,7 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 			s.editField = fieldPattern
 			s.editBuf = s.patterns[item.index].Pattern
 		case notifyItemAdd:
+			s.changed = true
 			s.patterns = append(s.patterns, config.NotifyPatternConfig{Enabled: true})
 			s.rebuildItems()
 			s.cursor = len(s.items) - 2 // new pattern is before Add item
@@ -182,8 +188,10 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 				case notifyItemThreshold:
 					t := s.thresholdByIndex(item.index)
 					t.Enabled = !t.Enabled
+					s.changed = true
 				case notifyItemPattern:
 					s.patterns[item.index].Enabled = !s.patterns[item.index].Enabled
+					s.changed = true
 				}
 			}
 		}
@@ -202,6 +210,7 @@ func (s NotificationSettingsScreen) updateConfirm(msg tea.KeyMsg) (NotificationS
 				s.confirm = false
 				item := s.items[s.cursor]
 				if item.kind == notifyItemPattern && item.index < len(s.patterns) {
+					s.changed = true
 					s.patterns = append(s.patterns[:item.index], s.patterns[item.index+1:]...)
 					s.rebuildItems()
 					if s.cursor >= len(s.items) {
@@ -260,6 +269,7 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 				}
 				t := s.thresholdByIndex(item.index)
 				t.Threshold = val
+				s.changed = true
 			}
 			s.editing = false
 
@@ -269,6 +279,7 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 			switch s.editField {
 			case fieldPattern:
 				p.Pattern = value
+				s.changed = true
 				if value == "" {
 					// Empty pattern on confirm — remove entry.
 					s.patterns = append(s.patterns[:item.index], s.patterns[item.index+1:]...)
@@ -283,10 +294,12 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 				}
 			case fieldTitle:
 				p.Title = value
+				s.changed = true
 				s.editField = fieldMessage
 				s.editBuf = p.Message
 			case fieldMessage:
 				p.Message = value
+				s.changed = true
 				s.editing = false
 			}
 		}
@@ -440,7 +453,7 @@ func (s NotificationSettingsScreen) View() string {
 	if s.editing {
 		b.WriteString(dimStyle.Render("[Enter] confirm  [Esc] cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("[Space] toggle  [Enter] edit  [D] delete  [Esc] back"))
+		b.WriteString(dimStyle.Render("[Space] toggle  [Enter] edit  [D] delete  [Esc] save & back"))
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
