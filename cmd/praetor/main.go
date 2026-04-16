@@ -383,6 +383,17 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return w, cmd
 
+	case ui.NotificationSettingsCloseMsg:
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		if w.cfg != nil && w.cfgPath != "" {
+			w.cfg.Notifications.Desktop = msg.Config
+			if err := config.Save(w.cfg, w.cfgPath); err != nil {
+				log.Printf("saving config: %v", err)
+			}
+		}
+		return w, cmd
+
 	case ui.MenuQuitMsg:
 		return w, tea.Quit
 
@@ -610,7 +621,7 @@ func main() {
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
 
-	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoCommands, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority)
+	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoCommands, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

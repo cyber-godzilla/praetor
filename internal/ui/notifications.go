@@ -296,11 +296,153 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 	return s, nil
 }
 
-// Ensure imports are used.
-var (
-	_ = fmt.Sprintf
-	_ = strconv.Itoa
-	_ = strings.TrimSpace
-	_ tea.Cmd
-	_ lipgloss.Style
-)
+func (s NotificationSettingsScreen) View() string {
+	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
+	enabledStyle := lipgloss.NewStyle().Foreground(colorOrange)
+	disabledStyle := lipgloss.NewStyle().Foreground(colorDim)
+
+	boxWidth := s.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorOrange).
+		Padding(1, 2).
+		Width(boxWidth)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Notification Settings"))
+	b.WriteString("\n\n")
+
+	// Viewport calculation.
+	totalItems := len(s.items)
+	maxVisible := s.height - 12
+	if maxVisible < 3 {
+		maxVisible = 3
+	}
+	start := viewportWindow(totalItems, maxVisible, s.cursor)
+	end := start + maxVisible
+	if end > totalItems {
+		end = totalItems
+	}
+
+	patternHeaderPrinted := false
+
+	for idx := start; idx < end; idx++ {
+		item := s.items[idx]
+
+		// Print section headers as needed.
+		if idx == start && item.kind == notifyItemThreshold {
+			b.WriteString(headerStyle.Render("  Thresholds"))
+			b.WriteByte('\n')
+		}
+		if !patternHeaderPrinted && (item.kind == notifyItemPattern || item.kind == notifyItemAdd) {
+			patternHeaderPrinted = true
+			b.WriteByte('\n')
+			b.WriteString(headerStyle.Render("  Patterns"))
+			b.WriteByte('\n')
+		}
+
+		cursor := "  "
+		cursorStyle := normalStyle
+		if idx == s.cursor {
+			cursor = "> "
+			cursorStyle = selectedStyle
+		}
+
+		switch item.kind {
+		case notifyItemThreshold:
+			t := s.thresholdByIndex(item.index)
+			indicator := disabledStyle.Render("○")
+			if t.Enabled {
+				indicator = enabledStyle.Render("●")
+			}
+
+			name := thresholdName(item.index)
+			if s.editing && idx == s.cursor {
+				b.WriteString(cursorStyle.Render(cursor))
+				b.WriteString(indicator)
+				b.WriteString(" ")
+				b.WriteString(cursorStyle.Render(fmt.Sprintf("%s below ", name)))
+				b.WriteString(normalStyle.Render(s.editBuf + "█"))
+				b.WriteString(cursorStyle.Render("%"))
+			} else {
+				b.WriteString(cursorStyle.Render(cursor))
+				b.WriteString(indicator)
+				b.WriteString(" ")
+				b.WriteString(cursorStyle.Render(fmt.Sprintf("%s below %d%%", name, t.Threshold)))
+			}
+			b.WriteByte('\n')
+
+		case notifyItemPattern:
+			p := s.patterns[item.index]
+			indicator := disabledStyle.Render("○")
+			if p.Enabled {
+				indicator = enabledStyle.Render("●")
+			}
+
+			if s.confirm && idx == s.cursor {
+				b.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(
+					fmt.Sprintf("  Delete %q? [Y/N]", p.Pattern)))
+				b.WriteByte('\n')
+			} else if s.editing && idx == s.cursor {
+				var fieldName string
+				switch s.editField {
+				case fieldPattern:
+					fieldName = "Pattern"
+				case fieldTitle:
+					fieldName = "Title"
+				case fieldMessage:
+					fieldName = "Message"
+				}
+				b.WriteString(cursorStyle.Render(cursor))
+				b.WriteString(indicator)
+				b.WriteString(" ")
+				b.WriteString(cursorStyle.Render(fieldName + ": "))
+				b.WriteString(normalStyle.Render(s.editBuf + "█"))
+				b.WriteByte('\n')
+			} else {
+				title := p.Title
+				message := p.Message
+				if title == "" {
+					title = `""`
+				} else {
+					title = fmt.Sprintf("%q", title)
+				}
+				if message == "" {
+					message = `""`
+				} else {
+					message = fmt.Sprintf("%q", message)
+				}
+				b.WriteString(cursorStyle.Render(cursor))
+				b.WriteString(indicator)
+				b.WriteString(" ")
+				b.WriteString(cursorStyle.Render(fmt.Sprintf("%s — %s / %s", p.Pattern, title, message)))
+				b.WriteByte('\n')
+			}
+
+		case notifyItemAdd:
+			if idx == s.cursor {
+				b.WriteString(selectedStyle.Render(cursor + "+ Add new pattern..."))
+			} else {
+				b.WriteString(dimStyle.Render(cursor + "+ Add new pattern..."))
+			}
+			b.WriteByte('\n')
+		}
+	}
+
+	b.WriteByte('\n')
+	if s.editing {
+		b.WriteString(dimStyle.Render("[Enter] confirm  [Esc] cancel"))
+	} else {
+		b.WriteString(dimStyle.Render("[Space] toggle  [Enter] edit  [D] delete  [Esc] back"))
+	}
+
+	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
+		boxStyle.Render(b.String()))
+}

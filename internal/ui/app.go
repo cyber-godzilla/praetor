@@ -57,21 +57,21 @@ const kittyDeleteAll = "\033_Ga=d,d=A,q=2;\033\\"
 type appState int
 
 const (
-	stateSplash           appState = iota // splash screen on startup
-	stateAccountSelect                    // picking from stored accounts
-	stateLogin                            // entering new credentials
-	stateAuthenticating                   // login submitted, waiting for result
-	stateCredentialPrompt                 // asking whether to save credentials
-	stateGame                             // connected, showing game UI
-	stateMenu                             // overlay menu
-	stateModePicker                       // editing quick-cycle mode list
-	stateHighlights                       // editing highlight patterns
-	stateHelp                             // help screen
-	stateTabEditor                        // custom tab editor
-	statePersistentData                   // persistent data viewer
-	stateScriptDirs                       // script directory management
-	statePriorityCmds                     // priority command management
-	stateNotificationSettings             // notification settings editor
+	stateSplash               appState = iota // splash screen on startup
+	stateAccountSelect                        // picking from stored accounts
+	stateLogin                                // entering new credentials
+	stateAuthenticating                       // login submitted, waiting for result
+	stateCredentialPrompt                     // asking whether to save credentials
+	stateGame                                 // connected, showing game UI
+	stateMenu                                 // overlay menu
+	stateModePicker                           // editing quick-cycle mode list
+	stateHighlights                           // editing highlight patterns
+	stateHelp                                 // help screen
+	stateTabEditor                            // custom tab editor
+	statePersistentData                       // persistent data viewer
+	stateScriptDirs                           // script directory management
+	statePriorityCmds                         // priority command management
+	stateNotificationSettings                 // notification settings editor
 )
 
 // App is the root Bubbletea model composing all TUI components.
@@ -113,21 +113,23 @@ type App struct {
 	logPath       string
 	unread        []bool
 
-	splash             Splash
-	credentialPrompt   CredentialPrompt
-	persistentData     PersistentDataScreen
-	scriptDirsScreen   ScriptDirsScreen
-	scriptDirsList     []string
-	priorityCmdsScreen PriorityCmdsScreen
-	priorityCmdsList   []string
-	version            string
+	splash                  Splash
+	credentialPrompt        CredentialPrompt
+	persistentData          PersistentDataScreen
+	scriptDirsScreen        ScriptDirsScreen
+	scriptDirsList          []string
+	priorityCmdsScreen      PriorityCmdsScreen
+	priorityCmdsList        []string
+	notificationSettings    NotificationSettingsScreen
+	notificationSettingsCfg config.DesktopNotificationsConfig
+	version                 string
 }
 
 // NewApp creates a new App with the specified initial configuration.
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoCommands bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string) App {
+func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoCommands bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -164,10 +166,11 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		logPath:       logPath,
 		unread:        make([]bool, len(tabs)),
 
-		splash:           NewSplash(version),
-		scriptDirsList:   scriptDirs,
-		priorityCmdsList: priorityCmds,
-		version:          version,
+		splash:                  NewSplash(version),
+		scriptDirsList:          scriptDirs,
+		priorityCmdsList:        priorityCmds,
+		notificationSettingsCfg: notifyCfg,
+		version:                 version,
 	}
 	a.login.hasAccounts = len(accounts) > 0
 	return a
@@ -277,6 +280,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case statePriorityCmds:
 			var cmd tea.Cmd
 			a.priorityCmdsScreen, cmd = a.priorityCmdsScreen.Update(msg)
+			return a, cmd
+		case stateNotificationSettings:
+			var cmd tea.Cmd
+			a.notificationSettings, cmd = a.notificationSettings.Update(msg)
 			return a, cmd
 		case stateGame:
 			return a.updateMain(msg)
@@ -420,6 +427,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Changed {
 			a.priorityCmdsList = msg.Cmds
 		}
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
+
+	case MenuNotificationSettingsMsg:
+		a.notificationSettings = NewNotificationSettingsScreen(a.notificationSettingsCfg)
+		a.notificationSettings.SetSize(a.width, a.height)
+		a.state = stateNotificationSettings
+		return a, nil
+
+	case NotificationSettingsCloseMsg:
+		a.notificationSettingsCfg = msg.Config
 		a.state = stateMenu
 		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
@@ -1024,6 +1044,7 @@ func (a *App) recalcLayout() {
 	a.persistentData.SetSize(a.width, a.height)
 	a.scriptDirsScreen.SetSize(a.width, a.height)
 	a.priorityCmdsScreen.SetSize(a.width, a.height)
+	a.notificationSettings.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1067,6 +1088,8 @@ func (a App) View() string {
 		return kittyDeleteAll + a.scriptDirsScreen.View()
 	case statePriorityCmds:
 		return kittyDeleteAll + a.priorityCmdsScreen.View()
+	case stateNotificationSettings:
+		return kittyDeleteAll + a.notificationSettings.View()
 	}
 
 	// stateGame:
