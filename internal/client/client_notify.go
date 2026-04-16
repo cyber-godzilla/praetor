@@ -16,7 +16,7 @@ import (
 // DesktopNotifier sends desktop notifications for health, fatigue,
 // and pattern-matched game text.
 type DesktopNotifier struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	cfg      config.DesktopNotificationsConfig
 	patterns []*compiledNotifyPattern
 	lastSent map[string]time.Time // dedup key → last send time
@@ -88,27 +88,41 @@ func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
 
 // CheckHealth sends a desktop notification if health drops below threshold.
 func (dn *DesktopNotifier) CheckHealth(health int) {
-	if !dn.cfg.HealthBelow.Enabled {
+	dn.mu.RLock()
+	enabled := dn.cfg.HealthBelow.Enabled
+	threshold := dn.cfg.HealthBelow.Threshold
+	dn.mu.RUnlock()
+
+	if !enabled {
 		return
 	}
-	if health <= dn.cfg.HealthBelow.Threshold {
+	if health <= threshold {
 		dn.send("Health Warning", fmt.Sprintf("Health at %d%%", health), "health")
 	}
 }
 
 // CheckFatigue sends a desktop notification if fatigue drops below threshold.
 func (dn *DesktopNotifier) CheckFatigue(fatigue int) {
-	if !dn.cfg.FatigueBelow.Enabled {
+	dn.mu.RLock()
+	enabled := dn.cfg.FatigueBelow.Enabled
+	threshold := dn.cfg.FatigueBelow.Threshold
+	dn.mu.RUnlock()
+
+	if !enabled {
 		return
 	}
-	if fatigue <= dn.cfg.FatigueBelow.Threshold {
+	if fatigue <= threshold {
 		dn.send("Fatigue Warning", fmt.Sprintf("Fatigue at %d%%", fatigue), "fatigue")
 	}
 }
 
 // CheckText sends a desktop notification if text matches any enabled pattern.
 func (dn *DesktopNotifier) CheckText(text string) {
-	for _, p := range dn.patterns {
+	dn.mu.RLock()
+	patterns := dn.patterns
+	dn.mu.RUnlock()
+
+	for _, p := range patterns {
 		if !p.enabled {
 			continue
 		}

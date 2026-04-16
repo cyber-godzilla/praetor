@@ -9,12 +9,12 @@ import (
 
 // Menu action messages.
 type MenuReloadScriptsMsg struct{}
-type MenuQuickCycleMsg struct{}    // open the quick-cycle mode picker
-type MenuColorWordsMsg struct{}    // toggle color words
-type MenuEchoMsg struct{}          // toggle command echo
-type MenuAutoReconnectMsg struct{} // toggle auto reconnect
-type MenuHideIPsMsg struct{}       // toggle IP address masking
-type MenuGameLogsMsg struct{}              // toggle session logging
+type MenuQuickCycleMsg struct{}           // open the quick-cycle mode picker
+type MenuColorWordsMsg struct{}           // toggle color words
+type MenuEchoMsg struct{}                 // toggle command echo
+type MenuAutoReconnectMsg struct{}        // toggle auto reconnect
+type MenuHideIPsMsg struct{}              // toggle IP address masking
+type MenuGameLogsMsg struct{}             // toggle session logging
 type MenuNotificationSettingsMsg struct{} // open notification settings
 type MenuLogPathMsg struct {
 	Path string

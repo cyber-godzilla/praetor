@@ -25,16 +25,17 @@ var version = "dev"
 
 // wrapper wraps the App model and intercepts messages to wire them to the Client.
 type wrapper struct {
-	app          ui.App
-	gc           *client.Client
-	prog         *tea.Program
-	cfg          *config.Config
-	cfgPath      string
-	fromLogin    bool   // true if auth came from login form (not account select)
-	lastUsername string // username from login form, preserves original casing
-	lastPassword string // password from login form, cleared after use
-	dataDir      string
-	configDir    string
+	app           ui.App
+	gc            *client.Client
+	prog          *tea.Program
+	cfg           *config.Config
+	cfgPath       string
+	fromLogin     bool   // true if auth came from login form (not account select)
+	lastUsername  string // username from login form, preserves original casing
+	lastPassword  string // password from login form, cleared after use
+	dataDir       string
+	configDir     string
+	desktopNotify *client.DesktopNotifier
 }
 
 func (w wrapper) Init() tea.Cmd {
@@ -392,6 +393,9 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				log.Printf("saving config: %v", err)
 			}
 		}
+		if w.desktopNotify != nil {
+			w.desktopNotify.UpdateConfig(msg.Config)
+		}
 		return w, cmd
 
 	case ui.MenuQuitMsg:
@@ -623,7 +627,7 @@ func main() {
 
 	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoCommands, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop)
 
-	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir}
+	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Bridge game events to the Bubbletea program. We drain all available
