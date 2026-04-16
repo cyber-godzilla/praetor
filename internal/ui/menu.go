@@ -14,7 +14,8 @@ type MenuColorWordsMsg struct{}    // toggle color words
 type MenuEchoMsg struct{}          // toggle command echo
 type MenuAutoReconnectMsg struct{} // toggle auto reconnect
 type MenuHideIPsMsg struct{}       // toggle IP address masking
-type MenuGameLogsMsg struct{}      // toggle session logging
+type MenuGameLogsMsg struct{}              // toggle session logging
+type MenuNotificationSettingsMsg struct{} // open notification settings
 type MenuLogPathMsg struct {
 	Path string
 }
@@ -88,6 +89,10 @@ func NewMenu(colorWords, echo, autoReconnect, hideIPs, gameLogs bool, logPath st
 
 		{label: "Connection", isHeader: true},
 		{label: reconLabel, action: func() tea.Msg { return MenuAutoReconnectMsg{} }},
+		{label: "", isHeader: true},
+
+		{label: "Notifications", isHeader: true},
+		{label: "Notification Settings", action: func() tea.Msg { return MenuNotificationSettingsMsg{} }},
 		{label: "", isHeader: true},
 
 		{label: "Logs", isHeader: true},

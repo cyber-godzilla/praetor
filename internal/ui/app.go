@@ -71,6 +71,7 @@ const (
 	statePersistentData                   // persistent data viewer
 	stateScriptDirs                       // script directory management
 	statePriorityCmds                     // priority command management
+	stateNotificationSettings             // notification settings editor
 )
 
 // App is the root Bubbletea model composing all TUI components.
