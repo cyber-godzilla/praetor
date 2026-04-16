@@ -110,6 +110,192 @@ func thresholdName(idx int) string {
 	return "Fatigue"
 }
 
+func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettingsScreen, tea.Cmd) {
+	if s.confirm {
+		return s.updateConfirm(msg)
+	}
+	if s.editing {
+		return s.updateEditing(msg)
+	}
+
+	switch msg.Type {
+	case tea.KeyEscape:
+		cfg := s.currentConfig()
+		return s, func() tea.Msg { return NotificationSettingsCloseMsg{Config: cfg} }
+
+	case tea.KeyUp:
+		if s.cursor > 0 {
+			s.cursor--
+		}
+		return s, nil
+
+	case tea.KeyDown:
+		if s.cursor < len(s.items)-1 {
+			s.cursor++
+		}
+		return s, nil
+
+	case tea.KeySpace:
+		item := s.items[s.cursor]
+		switch item.kind {
+		case notifyItemThreshold:
+			t := s.thresholdByIndex(item.index)
+			t.Enabled = !t.Enabled
+		case notifyItemPattern:
+			s.patterns[item.index].Enabled = !s.patterns[item.index].Enabled
+		}
+		return s, nil
+
+	case tea.KeyEnter:
+		item := s.items[s.cursor]
+		switch item.kind {
+		case notifyItemThreshold:
+			t := s.thresholdByIndex(item.index)
+			s.editing = true
+			s.editBuf = strconv.Itoa(t.Threshold)
+		case notifyItemPattern:
+			s.editing = true
+			s.editField = fieldPattern
+			s.editBuf = s.patterns[item.index].Pattern
+		case notifyItemAdd:
+			s.patterns = append(s.patterns, config.NotifyPatternConfig{Enabled: true})
+			s.rebuildItems()
+			s.cursor = len(s.items) - 2 // new pattern is before Add item
+			s.editing = true
+			s.editField = fieldPattern
+			s.editBuf = ""
+		}
+		return s, nil
+
+	case tea.KeyRunes:
+		if len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'd', 'D':
+				item := s.items[s.cursor]
+				if item.kind == notifyItemPattern {
+					s.confirm = true
+				}
+			case ' ':
+				// Toggle (fallback for terminals that send space as rune).
+				item := s.items[s.cursor]
+				switch item.kind {
+				case notifyItemThreshold:
+					t := s.thresholdByIndex(item.index)
+					t.Enabled = !t.Enabled
+				case notifyItemPattern:
+					s.patterns[item.index].Enabled = !s.patterns[item.index].Enabled
+				}
+			}
+		}
+		return s, nil
+	}
+
+	return s, nil
+}
+
+func (s NotificationSettingsScreen) updateConfirm(msg tea.KeyMsg) (NotificationSettingsScreen, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyRunes:
+		if len(msg.Runes) == 1 {
+			switch msg.Runes[0] {
+			case 'y', 'Y':
+				s.confirm = false
+				item := s.items[s.cursor]
+				if item.kind == notifyItemPattern && item.index < len(s.patterns) {
+					s.patterns = append(s.patterns[:item.index], s.patterns[item.index+1:]...)
+					s.rebuildItems()
+					if s.cursor >= len(s.items) {
+						s.cursor = len(s.items) - 1
+					}
+				}
+				return s, nil
+			case 'n', 'N':
+				s.confirm = false
+				return s, nil
+			}
+		}
+	case tea.KeyEscape:
+		s.confirm = false
+		return s, nil
+	}
+	return s, nil
+}
+
+func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationSettingsScreen, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		item := s.items[s.cursor]
+		if item.kind == notifyItemPattern && s.editField == fieldPattern && s.patterns[item.index].Pattern == "" {
+			// New pattern with empty pattern field — remove it.
+			s.patterns = append(s.patterns[:item.index], s.patterns[item.index+1:]...)
+			s.rebuildItems()
+			if s.cursor >= len(s.items) {
+				s.cursor = len(s.items) - 1
+			}
+		}
+		s.editing = false
+		return s, nil
+
+	case tea.KeyBackspace:
+		if len(s.editBuf) > 0 {
+			s.editBuf = s.editBuf[:len(s.editBuf)-1]
+		}
+		return s, nil
+
+	case tea.KeyRunes:
+		s.editBuf += string(msg.Runes)
+		return s, nil
+
+	case tea.KeyEnter:
+		item := s.items[s.cursor]
+		switch item.kind {
+		case notifyItemThreshold:
+			val, err := strconv.Atoi(strings.TrimSpace(s.editBuf))
+			if err == nil {
+				if val < 0 {
+					val = 0
+				}
+				if val > 100 {
+					val = 100
+				}
+				t := s.thresholdByIndex(item.index)
+				t.Threshold = val
+			}
+			s.editing = false
+
+		case notifyItemPattern:
+			p := &s.patterns[item.index]
+			value := strings.TrimSpace(s.editBuf)
+			switch s.editField {
+			case fieldPattern:
+				p.Pattern = value
+				if value == "" {
+					// Empty pattern on confirm — remove entry.
+					s.patterns = append(s.patterns[:item.index], s.patterns[item.index+1:]...)
+					s.rebuildItems()
+					if s.cursor >= len(s.items) {
+						s.cursor = len(s.items) - 1
+					}
+					s.editing = false
+				} else {
+					s.editField = fieldTitle
+					s.editBuf = p.Title
+				}
+			case fieldTitle:
+				p.Title = value
+				s.editField = fieldMessage
+				s.editBuf = p.Message
+			case fieldMessage:
+				p.Message = value
+				s.editing = false
+			}
+		}
+		return s, nil
+	}
+
+	return s, nil
+}
+
 // Ensure imports are used.
 var (
 	_ = fmt.Sprintf
