@@ -11,7 +11,8 @@ import (
 type MenuReloadScriptsMsg struct{}
 type MenuQuickCycleMsg struct{}           // open the quick-cycle mode picker
 type MenuColorWordsMsg struct{}           // toggle color words
-type MenuEchoMsg struct{}                 // toggle command echo
+type MenuEchoTypedMsg struct{}            // toggle echo of user-typed commands
+type MenuEchoScriptMsg struct{}           // toggle echo of script-sent commands
 type MenuAutoReconnectMsg struct{}        // toggle auto reconnect
 type MenuHideIPsMsg struct{}              // toggle IP address masking
 type MenuGameLogsMsg struct{}             // toggle session logging
@@ -45,14 +46,18 @@ type Menu struct {
 	message     string // transient status message, cleared on next keypress
 }
 
-func NewMenu(colorWords, echo, autoReconnect, hideIPs, gameLogs bool, logPath string) Menu {
+func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs bool, logPath string) Menu {
 	cwLabel := "Colorwords: OFF"
 	if colorWords {
 		cwLabel = "Colorwords: ON"
 	}
-	echoLabel := "Echo Commands: OFF"
-	if echo {
-		echoLabel = "Echo Commands: ON"
+	echoTypedLabel := "Echo Typed Commands: OFF"
+	if echoTyped {
+		echoTypedLabel = "Echo Typed Commands: ON"
+	}
+	echoScriptLabel := "Echo Script Commands: OFF"
+	if echoScript {
+		echoScriptLabel = "Echo Script Commands: ON"
 	}
 	reconLabel := "Auto Reconnect: OFF"
 	if autoReconnect {
@@ -83,7 +88,8 @@ func NewMenu(colorWords, echo, autoReconnect, hideIPs, gameLogs bool, logPath st
 		{label: "Highlights", action: func() tea.Msg { return MenuHighlightsMsg{} }},
 		{label: "Custom Tabs", action: func() tea.Msg { return MenuTabsMsg{} }},
 		{label: cwLabel, action: func() tea.Msg { return MenuColorWordsMsg{} }},
-		{label: echoLabel, action: func() tea.Msg { return MenuEchoMsg{} }},
+		{label: echoTypedLabel, action: func() tea.Msg { return MenuEchoTypedMsg{} }},
+		{label: echoScriptLabel, action: func() tea.Msg { return MenuEchoScriptMsg{} }},
 		{label: ipLabel, action: func() tea.Msg { return MenuHideIPsMsg{} }},
 		{label: "", isHeader: true},
 
@@ -197,6 +203,10 @@ func (m Menu) updatePathEdit(msg tea.KeyMsg) (Menu, tea.Cmd) {
 
 	case tea.KeyRunes:
 		m.pathBuf += string(msg.Runes)
+		return m, nil
+
+	case tea.KeySpace:
+		m.pathBuf += " "
 		return m, nil
 	}
 	return m, nil

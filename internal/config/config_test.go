@@ -227,6 +227,100 @@ server:
 	}
 }
 
+func TestLoadConfig_LegacyEchoCommandsMigratesToBoth(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+server:
+  host: game.example.com
+ui:
+  echo_commands: false
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if cfg.UI.EchoTyped {
+		t.Error("legacy echo_commands: false should set EchoTyped to false")
+	}
+	if cfg.UI.EchoScript {
+		t.Error("legacy echo_commands: false should set EchoScript to false")
+	}
+}
+
+func TestLoadConfig_NewEchoKeysHonored(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+server:
+  host: game.example.com
+ui:
+  echo_typed_commands: true
+  echo_script_commands: false
+`), 0644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !cfg.UI.EchoTyped {
+		t.Error("explicit echo_typed_commands: true not honored")
+	}
+	if cfg.UI.EchoScript {
+		t.Error("explicit echo_script_commands: false not honored")
+	}
+}
+
+func TestSaveConfig_OmitsLegacyEchoKey(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	cfg := Defaults()
+	if err := Save(cfg, cfgPath); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(data)
+	if !contains(s, "echo_typed_commands:") {
+		t.Error("saved config missing echo_typed_commands key")
+	}
+	if !contains(s, "echo_script_commands:") {
+		t.Error("saved config missing echo_script_commands key")
+	}
+	// Legacy key must not be present under ui: section.
+	if containsLegacyUIEcho(s) {
+		t.Error("saved config should not emit legacy echo_commands under ui:")
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+// containsLegacyUIEcho returns true if a top-level ui.echo_commands key is
+// present (distinct from custom_tabs[].echo_commands).
+func containsLegacyUIEcho(s string) bool {
+	// Look for "\n  echo_commands:" — 2-space indent = direct child of ui:.
+	// Under custom_tabs the indent is 4+ spaces.
+	return contains(s, "\n  echo_commands:")
+}
+
 func TestLoadConfigDefaults(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

@@ -145,11 +145,16 @@ Colorwords automatically renders color names (e.g., "crimson", "emerald green", 
 
 ## Enable/Disable Echo Commands
 
-When enabled, commands you type (and commands sent by scripts) are echoed back in the output window as italic text.
+Commands can be echoed back in the output window as italic text. The two sources are controlled independently:
+
+- **Echo Typed Commands** — commands you type
+- **Echo Script Commands** — commands sent by Lua scripts
 
 1. Press **Esc** to open the menu
-2. Select **Echo Commands: ON/OFF** (under Display)
+2. Select **Echo Typed Commands: ON/OFF** or **Echo Script Commands: ON/OFF** (under Display)
 3. Press **Enter** to toggle
+
+**Custom tab routing:** Exclude-only custom tabs do not receive command echoes by default (otherwise they would catch every echo, since exclude rules match everything not explicitly excluded). Open a tab's edit view via Esc → Custom Tabs → Enter, and press **E** to toggle `Echoes: ON/OFF` for that tab. The option is hidden for tabs that have at least one active match rule, since such tabs already filter echoes via their patterns.
 
 ---
 

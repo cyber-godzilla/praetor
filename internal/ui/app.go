@@ -106,7 +106,8 @@ type App struct {
 	highlights    []config.HighlightConfig
 	help          HelpScreen
 	colorWords    bool
-	echoEnabled   bool
+	echoTyped     bool
+	echoScript    bool
 	autoReconnect bool
 	hideIPs       bool
 	gameLogs      bool
@@ -129,7 +130,7 @@ type App struct {
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoCommands bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig) App {
+func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -155,11 +156,12 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		input:         NewInput(),
 		login:         NewLoginScreen(),
 		accountSelect: NewAccountSelect(accounts),
-		menu:          NewMenu(colorWords, echoCommands, autoReconnect, hideIPs, gameLogs, logPath),
+		menu:          NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs, logPath),
 		quickCycle:    NewQuickCycle(quickCycleModes),
 		highlights:    highlights,
 		colorWords:    colorWords,
-		echoEnabled:   echoCommands,
+		echoTyped:     echoTyped,
+		echoScript:    echoScript,
 		autoReconnect: autoReconnect,
 		hideIPs:       hideIPs,
 		gameLogs:      gameLogs,
@@ -309,15 +311,23 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MenuColorWordsMsg:
 		a.colorWords = !a.colorWords
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
-	case MenuEchoMsg:
-		a.echoEnabled = !a.echoEnabled
+	case MenuEchoTypedMsg:
+		a.echoTyped = !a.echoTyped
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu.cursor = cursor
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
+
+	case MenuEchoScriptMsg:
+		a.echoScript = !a.echoScript
+		cursor := a.menu.cursor
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
@@ -325,7 +335,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MenuAutoReconnectMsg:
 		a.autoReconnect = !a.autoReconnect
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
@@ -333,7 +343,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MenuHideIPsMsg:
 		a.hideIPs = !a.hideIPs
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
@@ -341,7 +351,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MenuGameLogsMsg:
 		a.gameLogs = !a.gameLogs
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
@@ -349,7 +359,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case MenuLogPathMsg:
 		a.logPath = msg.Path
 		cursor := a.menu.cursor
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.cursor = cursor
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
@@ -362,7 +372,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HelpCloseMsg:
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -373,7 +383,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case HighlightsCloseMsg:
 		a.highlights = msg.Highlights
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -386,7 +396,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ModePickerCloseMsg:
 		a.quickCycle.SetModes(msg.Modes)
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -413,7 +423,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.scriptDirsList = msg.Dirs
 		}
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -428,7 +438,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.priorityCmdsList = msg.Cmds
 		}
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -441,7 +451,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case NotificationSettingsCloseMsg:
 		a.notificationSettingsCfg = msg.Config
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -469,7 +479,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.recalcLayout()
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -485,7 +495,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PersistentDataCloseMsg:
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -653,7 +663,7 @@ func (a App) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyEscape:
 		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoEnabled, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
@@ -802,7 +812,7 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			}
 
 			// Route text to All + matching custom tabs.
-			routed := RouteText(a.tabs, styled, ev.Text)
+			routed := RouteText(a.tabs, styled, ev.Text, ev.IsEcho)
 			// Only count non-empty text for unread markers.
 			if ev.Text != "" {
 				routedTabs |= routed

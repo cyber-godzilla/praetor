@@ -20,11 +20,12 @@ const (
 
 // TabDef defines a tab in the dynamic tab system.
 type TabDef struct {
-	Name    string
-	Kind    TabKind
-	Visible bool
-	Rules   []TabRule
-	Pane    OutputPane
+	Name         string
+	Kind         TabKind
+	Visible      bool
+	Rules        []TabRule
+	EchoCommands bool // custom tabs: route command echoes when tab is exclude-only
+	Pane         OutputPane
 }
 
 // TabRule is a compiled match rule for custom tabs.
@@ -74,11 +75,12 @@ func BuildTabs(scrollback int, debugMode bool, customTabs []config.CustomTabConf
 			})
 		}
 		tabs = append(tabs, TabDef{
-			Name:    ct.Name,
-			Kind:    TabKindCustom,
-			Visible: ct.Visible,
-			Rules:   rules,
-			Pane:    NewOutputPane(scrollback),
+			Name:         ct.Name,
+			Kind:         TabKindCustom,
+			Visible:      ct.Visible,
+			Rules:        rules,
+			EchoCommands: ct.EchoCommands,
+			Pane:         NewOutputPane(scrollback),
 		})
 	}
 
@@ -132,8 +134,9 @@ func MatchesTab(text string, rules []TabRule) bool {
 }
 
 // RouteText sends styled segments to all matching custom tabs.
+// isEcho marks the text as a command echo (user-typed or script-sent).
 // Returns a bitmask of tab indices that received text.
-func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string) uint64 {
+func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, isEcho bool) uint64 {
 	var routed uint64
 	for i := range tabs {
 		switch tabs[i].Kind {
@@ -141,13 +144,30 @@ func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string) 
 			tabs[i].Pane.Append(segments)
 			routed |= 1 << uint(i)
 		case TabKindCustom:
-			if tabs[i].Visible && MatchesTab(plainText, tabs[i].Rules) {
+			if !tabs[i].Visible {
+				continue
+			}
+			if isEcho && !tabs[i].EchoCommands && isExcludeOnly(tabs[i].Rules) {
+				continue
+			}
+			if MatchesTab(plainText, tabs[i].Rules) {
 				tabs[i].Pane.Append(segments)
 				routed |= 1 << uint(i)
 			}
 		}
 	}
 	return routed
+}
+
+// isExcludeOnly reports whether the tab has no active include rules.
+// Zero-rule tabs are considered exclude-only (they catch everything).
+func isExcludeOnly(rules []TabRule) bool {
+	for _, r := range rules {
+		if r.Active && r.Include {
+			return false
+		}
+	}
+	return true
 }
 
 // TabsToConfig converts the current tab state back to config for saving.
@@ -158,8 +178,9 @@ func TabsToConfig(tabs []TabDef) []config.CustomTabConfig {
 			continue
 		}
 		ct := config.CustomTabConfig{
-			Name:    t.Name,
-			Visible: t.Visible,
+			Name:         t.Name,
+			Visible:      t.Visible,
+			EchoCommands: t.EchoCommands,
 		}
 		for _, r := range t.Rules {
 			ct.Rules = append(ct.Rules, config.TabRuleConfig{

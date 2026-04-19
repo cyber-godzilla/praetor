@@ -46,6 +46,7 @@ type GameTextEvent struct {
 	Styled    []StyledSegment
 	Timestamp time.Time
 	Raw       string
+	IsEcho    bool // true for command-echo events (user-typed or script-sent)
 }
 
 func (GameTextEvent) eventMarker() {}

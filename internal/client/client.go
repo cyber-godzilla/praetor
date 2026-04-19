@@ -19,7 +19,8 @@ import (
 
 // Settings holds user-configurable client settings.
 type Settings struct {
-	CommandEcho bool
+	EchoTyped  bool // echo commands the user types
+	EchoScript bool // echo commands sent by Lua scripts
 }
 
 // Client is the top-level orchestrator that wires session, engine, protocol,
@@ -36,8 +37,6 @@ type Client struct {
 	cancelReconnect chan struct{}
 	cancelRun       chan struct{} // cancels the ModeChanges listener goroutine
 	cancelMu        sync.Mutex
-	lastHealth      int
-	lastFatigue     int
 
 	// htmlIndent tracks <ul> nesting across protocol lines for indentation.
 	htmlIndent int
@@ -66,11 +65,9 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		Session:     session.New(),
 		Engine:      eng,
 		Creds:       creds,
-		Settings:    Settings{CommandEcho: true},
+		Settings:    Settings{EchoTyped: true, EchoScript: true},
 		events:      make(chan types.Event, 256),
 		reconnector: recon,
-		lastHealth:  100,
-		lastFatigue: 100,
 	}, nil
 }
 
@@ -187,13 +184,14 @@ func (c *Client) SendCommand(input string) {
 	}
 
 	// Echo the sent command in the output pane as italic text.
-	if c.Settings.CommandEcho {
+	if c.Settings.EchoTyped {
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   input,
 				Italic: true,
 			}},
 			Timestamp: time.Now(),
+			IsEcho:    true,
 		})
 	}
 }
@@ -278,9 +276,6 @@ func (c *Client) handleSkoot(line string) {
 
 	// Update engine status values for Lua access.
 	c.Engine.Status().Update(ev.Health, ev.Fatigue, ev.Encumbrance, ev.Satiation)
-
-	// Health/fatigue notifications.
-	c.checkHealthNotifications(ev)
 }
 
 // handleSecret processes SECRET lines by performing the auth handshake.
@@ -435,40 +430,19 @@ func (c *Client) drainQueue() {
 
 			c.emit(types.CommandEvent{Command: cmd.Command})
 
-			// Echo engine commands in the output if command echo is enabled.
-			if c.Settings.CommandEcho {
+			// Echo engine commands in the output if script echo is enabled.
+			if c.Settings.EchoScript {
 				c.emit(types.GameTextEvent{
 					Styled: []types.StyledSegment{{
 						Text:   cmd.Command,
 						Italic: true,
 					}},
 					Timestamp: time.Now(),
+					IsEcho:    true,
 				})
 			}
 		}
 	}()
-}
-
-// checkHealthNotifications sends push notifications when health or fatigue
-// cross critical thresholds.
-func (c *Client) checkHealthNotifications(ev *types.SKOOTUpdateEvent) {
-	if ev.Health != nil {
-		health := *ev.Health
-		if health <= 25 && c.lastHealth > 25 {
-			c.sendNotification("Urgent", fmt.Sprintf("Health critical: %d%%", health))
-		} else if health <= 75 && c.lastHealth > 75 {
-			c.sendNotification("Ready To Start Cooldown", fmt.Sprintf("Health at %d%%", health))
-		}
-		c.lastHealth = health
-	}
-
-	if ev.Fatigue != nil {
-		fatigue := *ev.Fatigue
-		if fatigue <= 0 && c.lastFatigue > 0 {
-			c.sendNotification("Ready To Start Cooldown", "Fatigue depleted")
-		}
-		c.lastFatigue = fatigue
-	}
 }
 
 // sendNotification sends a desktop notification and emits a NotificationEvent.

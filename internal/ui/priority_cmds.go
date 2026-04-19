@@ -85,6 +85,9 @@ func (s PriorityCmdsScreen) Update(msg tea.KeyMsg) (PriorityCmdsScreen, tea.Cmd)
 		case tea.KeyRunes:
 			s.addBuf += string(msg.Runes)
 			return s, nil
+		case tea.KeySpace:
+			s.addBuf += " "
+			return s, nil
 		}
 		return s, nil
 	}

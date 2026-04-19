@@ -64,7 +64,8 @@ ui:
   quick_cycle_modes:              # Modes cycled by Alt+M
     - disable
   color_words: false              # Color word highlighting
-  echo_commands: true             # Show sent commands in output
+  echo_typed_commands: true       # Echo commands you type
+  echo_script_commands: true      # Echo commands sent by Lua scripts
   hide_ips: false                 # Scramble IP addresses in text
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
@@ -77,6 +78,7 @@ All UI toggles are available via the Esc menu and saved automatically.
   custom_tabs:
     - name: Combat
       visible: true
+      echo_commands: false         # Route command echoes here (exclude-only tabs only)
       rules:
         - pattern: "Success:"
           include: true
@@ -90,6 +92,8 @@ Each rule has:
 - `pattern` — wildcard pattern (`*` and `?` supported)
 - `include` — `true` to include matching lines, `false` to exclude matching lines
 - `active` — toggle the rule on/off
+
+`echo_commands` applies only when the tab has no active include rules (i.e. it is exclude-only, including zero-rule catch-all tabs). When false, command echoes are not routed to the tab even though other non-excluded text is.
 
 Managed via Esc → Custom Tabs.
 

@@ -85,6 +85,9 @@ func (s ScriptDirsScreen) Update(msg tea.KeyMsg) (ScriptDirsScreen, tea.Cmd) {
 		case tea.KeyRunes:
 			s.addBuf += string(msg.Runes)
 			return s, nil
+		case tea.KeySpace:
+			s.addBuf += " "
+			return s, nil
 		}
 		return s, nil
 	}

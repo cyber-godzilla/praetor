@@ -216,13 +216,24 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.app = newApp.(ui.App)
 		return w, cmd
 
-	case ui.MenuEchoMsg:
-		// Toggle command echo and save to config.
+	case ui.MenuEchoTypedMsg:
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
-		w.gc.Settings.CommandEcho = !w.gc.Settings.CommandEcho
+		w.gc.Settings.EchoTyped = !w.gc.Settings.EchoTyped
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.UI.EchoCommands = w.gc.Settings.CommandEcho
+			w.cfg.UI.EchoTyped = w.gc.Settings.EchoTyped
+			if err := config.Save(w.cfg, w.cfgPath); err != nil {
+				log.Printf("saving config: %v", err)
+			}
+		}
+		return w, cmd
+
+	case ui.MenuEchoScriptMsg:
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		w.gc.Settings.EchoScript = !w.gc.Settings.EchoScript
+		if w.cfg != nil && w.cfgPath != "" {
+			w.cfg.UI.EchoScript = w.gc.Settings.EchoScript
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -622,12 +633,13 @@ func main() {
 		accounts = nil
 	}
 
-	gc.Settings.CommandEcho = cfg.UI.EchoCommands
+	gc.Settings.EchoTyped = cfg.UI.EchoTyped
+	gc.Settings.EchoScript = cfg.UI.EchoScript
 
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
 
-	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoCommands, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop)
+	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

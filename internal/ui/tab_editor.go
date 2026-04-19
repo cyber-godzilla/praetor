@@ -139,21 +139,40 @@ func (te TabEditor) updateEdit(msg tea.KeyMsg) (TabEditor, tea.Cmd) {
 			tab.Rules[te.editCur].Active = !tab.Rules[te.editCur].Active
 		}
 	case tea.KeyRunes:
-		if len(msg.Runes) == 1 && te.editCur < len(tab.Rules) {
+		if len(msg.Runes) == 1 {
 			switch msg.Runes[0] {
+			case 'e':
+				// Toggle command-echo routing, only meaningful when tab is
+				// exclude-only (no active include rules).
+				if isExcludeOnlyConfig(tab.Rules) {
+					tab.EchoCommands = !tab.EchoCommands
+				}
 			case 't':
-				// Toggle include/exclude.
-				tab.Rules[te.editCur].Include = !tab.Rules[te.editCur].Include
+				if te.editCur < len(tab.Rules) {
+					tab.Rules[te.editCur].Include = !tab.Rules[te.editCur].Include
+				}
 			case 'd':
-				// Delete rule.
-				tab.Rules = append(tab.Rules[:te.editCur], tab.Rules[te.editCur+1:]...)
-				if te.editCur >= len(tab.Rules) && te.editCur > 0 {
-					te.editCur--
+				if te.editCur < len(tab.Rules) {
+					tab.Rules = append(tab.Rules[:te.editCur], tab.Rules[te.editCur+1:]...)
+					if te.editCur >= len(tab.Rules) && te.editCur > 0 {
+						te.editCur--
+					}
 				}
 			}
 		}
 	}
 	return te, nil
+}
+
+// isExcludeOnlyConfig reports whether the tab's config rules have no active
+// include rule (zero-rule tabs count as exclude-only).
+func isExcludeOnlyConfig(rules []config.TabRuleConfig) bool {
+	for _, r := range rules {
+		if r.Active && r.Include {
+			return false
+		}
+	}
+	return true
 }
 
 func (te TabEditor) updateAddRule(msg tea.KeyMsg) (TabEditor, tea.Cmd) {
@@ -303,9 +322,22 @@ func (te TabEditor) viewEdit() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit: " + tab.Name))
 	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).
-		Render("[Space] enable/disable  [T] toggle match/exclude  [D] delete  [Esc] back"))
+	helpLine := "[Space] enable/disable  [T] match/exclude  [D] delete  [Esc] back"
+	if isExcludeOnlyConfig(tab.Rules) {
+		helpLine = "[Space] enable/disable  [T] match/exclude  [E] echoes  [D] delete  [Esc] back"
+	}
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(helpLine))
 	b.WriteString("\n\n")
+
+	if isExcludeOnlyConfig(tab.Rules) {
+		state := "OFF"
+		if tab.EchoCommands {
+			state = "ON"
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).
+			Render("  Echoes: " + state))
+		b.WriteString("\n\n")
+	}
 
 	totalItems := len(tab.Rules) + 1
 	maxVisible := te.height - 12

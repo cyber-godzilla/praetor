@@ -113,15 +113,17 @@ type UIConfig struct {
 	MinimapHeight   int               `yaml:"minimap_height"`
 	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
 	ColorWords      bool              `yaml:"color_words"`
-	EchoCommands    bool              `yaml:"echo_commands"`
+	EchoTyped       bool              `yaml:"echo_typed_commands"`
+	EchoScript      bool              `yaml:"echo_script_commands"`
 	HideIPs         bool              `yaml:"hide_ips"`
 	CustomTabs      []CustomTabConfig `yaml:"custom_tabs"`
 }
 
 type CustomTabConfig struct {
-	Name    string          `yaml:"name"`
-	Visible bool            `yaml:"visible"`
-	Rules   []TabRuleConfig `yaml:"rules"`
+	Name         string          `yaml:"name"`
+	Visible      bool            `yaml:"visible"`
+	EchoCommands bool            `yaml:"echo_commands"` // only meaningful when tab is exclude-only
+	Rules        []TabRuleConfig `yaml:"rules"`
 }
 
 type TabRuleConfig struct {
@@ -159,7 +161,8 @@ func Defaults() *Config {
 			MinimapScale:    0.8,
 			MinimapHeight:   12,
 			QuickCycleModes: []string{"disable"},
-			EchoCommands:    true,
+			EchoTyped:       true,
+			EchoScript:      true,
 		},
 		Highlights: []HighlightConfig{},
 		Notifications: NotificationsConfig{
@@ -212,11 +215,40 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
+	migrateLegacyEcho(cfg, data)
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// migrateLegacyEcho copies the deprecated ui.echo_commands value into the
+// split EchoTyped/EchoScript fields when the new keys are absent.
+func migrateLegacyEcho(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	ui, ok := raw["ui"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	legacy, hasLegacy := ui["echo_commands"]
+	if !hasLegacy {
+		return
+	}
+	b, ok := legacy.(bool)
+	if !ok {
+		return
+	}
+	if _, hasTyped := ui["echo_typed_commands"]; !hasTyped {
+		cfg.UI.EchoTyped = b
+	}
+	if _, hasScript := ui["echo_script_commands"]; !hasScript {
+		cfg.UI.EchoScript = b
+	}
 }
 
 // Validate checks the config for invalid or out-of-range values,

@@ -175,7 +175,7 @@ Configurable pattern highlighting for loot detection. Managed via Esc → Highli
 
 - Word-aware line wrapping: breaks at last whitespace before width limit
 - Leading whitespace preserved (custom `padLines()` avoids lipgloss Width trimming)
-- Command echo: user and engine commands shown as italic when `/echo on`
+- Command echo: typed and script commands shown as italic; controlled by separate `Echo Typed Commands` / `Echo Script Commands` menu toggles. Exclude-only custom tabs opt in to echo routing via per-tab `echo_commands` flag (default off)
 - Scrollback: configurable per-tab, scroll position tracks display rows not logical lines
 - Highlight patterns applied before rendering (see String Highlighting above)
 
@@ -213,7 +213,8 @@ ui:
   quick_cycle_modes:
     - disable
   color_words: false
-  echo_commands: true
+  echo_typed_commands: true
+  echo_script_commands: true
   hide_ips: false
   custom_tabs: []
 highlights: []

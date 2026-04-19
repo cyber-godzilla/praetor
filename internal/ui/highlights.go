@@ -164,6 +164,10 @@ func (hm HighlightsManager) updateEditing(msg tea.KeyMsg) (HighlightsManager, te
 	case tea.KeyRunes:
 		hm.editBuf += string(msg.Runes)
 		return hm, nil
+
+	case tea.KeySpace:
+		hm.editBuf += " "
+		return hm, nil
 	}
 
 	return hm, nil

@@ -255,6 +255,10 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 		s.editBuf += string(msg.Runes)
 		return s, nil
 
+	case tea.KeySpace:
+		s.editBuf += " "
+		return s, nil
+
 	case tea.KeyEnter:
 		item := s.items[s.cursor]
 		switch item.kind {
