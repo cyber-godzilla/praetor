@@ -78,6 +78,16 @@ EOF
 sudo yum install praetor
 ```
 
+### Chocolatey (Windows)
+
+```powershell
+# Add the repository (one-time)
+choco source add -n=praetor -s="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/index.json"
+
+# Install
+choco install praetor
+```
+
 ### GitHub Releases
 
 Download pre-built binaries from the [releases page](https://github.com/cyber-godzilla/praetor/releases).
