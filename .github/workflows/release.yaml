@@ -22,11 +22,14 @@ jobs:
 
       - name: Install Chocolatey CLI
         run: |
+          set -euxo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mono-devel
-          mkdir -p /opt/choco
-          curl -fsSL "https://github.com/chocolatey/choco/releases/download/2.2.2/chocolatey.v2.2.2.tar.gz" \
-            | sudo tar xz -C /opt/choco
+          sudo apt-get install -y --no-install-recommends mono-devel ca-certificates-mono
+          curl -fsSL -o /tmp/choco.tar.gz \
+            "https://github.com/chocolatey/choco/releases/download/2.3.0/chocolatey.v2.3.0.tar.gz"
+          sudo mkdir -p /opt/choco
+          sudo tar -xzf /tmp/choco.tar.gz -C /opt/choco
+          ls /opt/choco | head
           printf '#!/usr/bin/env bash\nexec mono /opt/choco/choco.exe "$@"\n' \
             | sudo tee /usr/local/bin/choco > /dev/null
           sudo chmod +x /usr/local/bin/choco
