@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"strings"
 
-	"github.com/cyber-godzilla/praetor/internal/kitty"
+	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -24,8 +24,8 @@ func View(width int) string {
 	return buf.String()
 }
 
-// KittyEscape renders the compass as a Kitty graphics image.
-func KittyEscape(exits types.Exits, width int) string {
+// BuildImage renders the compass to an RGBA image.
+func BuildImage(exits types.Exits, width int) *image.RGBA {
 	imgW := width * 5
 	imgH := Rows * 10
 
@@ -103,8 +103,39 @@ func KittyEscape(exits types.Exits, width int) string {
 		drawArrowDown(img, cx, cy+cellH/3, dsz, centerCol)
 	}
 
-	return kitty.Encode(img, width, Rows)
+	return img
 }
+
+// Render returns a layout placeholder and an encoded graphics escape for
+// the compass in the given mode. ModeNone returns a text fallback and no
+// escape.
+func Render(mode graphics.Mode, exits types.Exits, width int) (placeholder string, escape string) {
+	if mode == graphics.ModeNone {
+		return compassFallback(width), ""
+	}
+	img := BuildImage(exits, width)
+	return View(width), graphics.Encode(mode, img, width, Rows)
+}
+
+func compassFallback(width int) string {
+	msg := "Compass unavailable"
+	if len(msg) > width {
+		msg = msg[:width]
+	}
+	pad := width - len(msg)
+	line := msg + strings.Repeat(" ", pad)
+	lines := make([]string, Rows)
+	mid := Rows / 2
+	for i := range lines {
+		if i == mid {
+			lines[i] = line
+		} else {
+			lines[i] = strings.Repeat(" ", width)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
 
 // ---- Arrow drawing functions ----
 

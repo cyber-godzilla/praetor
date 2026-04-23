@@ -139,7 +139,7 @@ func (s *Sidebar) rebuildKittyCache() {
 		innerW = 4
 	}
 	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(graphics.ModeKitty)
-	s.cachedCompassEsc = compass.KittyEscape(s.exits, innerW)
+	_, s.cachedCompassEsc = compass.Render(graphics.ModeKitty, s.exits, innerW)
 	s.kittyDirty = false
 }
 
