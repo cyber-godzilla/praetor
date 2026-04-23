@@ -65,6 +65,29 @@ brews:
     install: |
       bin.install "praetor"
 
+chocolateys:
+  - name: praetor
+    title: Praetor
+    authors: CyberGodzilla 2099
+    project_url: https://github.com/cyber-godzilla/praetor
+    project_source_url: https://github.com/cyber-godzilla/praetor
+    package_source_url: https://github.com/cyber-godzilla/praetor
+    license_url: https://github.com/cyber-godzilla/praetor/blob/main/LICENSE
+    bug_tracker_url: https://github.com/cyber-godzilla/praetor/issues
+    docs_url: https://github.com/cyber-godzilla/praetor/blob/main/README.md
+    copyright: "© CyberGodzilla"
+    tags: "tui terminal game eternal-city skotos praetor"
+    summary: Terminal game client for The Eternal City
+    description: |
+      Praetor is a terminal-based game client for The Eternal City (TEC),
+      built in Go with Bubbletea. Replaces the browser-based Orchil client,
+      including authentication, game interaction, Lua scripting, and a
+      Kitty/Sixel-graphics minimap.
+    release_notes: "https://github.com/cyber-godzilla/praetor/releases/tag/{{ .Tag }}"
+    api_key: "{{ .Env.BUILDKITE_NUGET_TOKEN }}"
+    source_repo: "https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package"
+    goamd64: v1
+
 release:
   github:
     owner: cyber-godzilla
