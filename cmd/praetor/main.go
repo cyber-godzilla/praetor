@@ -14,6 +14,7 @@ import (
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/logging"
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
@@ -639,7 +640,9 @@ func main() {
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
 
-	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop)
+	gfxMode := graphics.Detect()
+	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
+	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

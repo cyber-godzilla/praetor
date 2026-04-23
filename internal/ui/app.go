@@ -125,13 +125,14 @@ type App struct {
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
 	version                 string
+	graphicsMode            graphics.Mode
 }
 
 // NewApp creates a new App with the specified initial configuration.
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig) App {
+func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -152,7 +153,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		tabs:          tabs,
 		metrics:       NewMetricsPane(),
 		debug:         NewDebugPane(),
-		sidebar:       newSidebarPtr(minimapScale, minimapHeight, graphics.ModeKitty),
+		sidebar:       newSidebarPtr(minimapScale, minimapHeight, graphicsMode),
 		status:        NewStatusBar(),
 		input:         NewInput(),
 		login:         NewLoginScreen(),
@@ -174,6 +175,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		priorityCmdsList:        priorityCmds,
 		notificationSettingsCfg: notifyCfg,
 		version:                 version,
+		graphicsMode:            graphicsMode,
 	}
 	a.login.hasAccounts = len(accounts) > 0
 	return a
