@@ -9,11 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
+  # Linux/macOS artifacts + GitHub release + homebrew tap + deb/rpm push.
+  build-unix:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,18 +21,14 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Verify Chocolatey CLI
-        run: choco --version
-
-      - name: Run GoReleaser
+      - name: Run GoReleaser (skip chocolatey)
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean
+          args: release --clean --skip=chocolatey
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          BUILDKITE_NUGET_TOKEN: ${{ secrets.BUILDKITE_NUGET_TOKEN }}
 
       - name: Push .deb to Buildkite
         run: |
@@ -54,4 +48,43 @@ jobs:
               "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-rpm/packages" \
               -H "Authorization: Bearer ${{ secrets.BUILDKITE_RPM_TOKEN }}" \
               -F "file=@$f"
+          done
+
+  # Chocolatey .nupkg built with native choco on Windows. Runs after
+  # build-unix so the GitHub release already exists; this job only
+  # produces and pushes the .nupkg.
+  build-choco:
+    runs-on: windows-latest
+    needs: build-unix
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Run GoReleaser (chocolatey only, skip publish)
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: release --clean --skip=archive,nfpm,homebrew,homebrew_casks,publish,announce,sbom,sign
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Present for .goreleaser.yaml template rendering only; push
+          # below does the actual upload.
+          BUILDKITE_NUGET_TOKEN: ${{ secrets.BUILDKITE_NUGET_TOKEN }}
+
+      - name: Push .nupkg to Buildkite NuGet registry
+        run: |
+          shopt -s nullglob
+          for f in dist/*.nupkg; do
+            echo "Pushing $f..."
+            choco push "$f" \
+              --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
+              --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}"
           done
