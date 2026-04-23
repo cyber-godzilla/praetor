@@ -3,6 +3,7 @@ package minimap
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestFallbackPlaceholder_ContainsUnavailableText(t *testing.T) {
@@ -37,7 +38,18 @@ func TestFallbackPlaceholder_RowCount(t *testing.T) {
 
 func TestFallbackPlaceholder_NarrowFallsBackToShortForm(t *testing.T) {
 	out := fallbackPlaceholder(10, 12)
-	if !strings.Contains(out, "Minimap unavailable") {
-		t.Errorf("short-form placeholder should still mention minimap, got:\n%s", out)
+	if !strings.Contains(out, "Minimap") {
+		t.Errorf("short-form placeholder should still mention Minimap, got:\n%s", out)
+	}
+}
+
+func TestFallbackPlaceholder_DisplayWidthExact(t *testing.T) {
+	const width, rows = 38, 12
+	out := fallbackPlaceholder(width, rows)
+	for i, line := range strings.Split(out, "\n") {
+		got := utf8.RuneCountInString(line)
+		if got != width {
+			t.Errorf("line %d: got %d display columns, want %d; line=%q", i, got, width, line)
+		}
 	}
 }

@@ -17,16 +17,17 @@ func fallbackPlaceholder(width, rows int) string {
 
 func shortFallback(width, rows int) string {
 	msg := "Minimap unavailable"
-	// Don't truncate the message; just pad it to the minimum of width and msg length
-	displayWidth := max(width, len(msg))
-	padded := msg + strings.Repeat(" ", max(0, displayWidth-len(msg)))
+	if len(msg) > width {
+		msg = msg[:width]
+	}
+	padded := msg + strings.Repeat(" ", maxInt(0, width-len(msg)))
 	lines := make([]string, rows)
 	mid := rows / 2
 	for i := range lines {
 		if i == mid {
 			lines[i] = padded
 		} else {
-			lines[i] = strings.Repeat(" ", displayWidth)
+			lines[i] = strings.Repeat(" ", width)
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -85,7 +86,7 @@ func recommendation() string {
 	return "WezTerm, Kitty, or Ghostty"
 }
 
-func max(a, b int) int {
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}
