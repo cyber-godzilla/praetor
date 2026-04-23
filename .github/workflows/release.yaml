@@ -10,7 +10,10 @@ permissions:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,20 +23,8 @@ jobs:
         with:
           go-version: "1.25"
 
-      - name: Install Chocolatey CLI
-        run: |
-          set -euxo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mono-devel ca-certificates-mono
-          curl -fsSL -o /tmp/choco.tar.gz \
-            "https://github.com/chocolatey/choco/releases/download/2.3.0/chocolatey.v2.3.0.tar.gz"
-          sudo mkdir -p /opt/choco
-          sudo tar -xzf /tmp/choco.tar.gz -C /opt/choco
-          ls /opt/choco | head
-          printf '#!/usr/bin/env bash\nexec mono /opt/choco/choco.exe "$@"\n' \
-            | sudo tee /usr/local/bin/choco > /dev/null
-          sudo chmod +x /usr/local/bin/choco
-          choco --version
+      - name: Verify Chocolatey CLI
+        run: choco --version
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
