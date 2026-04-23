@@ -20,6 +20,18 @@ jobs:
         with:
           go-version: "1.25"
 
+      - name: Install Chocolatey CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mono-devel
+          mkdir -p /opt/choco
+          curl -fsSL "https://github.com/chocolatey/choco/releases/download/2.2.2/chocolatey.v2.2.2.tar.gz" \
+            | sudo tar xz -C /opt/choco
+          printf '#!/usr/bin/env bash\nexec mono /opt/choco/choco.exe "$@"\n' \
+            | sudo tee /usr/local/bin/choco > /dev/null
+          sudo chmod +x /usr/local/bin/choco
+          choco --version
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
