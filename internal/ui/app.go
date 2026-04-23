@@ -54,6 +54,16 @@ type OpenModePickerMsg struct {
 // kittyDeleteAll clears all Kitty graphics images from the terminal.
 const kittyDeleteAll = "\033_Ga=d,d=A,q=2;\033\\"
 
+// graphicsClear returns the Kitty delete-all escape when running in Kitty
+// graphics mode, and an empty string otherwise. This prevents leaking
+// Kitty-specific APC sequences to terminals that don't support them.
+func (a App) graphicsClear() string {
+	if a.graphicsMode == graphics.ModeKitty {
+		return kittyDeleteAll
+	}
+	return ""
+}
+
 // appState tracks the current screen.
 type appState int
 
@@ -1086,23 +1096,23 @@ func (a App) View() string {
 	case stateCredentialPrompt:
 		return a.credentialPrompt.View()
 	case stateMenu:
-		return kittyDeleteAll + a.menu.View()
+		return a.graphicsClear() + a.menu.View()
 	case stateModePicker:
-		return kittyDeleteAll + a.modePicker.View()
+		return a.graphicsClear() + a.modePicker.View()
 	case stateHighlights:
-		return kittyDeleteAll + a.highlightsMgr.View()
+		return a.graphicsClear() + a.highlightsMgr.View()
 	case stateHelp:
-		return kittyDeleteAll + a.help.View()
+		return a.graphicsClear() + a.help.View()
 	case stateTabEditor:
-		return kittyDeleteAll + a.tabEditor.View()
+		return a.graphicsClear() + a.tabEditor.View()
 	case statePersistentData:
-		return kittyDeleteAll + a.persistentData.View()
+		return a.graphicsClear() + a.persistentData.View()
 	case stateScriptDirs:
-		return kittyDeleteAll + a.scriptDirsScreen.View()
+		return a.graphicsClear() + a.scriptDirsScreen.View()
 	case statePriorityCmds:
-		return kittyDeleteAll + a.priorityCmdsScreen.View()
+		return a.graphicsClear() + a.priorityCmdsScreen.View()
 	case stateNotificationSettings:
-		return kittyDeleteAll + a.notificationSettings.View()
+		return a.graphicsClear() + a.notificationSettings.View()
 	}
 
 	// stateGame:
@@ -1166,7 +1176,7 @@ func (a App) View() string {
 
 	// Always clear previous Kitty images before drawing new ones.
 	// This prevents ghost images after resize or tab switch.
-	result += kittyDeleteAll
+	result += a.graphicsClear()
 
 	// Inject Kitty graphics escapes AFTER layout, using ANSI cursor
 	// positioning to place images in the sidebar.

@@ -136,7 +136,6 @@ func compassFallback(width int) string {
 	return strings.Join(lines, "\n")
 }
 
-
 // ---- Arrow drawing functions ----
 
 func drawArrowUp(img *image.RGBA, cx, cy, size int, c color.RGBA) {

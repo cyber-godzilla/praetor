@@ -22,4 +22,7 @@ func TestSidebar_ModeNone_RendersFallback(t *testing.T) {
 	if !strings.Contains(view, "Minimap unavailable") {
 		t.Errorf("expected sidebar view to contain fallback text, got:\n%s", view)
 	}
+	if !strings.Contains(view, "Compass unavailable") {
+		t.Errorf("expected sidebar view to contain 'Compass unavailable', got:\n%s", view)
+	}
 }

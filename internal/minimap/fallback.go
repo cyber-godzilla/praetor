@@ -20,7 +20,7 @@ func shortFallback(width, rows int) string {
 	if len(msg) > width {
 		msg = msg[:width]
 	}
-	padded := msg + strings.Repeat(" ", maxInt(0, width-len(msg)))
+	padded := msg + strings.Repeat(" ", max(0, width-len(msg)))
 	lines := make([]string, rows)
 	mid := rows / 2
 	for i := range lines {
@@ -84,11 +84,4 @@ func recommendation() string {
 		return "WezTerm or Windows Terminal"
 	}
 	return "WezTerm, Kitty, or Ghostty"
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
