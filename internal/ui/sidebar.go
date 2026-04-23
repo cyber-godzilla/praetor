@@ -28,16 +28,17 @@ type Sidebar struct {
 	displayState  []types.StateDisplayItem
 	mapURL        string
 	minimap       minimap.Minimap
+	graphicsMode  graphics.Mode
 
-	// Kitty graphics cache — avoid re-rendering every frame.
+	// Graphics cache — avoid re-rendering every frame.
 	kittyDirty        bool
 	cachedMinimapEsc  string
 	cachedCompassEsc  string
 	cachedPlaceholder string
 }
 
-// NewSidebar creates a new Sidebar with the given minimap scale and height.
-func NewSidebar(minimapScale float64, minimapHeight int) Sidebar {
+// NewSidebar creates a new Sidebar with the given minimap scale, height, and graphics mode.
+func NewSidebar(minimapScale float64, minimapHeight int, mode graphics.Mode) Sidebar {
 	mm := minimap.NewMinimap()
 	mm.SetScale(minimapScale)
 	return Sidebar{
@@ -47,13 +48,14 @@ func NewSidebar(minimapScale float64, minimapHeight int) Sidebar {
 		satiation:     100,
 		minimapHeight: minimapHeight,
 		minimap:       mm,
+		graphicsMode:  mode,
 		kittyDirty:    true,
 	}
 }
 
 // newSidebarPtr returns a pointer to a new Sidebar (for embedding in App).
-func newSidebarPtr(minimapScale float64, minimapHeight int) *Sidebar {
-	s := NewSidebar(minimapScale, minimapHeight)
+func newSidebarPtr(minimapScale float64, minimapHeight int, mode graphics.Mode) *Sidebar {
+	s := NewSidebar(minimapScale, minimapHeight, mode)
 	return &s
 }
 
@@ -138,15 +140,16 @@ func (s *Sidebar) rebuildKittyCache() {
 	if innerW < 4 {
 		innerW = 4
 	}
-	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(graphics.ModeKitty)
-	_, s.cachedCompassEsc = compass.Render(graphics.ModeKitty, s.exits, innerW)
+	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(s.graphicsMode)
+	_, s.cachedCompassEsc = compass.Render(s.graphicsMode, s.exits, innerW)
 	s.kittyDirty = false
 }
 
-// KittyEscapes returns Kitty graphics escape sequences for minimap and compass.
-// Must be injected into the final output OUTSIDE of Lipgloss rendering.
-// Returns (minimapEscape, compassEscape).
-func (s *Sidebar) KittyEscapes() (string, string) {
+// GraphicsEscapes returns terminal graphics escape sequences for the
+// minimap and compass. Returns ("", "") when running in a terminal
+// without Kitty or Sixel support. Must be injected into the final
+// output outside of Lipgloss rendering.
+func (s *Sidebar) GraphicsEscapes() (string, string) {
 	if s.kittyDirty {
 		s.rebuildKittyCache()
 	}

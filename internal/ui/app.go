@@ -12,6 +12,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"github.com/cyber-godzilla/praetor/internal/compass"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
@@ -151,7 +152,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		tabs:          tabs,
 		metrics:       NewMetricsPane(),
 		debug:         NewDebugPane(),
-		sidebar:       newSidebarPtr(minimapScale, minimapHeight),
+		sidebar:       newSidebarPtr(minimapScale, minimapHeight, graphics.ModeKitty),
 		status:        NewStatusBar(),
 		input:         NewInput(),
 		login:         NewLoginScreen(),
@@ -1140,7 +1141,7 @@ func (a App) View() string {
 	var kittyMinimap, kittyCompass string
 	if a.sidebarVisible {
 		sidebar := a.sidebar.View()
-		kittyMinimap, kittyCompass = a.sidebar.KittyEscapes()
+		kittyMinimap, kittyCompass = a.sidebar.GraphicsEscapes()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, fixedContent, sidebar)
 	} else {
 		content = fixedContent
