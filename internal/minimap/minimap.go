@@ -6,7 +6,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/cyber-godzilla/praetor/internal/kitty"
+	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -42,10 +42,12 @@ func (m *Minimap) Update(rooms []types.MinimapRoom, walls []types.MinimapWall) {
 	}
 }
 
-func (m Minimap) Render() (placeholder string, kittyEscape string) {
+// BuildImage renders the minimap to a *image.RGBA. Returns nil if the
+// map cannot be drawn (no rooms, or the display is too small).
+func (m Minimap) BuildImage() *image.RGBA {
 	playerIdx := FindPlayerRoom(m.rooms)
 	if playerIdx < 0 || m.width < 4 || m.height < 2 {
-		return "", ""
+		return nil
 	}
 
 	imgW := m.width * 5
@@ -107,7 +109,7 @@ func (m Minimap) Render() (placeholder string, kittyEscape string) {
 	// Only draw walls when there are 2+ rooms — with a single room,
 	// wall lines are just noise radiating into empty space.
 	if len(m.rooms) < 2 {
-		return m.finishRender(img)
+		return img
 	}
 
 	white := color.RGBA{255, 255, 255, 255}
@@ -149,12 +151,18 @@ func (m Minimap) Render() (placeholder string, kittyEscape string) {
 		}
 	}
 
-	return m.finishRender(img)
+	return img
 }
 
-func (m Minimap) finishRender(img *image.RGBA) (string, string) {
-	kittyEscape := kitty.Encode(img, m.width, m.height)
+// Render returns a layout placeholder and an encoded graphics escape for
+// the given graphics mode. For ModeNone the placeholder is a boxed
+// fallback note and the escape is empty.
+func (m Minimap) Render(mode graphics.Mode) (placeholder string, escape string) {
+	if mode == graphics.ModeNone {
+		return fallbackPlaceholder(m.width, m.height), ""
+	}
 
+	img := m.BuildImage()
 	var buf strings.Builder
 	for i := 0; i < m.height; i++ {
 		if i > 0 {
@@ -162,8 +170,12 @@ func (m Minimap) finishRender(img *image.RGBA) (string, string) {
 		}
 		buf.WriteString(strings.Repeat(" ", m.width))
 	}
-
-	return buf.String(), kittyEscape
+	placeholder = buf.String()
+	if img == nil {
+		return placeholder, ""
+	}
+	escape = graphics.Encode(mode, img, m.width, m.height)
+	return placeholder, escape
 }
 
 func (m Minimap) computeScale(imgW, imgH, playerIdx int) float64 {

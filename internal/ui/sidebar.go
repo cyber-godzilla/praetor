@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/compass"
+	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/minimap"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
@@ -137,7 +138,7 @@ func (s *Sidebar) rebuildKittyCache() {
 	if innerW < 4 {
 		innerW = 4
 	}
-	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render()
+	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(graphics.ModeKitty)
 	s.cachedCompassEsc = compass.KittyEscape(s.exits, innerW)
 	s.kittyDirty = false
 }
