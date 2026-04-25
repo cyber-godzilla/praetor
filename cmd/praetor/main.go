@@ -40,7 +40,11 @@ type wrapper struct {
 }
 
 func (w wrapper) Init() tea.Cmd {
-	return w.app.Init()
+	available := len(w.gc.Engine.ModeNames()) > 0
+	return tea.Batch(
+		w.app.Init(),
+		func() tea.Msg { return ui.ModesAvailableMsg{Available: available} },
+	)
 }
 
 func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -360,7 +364,9 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Send confirmation back to UI
 		newApp2, cmd2 := w.app.Update(ui.ScriptsReloadedMsg{Error: reloadErr})
 		w.app = newApp2.(ui.App)
-		return w, tea.Batch(cmd, cmd2)
+		modes := w.gc.Engine.ModeNames()
+		modesCmd := func() tea.Msg { return ui.ModesAvailableMsg{Available: len(modes) > 0} }
+		return w, tea.Batch(cmd, cmd2, modesCmd)
 
 	case ui.ScriptDirsCloseMsg:
 		newApp, cmd := w.app.Update(msg)

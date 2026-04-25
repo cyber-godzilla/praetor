@@ -46,7 +46,7 @@ type Menu struct {
 	message     string // transient status message, cleared on next keypress
 }
 
-func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs bool, logPath string) Menu {
+func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs bool, logPath string, modesAvailable bool) Menu {
 	cwLabel := "Colorwords: OFF"
 	if colorWords {
 		cwLabel = "Colorwords: ON"
@@ -80,38 +80,42 @@ func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs
 		{label: "Scripts", isHeader: true},
 		{label: "Reload Scripts", action: func() tea.Msg { return MenuReloadScriptsMsg{} }},
 		{label: "Script Directories", action: func() tea.Msg { return MenuScriptDirsMsg{} }},
-		{label: "Quick-Cycle Modes", action: func() tea.Msg { return MenuQuickCycleMsg{} }},
-		{label: "Priority Commands", action: func() tea.Msg { return MenuPriorityCmdsMsg{} }},
-		{label: "", isHeader: true},
-
-		{label: "Display", isHeader: true},
-		{label: "Highlights", action: func() tea.Msg { return MenuHighlightsMsg{} }},
-		{label: "Custom Tabs", action: func() tea.Msg { return MenuTabsMsg{} }},
-		{label: cwLabel, action: func() tea.Msg { return MenuColorWordsMsg{} }},
-		{label: echoTypedLabel, action: func() tea.Msg { return MenuEchoTypedMsg{} }},
-		{label: echoScriptLabel, action: func() tea.Msg { return MenuEchoScriptMsg{} }},
-		{label: ipLabel, action: func() tea.Msg { return MenuHideIPsMsg{} }},
-		{label: "", isHeader: true},
-
-		{label: "Connection", isHeader: true},
-		{label: reconLabel, action: func() tea.Msg { return MenuAutoReconnectMsg{} }},
-		{label: "", isHeader: true},
-
-		{label: "Notifications", isHeader: true},
-		{label: "Notification Settings", action: func() tea.Msg { return MenuNotificationSettingsMsg{} }},
-		{label: "", isHeader: true},
-
-		{label: "Logs", isHeader: true},
-		{label: logLabel, action: func() tea.Msg { return MenuGameLogsMsg{} }},
-		{label: pathLabel, action: nil}, // handled specially — enters edit mode
-		{label: "", isHeader: true},
-
-		{label: "Data", isHeader: true},
-		{label: "Persistent Data", action: func() tea.Msg { return MenuPersistentDataMsg{} }},
-		{label: "", isHeader: true},
-
-		{label: "Quit", action: func() tea.Msg { return MenuQuitMsg{} }},
 	}
+	if modesAvailable {
+		items = append(items, menuItem{label: "Quick-Cycle Modes", action: func() tea.Msg { return MenuQuickCycleMsg{} }})
+	}
+	items = append(items,
+		menuItem{label: "Priority Commands", action: func() tea.Msg { return MenuPriorityCmdsMsg{} }},
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Display", isHeader: true},
+		menuItem{label: "Highlights", action: func() tea.Msg { return MenuHighlightsMsg{} }},
+		menuItem{label: "Custom Tabs", action: func() tea.Msg { return MenuTabsMsg{} }},
+		menuItem{label: cwLabel, action: func() tea.Msg { return MenuColorWordsMsg{} }},
+		menuItem{label: echoTypedLabel, action: func() tea.Msg { return MenuEchoTypedMsg{} }},
+		menuItem{label: echoScriptLabel, action: func() tea.Msg { return MenuEchoScriptMsg{} }},
+		menuItem{label: ipLabel, action: func() tea.Msg { return MenuHideIPsMsg{} }},
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Connection", isHeader: true},
+		menuItem{label: reconLabel, action: func() tea.Msg { return MenuAutoReconnectMsg{} }},
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Notifications", isHeader: true},
+		menuItem{label: "Notification Settings", action: func() tea.Msg { return MenuNotificationSettingsMsg{} }},
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Logs", isHeader: true},
+		menuItem{label: logLabel, action: func() tea.Msg { return MenuGameLogsMsg{} }},
+		menuItem{label: pathLabel, action: nil}, // handled specially — enters edit mode
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Data", isHeader: true},
+		menuItem{label: "Persistent Data", action: func() tea.Msg { return MenuPersistentDataMsg{} }},
+		menuItem{label: "", isHeader: true},
+
+		menuItem{label: "Quit", action: func() tea.Msg { return MenuQuitMsg{} }},
+	)
 
 	m := Menu{items: items, pathBuf: logPath}
 	// Set cursor to first selectable item.

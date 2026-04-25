@@ -113,8 +113,10 @@ func (mp ModePicker) Update(msg tea.KeyMsg) (ModePicker, tea.Cmd) {
 	case tea.KeyEnter, tea.KeyRunes:
 		// Toggle space or enter.
 		if msg.Type == tea.KeyEnter || (len(msg.Runes) == 1 && msg.Runes[0] == ' ') {
-			mode := mp.allModes[mp.cursor]
-			mp.selected[mode] = !mp.selected[mode]
+			if mp.cursor >= 0 && mp.cursor < len(mp.allModes) {
+				mode := mp.allModes[mp.cursor]
+				mp.selected[mode] = !mp.selected[mode]
+			}
 		}
 		return mp, nil
 	}
