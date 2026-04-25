@@ -72,7 +72,7 @@ jobs:
         uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --skip=archive,nfpm,homebrew,homebrew_casks,publish,announce,sbom,sign
+          args: release --clean --skip=archive,nfpm,homebrew,publish,announce,sbom,sign
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Present for .goreleaser.yaml template rendering only; push
