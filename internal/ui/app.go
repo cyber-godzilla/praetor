@@ -141,7 +141,7 @@ type App struct {
 	priorityCmdsList        []string
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
-	wikiMenu                WikiMenu
+	wikiMenu                BookmarkMenu
 	modesAvailable          bool
 	version                 string
 	graphicsMode            graphics.Mode
