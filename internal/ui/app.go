@@ -90,6 +90,7 @@ const (
 	statePriorityCmds                         // priority command management
 	stateNotificationSettings                 // notification settings editor
 	stateWikiMenu                             // browsing wiki bookmarks
+	stateMapsMenu                             // browsing map bookmarks
 )
 
 // App is the root Bubbletea model composing all TUI components.
@@ -142,6 +143,7 @@ type App struct {
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
 	wikiMenu                BookmarkMenu
+	mapsMenu                BookmarkMenu
 	modesAvailable          bool
 	version                 string
 	graphicsMode            graphics.Mode
@@ -191,6 +193,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 
 		splash:                  NewSplash(version),
 		wikiMenu:                NewWikiMenu(),
+		mapsMenu:                NewMapsMenu(),
 		scriptDirsList:          scriptDirs,
 		priorityCmdsList:        priorityCmds,
 		notificationSettingsCfg: notifyCfg,
@@ -312,6 +315,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		case stateWikiMenu:
 			return a.updateWikiMenu(msg)
+		case stateMapsMenu:
+			return a.updateMapsMenu(msg)
 		case stateGame:
 			return a.updateMain(msg)
 		}
@@ -500,6 +505,22 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Wrapper already handles browser-open before this; we only
 		// transition back to the game state. Returning the msg as a Cmd
 		// would loop forever via the wrapper.
+		a.state = stateGame
+		return a, a.input.Focus()
+
+	case MenuMapsMsg:
+		a.mapsMenu = NewMapsMenu()
+		a.mapsMenu.SetSize(a.width, a.height)
+		a.state = stateMapsMenu
+		return a, nil
+
+	case MapsMenuCloseMsg:
+		a.state = stateGame
+		return a, a.input.Focus()
+
+	case MapsOpenMsg:
+		// Wrapper handles browser-open before this. State transition only;
+		// do NOT re-emit (would loop via wrapper, like the WikiOpenMsg fix).
 		a.state = stateGame
 		return a, a.input.Focus()
 
@@ -852,6 +873,16 @@ func (a App) updateWikiMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// updateMapsMenu handles key messages in the maps menu overlay.
+func (a App) updateMapsMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return a, tea.Quit
+	}
+	var cmd tea.Cmd
+	a.mapsMenu, cmd = a.mapsMenu.Update(msg)
+	return a, cmd
+}
+
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 	var routedTabs uint64
@@ -915,6 +946,9 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 
 		case types.WikiOpenMenuEvent:
 			return a.Update(MenuWikiMsg{})
+
+		case types.MapsOpenMenuEvent:
+			return a.Update(MenuMapsMsg{})
 		}
 	}
 
@@ -1117,6 +1151,7 @@ func (a *App) recalcLayout() {
 	a.priorityCmdsScreen.SetSize(a.width, a.height)
 	a.notificationSettings.SetSize(a.width, a.height)
 	a.wikiMenu.SetSize(a.width, a.height)
+	a.mapsMenu.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1164,6 +1199,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.notificationSettings.View()
 	case stateWikiMenu:
 		return a.graphicsClear() + a.wikiMenu.View()
+	case stateMapsMenu:
+		return a.graphicsClear() + a.mapsMenu.View()
 	}
 
 	// stateGame:

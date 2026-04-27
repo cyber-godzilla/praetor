@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/engine"
 	"github.com/cyber-godzilla/praetor/internal/protocol"
 	"github.com/cyber-godzilla/praetor/internal/session"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
@@ -535,6 +537,48 @@ func (c *Client) handleLocalCommand(input string) {
 			IsEcho:    true,
 		})
 
+	case "/maps":
+		rest := strings.TrimSpace(strings.TrimPrefix(input, parts[0]))
+		if rest == "" {
+			c.emit(types.MapsOpenMenuEvent{})
+			return
+		}
+		slug, ok := wiki.LookupMap(rest)
+		if !ok {
+			// Suggest close matches via Levenshtein.
+			suggestions := suggestMaps(rest, 3)
+			if len(suggestions) > 0 {
+				c.emit(types.GameTextEvent{
+					Styled: []types.StyledSegment{{
+						Text:   fmt.Sprintf("unknown map %q. did you mean: %s? (or /maps for the list)", rest, strings.Join(suggestions, ", ")),
+						Italic: true,
+					}},
+					Timestamp: time.Now(),
+					IsEcho:    true,
+				})
+			} else {
+				c.emit(types.GameTextEvent{
+					Styled: []types.StyledSegment{{
+						Text:   fmt.Sprintf("unknown map %q (type /maps for the list)", rest),
+						Italic: true,
+					}},
+					Timestamp: time.Now(),
+					IsEcho:    true,
+				})
+			}
+			return
+		}
+		url := wiki.URL(slug)
+		go OpenBrowser(url)
+		c.emit(types.GameTextEvent{
+			Styled: []types.StyledSegment{{
+				Text:   "opening map: " + url,
+				Italic: true,
+			}},
+			Timestamp: time.Now(),
+			IsEcho:    true,
+		})
+
 	case "/reconnect":
 		c.Reconnect()
 
@@ -618,6 +662,32 @@ func (c *Client) reconnectLoop() {
 		c.Run()
 		return
 	}
+}
+
+// suggestMaps returns up to 3 known map keys whose Levenshtein distance
+// from the input is small, sorted by ascending distance.
+func suggestMaps(input string, maxDist int) []string {
+	type cand struct {
+		key  string
+		dist int
+	}
+	var cands []cand
+	lower := strings.ToLower(input)
+	for _, k := range wiki.MapKeys() {
+		d := textutil.Levenshtein(lower, strings.ToLower(k))
+		if d <= maxDist {
+			cands = append(cands, cand{k, d})
+		}
+	}
+	sort.Slice(cands, func(i, j int) bool { return cands[i].dist < cands[j].dist })
+	if len(cands) > 3 {
+		cands = cands[:3]
+	}
+	out := make([]string, len(cands))
+	for i, c := range cands {
+		out[i] = c.key
+	}
+	return out
 }
 
 // OpenBrowser opens a URL in the system's default browser.

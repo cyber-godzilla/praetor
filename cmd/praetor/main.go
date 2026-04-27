@@ -426,6 +426,12 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.app = newApp.(ui.App)
 		return w, cmd
 
+	case ui.MapsOpenMsg:
+		go client.OpenBrowser(wiki.URL(msg.Slug))
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		return w, cmd
+
 	case ui.MenuQuitMsg:
 		return w, tea.Quit
 

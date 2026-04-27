@@ -174,3 +174,8 @@ func (CommandEvent) eventMarker() {}
 type WikiOpenMenuEvent struct{}
 
 func (WikiOpenMenuEvent) eventMarker() {}
+
+// MapsOpenMenuEvent triggers opening the maps bookmark menu in the TUI.
+type MapsOpenMenuEvent struct{}
+
+func (MapsOpenMenuEvent) eventMarker() {}
