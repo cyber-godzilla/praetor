@@ -253,7 +253,7 @@ func (te TabEditor) viewList() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
-		Padding(1, 2).
+		Padding(1, 3).
 		Width(boxWidth)
 
 	var b strings.Builder
@@ -316,7 +316,7 @@ func (te TabEditor) viewEdit() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
-		Padding(1, 2).
+		Padding(1, 3).
 		Width(boxWidth)
 
 	var b strings.Builder
@@ -395,7 +395,7 @@ func (te TabEditor) viewNewTab() string {
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
-		Padding(1, 2).
+		Padding(1, 3).
 		Width(boxWidth)
 
 	var b strings.Builder
