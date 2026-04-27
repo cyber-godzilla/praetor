@@ -365,10 +365,10 @@ func (s NotificationSettingsScreen) View() string {
 			b.WriteByte('\n')
 		}
 
-		cursor := "  "
+		cursor := "    "
 		cursorStyle := normalStyle
 		if idx == s.cursor {
-			cursor = "> "
+			cursor = "  > "
 			cursorStyle = selectedStyle
 		}
 

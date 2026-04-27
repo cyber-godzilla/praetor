@@ -171,9 +171,9 @@ func (mp ModePicker) View() string {
 		style := lipgloss.NewStyle().Foreground(colorDim)
 		if i == mp.cursor {
 			style = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-			label = "> " + label
+			label = "  > " + label
 		} else {
-			label = "  " + label
+			label = "    " + label
 		}
 		b.WriteString(check)
 		b.WriteString(style.Render(label))

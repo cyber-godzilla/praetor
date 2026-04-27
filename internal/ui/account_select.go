@@ -136,15 +136,15 @@ func (a AccountSelect) View() string {
 	// Render account list.
 	for i, name := range a.accounts {
 		if i == a.cursor {
-			b.WriteString(selectedStyle.Render("> " + name))
+			b.WriteString(selectedStyle.Render("  > " + name))
 		} else {
-			b.WriteString(normalStyle.Render("  " + name))
+			b.WriteString(normalStyle.Render("    " + name))
 		}
 		b.WriteByte('\n')
 	}
 
 	// Separator line.
-	b.WriteString(separatorStyle.Render("  " + strings.Repeat("\u2500", 30)))
+	b.WriteString(separatorStyle.Render("    " + strings.Repeat("\u2500", 30)))
 	b.WriteByte('\n')
 
 	// "Login with a different account" option.
@@ -153,9 +153,9 @@ func (a AccountSelect) View() string {
 		addLabel = "Login with a different account"
 	}
 	if a.isAddAccount() {
-		b.WriteString(selectedStyle.Render("> " + addLabel))
+		b.WriteString(selectedStyle.Render("  > " + addLabel))
 	} else {
-		b.WriteString(normalStyle.Render("  " + addLabel))
+		b.WriteString(normalStyle.Render("    " + addLabel))
 	}
 
 	b.WriteString("\n\n")

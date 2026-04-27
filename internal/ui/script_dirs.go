@@ -160,9 +160,9 @@ func (s ScriptDirsScreen) View() string {
 			dir := s.dirs[i]
 			line := fmt.Sprintf("%d. %s", i+1, dir)
 			if i == s.cursor {
-				b.WriteString(selectedStyle.Render("> " + line))
+				b.WriteString(selectedStyle.Render("  > " + line))
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
+				b.WriteString(normalStyle.Render("    " + line))
 			}
 			b.WriteByte('\n')
 		}

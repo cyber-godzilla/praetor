@@ -162,9 +162,9 @@ func (p PersistentDataScreen) View() string {
 				line += "  " + dimStyle.Render(key.ValueSummary)
 			}
 			if i == p.cursor {
-				b.WriteString(selectedStyle.Render("> " + line))
+				b.WriteString(selectedStyle.Render("  > " + line))
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
+				b.WriteString(normalStyle.Render("    " + line))
 			}
 			b.WriteByte('\n')
 		}

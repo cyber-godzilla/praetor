@@ -218,10 +218,10 @@ func (hm HighlightsManager) View() string {
 			}
 			preview := style.Render(" " + h.Style + " ")
 			patternStyle := lipgloss.NewStyle().Foreground(colorDim)
-			cursor := "  "
+			cursor := "    "
 			if i == hm.cursor {
 				patternStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-				cursor = "> "
+				cursor = "  > "
 			}
 			b.WriteString(cursor + check + preview + " " + patternStyle.Render(h.Pattern))
 			b.WriteByte('\n')
@@ -229,15 +229,15 @@ func (hm HighlightsManager) View() string {
 			// "Add new" item
 			if hm.cursor == len(hm.highlights) {
 				if hm.editing {
-					b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+hm.editBuf+"█"))
+					b.WriteString("  > " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+hm.editBuf+"█"))
 				} else {
-					b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new highlight..."))
+					b.WriteString("  > " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new highlight..."))
 				}
 			} else {
 				if hm.editing {
-					b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Pattern: "+hm.editBuf+"█"))
+					b.WriteString("    " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Pattern: "+hm.editBuf+"█"))
 				} else {
-					b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new highlight..."))
+					b.WriteString("    " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new highlight..."))
 				}
 			}
 			b.WriteByte('\n')

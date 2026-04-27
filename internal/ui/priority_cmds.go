@@ -162,9 +162,9 @@ func (s PriorityCmdsScreen) View() string {
 			cmd := s.cmds[i]
 			line := fmt.Sprintf("%d. %s", i+1, cmd)
 			if i == s.cursor {
-				b.WriteString(selectedStyle.Render("> " + line))
+				b.WriteString(selectedStyle.Render("  > " + line))
 			} else {
-				b.WriteString(normalStyle.Render("  " + line))
+				b.WriteString(normalStyle.Render("    " + line))
 			}
 			b.WriteByte('\n')
 		}

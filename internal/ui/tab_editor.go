@@ -283,10 +283,10 @@ func (te TabEditor) viewList() string {
 				vis = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
 			}
 			nameStyle := lipgloss.NewStyle().Foreground(colorDim)
-			cursor := "  "
+			cursor := "    "
 			if i == te.cursor {
 				nameStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-				cursor = "> "
+				cursor = "  > "
 			}
 			ruleCount := lipgloss.NewStyle().Foreground(colorDim).
 				Render("(" + strconv.Itoa(len(tab.Rules)) + " rules)")
@@ -294,9 +294,9 @@ func (te TabEditor) viewList() string {
 			b.WriteByte('\n')
 		} else {
 			if te.cursor == len(te.tabs) {
-				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new tab..."))
+				b.WriteString("  > " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add new tab..."))
 			} else {
-				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new tab..."))
+				b.WriteString("    " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add new tab..."))
 			}
 			b.WriteByte('\n')
 		}
@@ -363,20 +363,20 @@ func (te TabEditor) viewEdit() string {
 				matchType = lipgloss.NewStyle().Foreground(colorRed).Render("EXCLUDE")
 			}
 			patStyle := lipgloss.NewStyle().Foreground(colorDim)
-			cursor := "  "
+			cursor := "    "
 			if i == te.editCur {
 				patStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-				cursor = "> "
+				cursor = "  > "
 			}
 			b.WriteString(cursor + active + matchType + " " + patStyle.Render(rule.Pattern))
 			b.WriteByte('\n')
 		} else {
 			if te.mode == temAddRule {
-				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+te.inputBuf+"█"))
+				b.WriteString("  > " + lipgloss.NewStyle().Foreground(colorOrange).Render("+ Pattern: "+te.inputBuf+"█"))
 			} else if te.editCur == len(tab.Rules) {
-				b.WriteString("> " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add match..."))
+				b.WriteString("  > " + lipgloss.NewStyle().Foreground(colorOrange).Bold(true).Render("+ Add match..."))
 			} else {
-				b.WriteString("  " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add match..."))
+				b.WriteString("    " + lipgloss.NewStyle().Foreground(colorDim).Render("+ Add match..."))
 			}
 			b.WriteByte('\n')
 		}
