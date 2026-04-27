@@ -497,9 +497,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.input.Focus()
 
 	case WikiOpenMsg:
-		// Transition back to game; re-emit so the wrapper can open the browser.
+		// Wrapper already handles browser-open before this; we only
+		// transition back to the game state. Returning the msg as a Cmd
+		// would loop forever via the wrapper.
 		a.state = stateGame
-		return a, func() tea.Msg { return msg }
+		return a, a.input.Focus()
 
 	case MenuTabsMsg:
 		a.tabEditor = NewTabEditor(TabsToConfig(a.tabs))
