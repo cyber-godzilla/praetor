@@ -121,7 +121,7 @@ func (p PersistentDataScreen) Update(msg tea.KeyMsg) (PersistentDataScreen, tea.
 func (p PersistentDataScreen) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

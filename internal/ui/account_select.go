@@ -120,7 +120,7 @@ func (a AccountSelect) View() string {
 		Width(40)
 
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
 	separatorStyle := lipgloss.NewStyle().Foreground(colorDim)
 	hintStyle := lipgloss.NewStyle().Foreground(colorDim)
 

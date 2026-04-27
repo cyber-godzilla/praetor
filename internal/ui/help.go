@@ -107,7 +107,7 @@ func (h HelpScreen) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	keyStyle := lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
-	descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	descStyle := lipgloss.NewStyle().Foreground(colorDim)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	ruleStyle := lipgloss.NewStyle().Foreground(colorDim)
 

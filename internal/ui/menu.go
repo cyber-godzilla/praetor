@@ -249,7 +249,7 @@ func (m Menu) View() string {
 			editStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 			dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 			b.WriteString(editStyle.Render("  > Log Location: "))
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc")).Render(m.pathBuf + "█"))
+			b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(m.pathBuf + "█"))
 			b.WriteByte('\n')
 			b.WriteString(dimStyle.Render("      [Enter] save  [Esc] cancel  (empty = default)"))
 			b.WriteByte('\n')

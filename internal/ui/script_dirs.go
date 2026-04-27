@@ -130,7 +130,7 @@ func (s ScriptDirsScreen) Update(msg tea.KeyMsg) (ScriptDirsScreen, tea.Cmd) {
 func (s ScriptDirsScreen) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -175,7 +175,7 @@ func (s ScriptDirsScreen) View() string {
 	} else if s.adding {
 		editStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 		b.WriteString(editStyle.Render("  Path: "))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc")).Render(s.addBuf + "\u2588"))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(s.addBuf + "\u2588"))
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render("  [Enter] add  [Esc] cancel"))
 	} else {

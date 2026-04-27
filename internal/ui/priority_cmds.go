@@ -130,7 +130,7 @@ func (s PriorityCmdsScreen) Update(msg tea.KeyMsg) (PriorityCmdsScreen, tea.Cmd)
 func (s PriorityCmdsScreen) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -177,7 +177,7 @@ func (s PriorityCmdsScreen) View() string {
 	} else if s.adding {
 		editStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 		b.WriteString(editStyle.Render("  Command: "))
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc")).Render(s.addBuf + "█"))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(s.addBuf + "█"))
 		b.WriteString("\n")
 		b.WriteString(dimStyle.Render("  [Enter] add  [Esc] cancel"))
 	} else {

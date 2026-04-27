@@ -317,7 +317,7 @@ func (s NotificationSettingsScreen) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
-	normalStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	enabledStyle := lipgloss.NewStyle().Foreground(colorOrange)
 	disabledStyle := lipgloss.NewStyle().Foreground(colorDim)

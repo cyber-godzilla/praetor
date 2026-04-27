@@ -73,7 +73,7 @@ func (c CredentialPrompt) View() string {
 		Padding(1, 3).
 		Width(50)
 
-	questionStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#cccccc"))
+	questionStyle := lipgloss.NewStyle().Foreground(colorDim)
 	hintStyle := lipgloss.NewStyle().Foreground(colorDim)
 
 	var content string
