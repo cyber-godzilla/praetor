@@ -100,27 +100,6 @@ func (m WikiMenu) Update(msg tea.KeyMsg) (WikiMenu, tea.Cmd) {
 	return m, nil
 }
 
-// visibleSlice returns the start and end indices of the items window to render.
-func (m WikiMenu) visibleSlice() (start, end int) {
-	visible := m.height - 8 // title (1) + blank (1) + hint (1) + padding (5)
-	if visible < 8 {
-		visible = 8
-	}
-	start = m.cursor - visible/2
-	if start < 0 {
-		start = 0
-	}
-	end = start + visible
-	if end > len(m.items) {
-		end = len(m.items)
-		start = end - visible
-		if start < 0 {
-			start = 0
-		}
-	}
-	return
-}
-
 // View renders the wiki menu centered on screen.
 func (m WikiMenu) View() string {
 	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
@@ -141,7 +120,11 @@ func (m WikiMenu) View() string {
 	b.WriteString(titleStyle.Render("Wiki Bookmarks"))
 	b.WriteString("\n\n")
 
-	start, end := m.visibleSlice()
+	maxVisible := m.height - 8 // title (1) + blank (1) + hint (1) + padding (5)
+	if maxVisible < 8 {
+		maxVisible = 8
+	}
+	start, end := viewportWindowCentered(len(m.items), maxVisible, m.cursor)
 
 	if start > 0 {
 		b.WriteString(dimStyle.Render("  ..."))
