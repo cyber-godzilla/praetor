@@ -168,3 +168,9 @@ type CommandEvent struct {
 }
 
 func (CommandEvent) eventMarker() {}
+
+// WikiOpenMenuEvent is sent by the /wiki command (bare, no key) to ask
+// the TUI to open the wiki bookmark browser.
+type WikiOpenMenuEvent struct{}
+
+func (WikiOpenMenuEvent) eventMarker() {}

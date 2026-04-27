@@ -89,6 +89,7 @@ const (
 	stateScriptDirs                           // script directory management
 	statePriorityCmds                         // priority command management
 	stateNotificationSettings                 // notification settings editor
+	stateWikiMenu                             // browsing wiki bookmarks
 )
 
 // App is the root Bubbletea model composing all TUI components.
@@ -140,6 +141,7 @@ type App struct {
 	priorityCmdsList        []string
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
+	wikiMenu                WikiMenu
 	modesAvailable          bool
 	version                 string
 	graphicsMode            graphics.Mode
@@ -188,6 +190,7 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		unread:        make([]bool, len(tabs)),
 
 		splash:                  NewSplash(version),
+		wikiMenu:                NewWikiMenu(),
 		scriptDirsList:          scriptDirs,
 		priorityCmdsList:        priorityCmds,
 		notificationSettingsCfg: notifyCfg,
@@ -307,6 +310,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.notificationSettings, cmd = a.notificationSettings.Update(msg)
 			return a, cmd
+		case stateWikiMenu:
+			return a.updateWikiMenu(msg)
 		case stateGame:
 			return a.updateMain(msg)
 		}
@@ -480,6 +485,21 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
+
+	case MenuWikiMsg:
+		a.wikiMenu = NewWikiMenu()
+		a.wikiMenu.SetSize(a.width, a.height)
+		a.state = stateWikiMenu
+		return a, nil
+
+	case WikiMenuCloseMsg:
+		a.state = stateGame
+		return a, a.input.Focus()
+
+	case WikiOpenMsg:
+		// Transition back to game; re-emit so the wrapper can open the browser.
+		a.state = stateGame
+		return a, func() tea.Msg { return msg }
 
 	case MenuTabsMsg:
 		a.tabEditor = NewTabEditor(TabsToConfig(a.tabs))
@@ -820,6 +840,16 @@ func (a App) updateHighlights(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// updateWikiMenu handles key messages in the wiki menu overlay.
+func (a App) updateWikiMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyCtrlC {
+		return a, tea.Quit
+	}
+	var cmd tea.Cmd
+	a.wikiMenu, cmd = a.wikiMenu.Update(msg)
+	return a, cmd
+}
+
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 	var routedTabs uint64
@@ -880,6 +910,9 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 
 		case types.ReconnectingEvent:
 			a.status.SetReconnecting(ev.Attempt, ev.NextDelay)
+
+		case types.WikiOpenMenuEvent:
+			return a.Update(MenuWikiMsg{})
 		}
 	}
 
@@ -1081,6 +1114,7 @@ func (a *App) recalcLayout() {
 	a.scriptDirsScreen.SetSize(a.width, a.height)
 	a.priorityCmdsScreen.SetSize(a.width, a.height)
 	a.notificationSettings.SetSize(a.width, a.height)
+	a.wikiMenu.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1126,6 +1160,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.priorityCmdsScreen.View()
 	case stateNotificationSettings:
 		return a.graphicsClear() + a.notificationSettings.View()
+	case stateWikiMenu:
+		return a.graphicsClear() + a.wikiMenu.View()
 	}
 
 	// stateGame:

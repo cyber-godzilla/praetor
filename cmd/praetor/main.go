@@ -19,6 +19,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	"github.com/cyber-godzilla/praetor/internal/ui"
+	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
 
 // Set via ldflags: go build -ldflags "-X main.version=v1.0.0"
@@ -416,6 +417,13 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				w.desktopNotify.UpdateConfig(msg.Config)
 			}
 		}
+		return w, cmd
+
+	case ui.WikiOpenMsg:
+		// Open the wiki URL in the system browser and let the App transition state.
+		go client.OpenBrowser(wiki.URL(msg.Slug))
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
 		return w, cmd
 
 	case ui.MenuQuitMsg:

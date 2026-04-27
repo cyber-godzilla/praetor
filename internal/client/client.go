@@ -15,6 +15,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/protocol"
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
 
 // Settings holds user-configurable client settings.
@@ -502,6 +503,37 @@ func (c *Client) handleLocalCommand(input string) {
 		}
 		c.Engine.State().SetFromString(key, value)
 		c.emitStatusUpdate()
+
+	case "/wiki":
+		// Strip "/wiki " prefix; trim spaces.
+		rest := strings.TrimSpace(strings.TrimPrefix(input, parts[0]))
+		if rest == "" {
+			// Bare /wiki — ask the TUI to open the bookmark menu.
+			c.emit(types.WikiOpenMenuEvent{})
+			return
+		}
+		slug, ok := wiki.Lookup(rest)
+		if !ok {
+			c.emit(types.GameTextEvent{
+				Styled: []types.StyledSegment{{
+					Text:   fmt.Sprintf("unknown wiki bookmark %q (type /wiki for the list)", rest),
+					Italic: true,
+				}},
+				Timestamp: time.Now(),
+				IsEcho:    true,
+			})
+			return
+		}
+		url := wiki.URL(slug)
+		go OpenBrowser(url)
+		c.emit(types.GameTextEvent{
+			Styled: []types.StyledSegment{{
+				Text:   "opening wiki: " + url,
+				Italic: true,
+			}},
+			Timestamp: time.Now(),
+			IsEcho:    true,
+		})
 
 	case "/reconnect":
 		c.Reconnect()
