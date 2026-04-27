@@ -457,7 +457,7 @@ func (s NotificationSettingsScreen) View() string {
 	if s.editing {
 		b.WriteString(dimStyle.Render("[Enter] confirm  [Esc] cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("[Space] toggle  [Enter] edit  [D] delete  [Esc] save & back"))
+		b.WriteString(dimStyle.Render("[↑/↓] navigate  [Space] toggle  [Enter] edit  [D] delete  [Esc] save & close"))
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,

@@ -88,7 +88,7 @@ func (c CredentialPrompt) View() string {
 	} else {
 		content = titleStyle.Render("Login to The Eternal City") + "\n\n" +
 			questionStyle.Render(fmt.Sprintf("Store credentials for %q?", c.username)) + "\n\n" +
-			hintStyle.Render("[Y] Yes   [N] No")
+			hintStyle.Render("[Y] yes  [N] no")
 	}
 
 	box := boxStyle.Render(content)

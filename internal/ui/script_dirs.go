@@ -177,9 +177,9 @@ func (s ScriptDirsScreen) View() string {
 		b.WriteString(editStyle.Render("  Path: "))
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(s.addBuf + "\u2588"))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  [Enter] add  [Esc] cancel"))
+		b.WriteString(dimStyle.Render("[Enter] add  [Esc] cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("  [A] Add  [D] Remove  [\u2191/\u2193] navigate  [Esc] Save & Back"))
+		b.WriteString(dimStyle.Render("[\u2191/\u2193] navigate  [A] add  [D] remove  [Esc] save & close"))
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,

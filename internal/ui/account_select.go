@@ -159,7 +159,7 @@ func (a AccountSelect) View() string {
 	}
 
 	b.WriteString("\n\n")
-	b.WriteString(hintStyle.Render("[Up/Down] navigate  [Enter] select  [d] delete"))
+	b.WriteString(hintStyle.Render("[↑/↓] navigate  [Enter] select  [D] delete"))
 
 	box := boxStyle.Render(b.String())
 

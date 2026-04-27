@@ -260,7 +260,7 @@ func (te TabEditor) viewList() string {
 	b.WriteString(titleStyle.Render("Custom Tabs"))
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).
-		Render("[Space] show/hide  [D] delete  [Enter] edit  [Esc] save"))
+		Render("[Space] show/hide  [Enter] edit  [D] delete  [Esc] save"))
 	b.WriteString("\n\n")
 
 	totalItems := len(te.tabs) + 1
@@ -322,9 +322,9 @@ func (te TabEditor) viewEdit() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Edit: " + tab.Name))
 	b.WriteString("\n")
-	helpLine := "[Space] enable/disable  [T] match/exclude  [D] delete  [Esc] back"
+	helpLine := "[Space] toggle  [T] type  [Enter] add  [D] delete  [Esc] back"
 	if isExcludeOnlyConfig(tab.Rules) {
-		helpLine = "[Space] enable/disable  [T] match/exclude  [E] echoes  [D] delete  [Esc] back"
+		helpLine = "[Space] toggle  [T] type  [E] echoes  [Enter] add  [D] delete  [Esc] back"
 	}
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(helpLine))
 	b.WriteString("\n\n")

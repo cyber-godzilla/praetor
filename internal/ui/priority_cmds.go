@@ -179,9 +179,9 @@ func (s PriorityCmdsScreen) View() string {
 		b.WriteString(editStyle.Render("  Command: "))
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(s.addBuf + "█"))
 		b.WriteString("\n")
-		b.WriteString(dimStyle.Render("  [Enter] add  [Esc] cancel"))
+		b.WriteString(dimStyle.Render("[Enter] add  [Esc] cancel"))
 	} else {
-		b.WriteString(dimStyle.Render("  [A] Add  [D] Remove  [↑/↓] navigate  [Esc] Save & Back"))
+		b.WriteString(dimStyle.Render("[↑/↓] navigate  [A] add  [D] remove  [Esc] save & close"))
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
