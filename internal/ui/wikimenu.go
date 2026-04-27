@@ -127,11 +127,15 @@ func (m WikiMenu) View() string {
 	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	cursorStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
+	boxWidth := m.width - 10
+	if boxWidth < 36 {
+		boxWidth = 36
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 3).
-		Width(56)
+		Width(boxWidth)
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Wiki Bookmarks"))

@@ -116,11 +116,15 @@ func (l LoginScreen) View() string {
 		Bold(true).
 		Align(lipgloss.Center)
 
+	boxWidth := l.width - 10
+	if boxWidth < 36 {
+		boxWidth = 36
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 3).
-		Width(40)
+		Width(boxWidth)
 
 	labelStyle := lipgloss.NewStyle().Foreground(colorDim)
 	errStyle := lipgloss.NewStyle().Foreground(colorRed)

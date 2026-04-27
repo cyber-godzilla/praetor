@@ -67,11 +67,15 @@ func (c CredentialPrompt) View() string {
 		Bold(true).
 		Align(lipgloss.Center)
 
+	boxWidth := c.width - 10
+	if boxWidth < 36 {
+		boxWidth = 36
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 3).
-		Width(50)
+		Width(boxWidth)
 
 	questionStyle := lipgloss.NewStyle().Foreground(colorDim)
 	hintStyle := lipgloss.NewStyle().Foreground(colorDim)

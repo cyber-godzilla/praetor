@@ -113,11 +113,15 @@ func (a AccountSelect) View() string {
 		Bold(true).
 		Align(lipgloss.Center)
 
+	boxWidth := a.width - 10
+	if boxWidth < 36 {
+		boxWidth = 36
+	}
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorOrange).
 		Padding(1, 3).
-		Width(40)
+		Width(boxWidth)
 
 	selectedStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	normalStyle := lipgloss.NewStyle().Foreground(colorDim)
