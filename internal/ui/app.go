@@ -91,6 +91,8 @@ const (
 	stateNotificationSettings                 // notification settings editor
 	stateWikiMenu                             // browsing wiki bookmarks
 	stateMapsMenu                             // browsing map bookmarks
+	stateIgnorelistOOC                        // editing OOC ignorelist
+	stateIgnorelistThink                      // editing Think ignorelist
 )
 
 // App is the root Bubbletea model composing all TUI components.
@@ -141,6 +143,9 @@ type App struct {
 	scriptDirsList          []string
 	priorityCmdsScreen      PriorityCmdsScreen
 	priorityCmdsList        []string
+	ignorelistScreen        IgnorelistScreen // shared editor; only one of OOC/Think is open at a time
+	ignoreOOCList           []string
+	ignoreThinkList         []string
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
 	wikiMenu                BookmarkMenu
@@ -154,7 +159,7 @@ type App struct {
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
+func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -197,6 +202,8 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		mapsMenu:                NewMapsMenu(),
 		scriptDirsList:          scriptDirs,
 		priorityCmdsList:        priorityCmds,
+		ignoreOOCList:           ignoreOOC,
+		ignoreThinkList:         ignoreThink,
 		notificationSettingsCfg: notifyCfg,
 		version:                 version,
 		graphicsMode:            graphicsMode,
@@ -309,6 +316,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case statePriorityCmds:
 			var cmd tea.Cmd
 			a.priorityCmdsScreen, cmd = a.priorityCmdsScreen.Update(msg)
+			return a, cmd
+		case stateIgnorelistOOC, stateIgnorelistThink:
+			var cmd tea.Cmd
+			a.ignorelistScreen, cmd = a.ignorelistScreen.Update(msg)
 			return a, cmd
 		case stateNotificationSettings:
 			var cmd tea.Cmd
@@ -474,6 +485,36 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case PriorityCmdsCloseMsg:
 		if msg.Changed {
 			a.priorityCmdsList = msg.Cmds
+		}
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
+
+	case MenuIgnorelistOOCMsg:
+		a.ignorelistScreen = NewIgnorelistScreen(IgnorelistKindOOC, a.ignoreOOCList)
+		a.ignorelistScreen.SetSize(a.width, a.height)
+		a.state = stateIgnorelistOOC
+		return a, nil
+
+	case IgnorelistOOCCloseMsg:
+		if msg.Changed {
+			a.ignoreOOCList = msg.Names
+		}
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
+
+	case MenuIgnorelistThinkMsg:
+		a.ignorelistScreen = NewIgnorelistScreen(IgnorelistKindThink, a.ignoreThinkList)
+		a.ignorelistScreen.SetSize(a.width, a.height)
+		a.state = stateIgnorelistThink
+		return a, nil
+
+	case IgnorelistThinkCloseMsg:
+		if msg.Changed {
+			a.ignoreThinkList = msg.Names
 		}
 		a.state = stateMenu
 		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
@@ -1183,6 +1224,7 @@ func (a *App) recalcLayout() {
 	a.notificationSettings.SetSize(a.width, a.height)
 	a.wikiMenu.SetSize(a.width, a.height)
 	a.mapsMenu.SetSize(a.width, a.height)
+	a.ignorelistScreen.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1232,6 +1274,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.wikiMenu.View()
 	case stateMapsMenu:
 		return a.graphicsClear() + a.mapsMenu.View()
+	case stateIgnorelistOOC, stateIgnorelistThink:
+		return a.graphicsClear() + a.ignorelistScreen.View()
 	}
 
 	// stateGame:

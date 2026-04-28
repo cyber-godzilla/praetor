@@ -91,6 +91,8 @@ func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs
 		menuItem{label: "Display", isHeader: true},
 		menuItem{label: "Highlights", action: func() tea.Msg { return MenuHighlightsMsg{} }},
 		menuItem{label: "Custom Tabs", action: func() tea.Msg { return MenuTabsMsg{} }},
+		menuItem{label: "Ignorelist (OOC)", action: func() tea.Msg { return MenuIgnorelistOOCMsg{} }},
+		menuItem{label: "Ignorelist (Think)", action: func() tea.Msg { return MenuIgnorelistThinkMsg{} }},
 		menuItem{label: cwLabel, action: func() tea.Msg { return MenuColorWordsMsg{} }},
 		menuItem{label: echoTypedLabel, action: func() tea.Msg { return MenuEchoTypedMsg{} }},
 		menuItem{label: echoScriptLabel, action: func() tea.Msg { return MenuEchoScriptMsg{} }},
