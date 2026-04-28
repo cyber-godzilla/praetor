@@ -6,6 +6,27 @@ import (
 	"sync"
 )
 
+// IgnoreChannel identifies which channel matched in IgnoreFilter.Match.
+type IgnoreChannel int
+
+const (
+	IgnoreChannelNone IgnoreChannel = iota
+	IgnoreChannelOOC
+	IgnoreChannelThink
+)
+
+// String returns a short channel label suitable for placeholder text.
+func (c IgnoreChannel) String() string {
+	switch c {
+	case IgnoreChannelOOC:
+		return "OOC"
+	case IgnoreChannelThink:
+		return "think"
+	default:
+		return ""
+	}
+}
+
 // IgnoreFilter suppresses game-text lines that originate from listed
 // accounts (OOC channel) or characters (think aloud). The two lists
 // are independent — an entry on one does not affect the other.
@@ -58,24 +79,32 @@ func (f *IgnoreFilter) SetThink(names []string) {
 	f.mu.Unlock()
 }
 
-// ShouldDrop reports whether the given parsed-text line should be
-// suppressed entirely. Both regexes are tried; first hit wins.
-func (f *IgnoreFilter) ShouldDrop(text string) bool {
+// Match runs both regexes against the given parsed-text line. On a hit,
+// it returns the matching channel and the case-preserved captured name.
+// On miss, returns (IgnoreChannelNone, "", false).
+func (f *IgnoreFilter) Match(text string) (IgnoreChannel, string, bool) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	if len(f.ooc) > 0 {
 		if m := f.oocRe.FindStringSubmatch(text); len(m) == 2 {
 			if _, hit := f.ooc[strings.ToLower(m[1])]; hit {
-				return true
+				return IgnoreChannelOOC, m[1], true
 			}
 		}
 	}
 	if len(f.think) > 0 {
 		if m := f.thnkRe.FindStringSubmatch(text); len(m) == 2 {
 			if _, hit := f.think[strings.ToLower(m[1])]; hit {
-				return true
+				return IgnoreChannelThink, m[1], true
 			}
 		}
 	}
-	return false
+	return IgnoreChannelNone, "", false
+}
+
+// ShouldDrop is a temporary shim during the v2 refactor. Task 6 will
+// remove it once handleGameText is migrated to Match.
+func (f *IgnoreFilter) ShouldDrop(text string) bool {
+	_, _, hit := f.Match(text)
+	return hit
 }
