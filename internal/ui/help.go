@@ -132,6 +132,8 @@ func (h HelpScreen) View() string {
 		{"/set <label> <val>", "Set a state value"},
 		{"/reconnect", "Disconnect and reconnect to game server"},
 		{"/help", "Show this help screen"},
+		{"/wiki [topic]", "Open wiki bookmarks (or a topic directly)"},
+		{"/maps [location]", "Open map browser (or a location directly)"},
 	}
 	for _, e := range cmdEntries {
 		lines = append(lines, "  "+keyStyle.Render(padRight(e.key, 22))+descStyle.Render(e.desc))
@@ -142,9 +144,10 @@ func (h HelpScreen) View() string {
 	lines = append(lines, headerStyle.Render("Keybindings"))
 	keyEntries := []struct{ key, desc string }{
 		{"Tab / Shift+Tab", "Next / previous tab"},
-		{"Alt+1..6", "Jump to tab by number"},
+		{"Alt+1..9, Alt+0", "Jump to tab by number (0 = 10th)"},
 		{"Alt+S", "Toggle sidebar"},
 		{"Alt+M", "Quick-cycle automation mode"},
+		{"Alt+I", "Toggle suppressed line reveal"},
 		{"Alt+X", "Disable all automation"},
 		{"Esc", "Open menu"},
 		{"Ctrl+C", "Clear input / confirm quit"},
@@ -161,11 +164,21 @@ func (h HelpScreen) View() string {
 	lines = append(lines, headerStyle.Render("Menu (Esc)"))
 	menuEntries := []struct{ key, desc string }{
 		{"Reload Scripts", "Hot-reload all Lua modes"},
+		{"Script Directories", "Configure where Lua modes load from"},
 		{"Quick-Cycle Modes", "Configure Alt+M mode list"},
+		{"Priority Commands", "Commands that jump the queue"},
 		{"Highlights", "Manage string highlighting patterns"},
 		{"Custom Tabs", "Configure custom tab filters"},
+		{"Ignorelist (OOC)", "Suppress OOC by account name"},
+		{"Ignorelist (Think)", "Suppress think aloud by character name"},
 		{"Colorwords", "Toggle color word rendering"},
-		{"Echo Commands", "Toggle command echo in output"},
+		{"Echo Typed Commands", "Toggle echo of user-typed commands"},
+		{"Echo Script Commands", "Toggle echo of script-sent commands"},
+		{"Hide IP Addresses", "Mask IP addresses in output"},
+		{"Auto Reconnect", "Toggle auto-reconnect on disconnect"},
+		{"Notification Settings", "Desktop notification thresholds + patterns"},
+		{"Game Logs", "Toggle session log recording"},
+		{"Persistent Data", "View/clear per-mode saved state"},
 	}
 	for _, e := range menuEntries {
 		lines = append(lines, "  "+keyStyle.Render(padRight(e.key, 22))+descStyle.Render(e.desc))
