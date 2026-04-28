@@ -340,10 +340,15 @@ func (c *Client) handleGameText(line string) {
 		return
 	}
 
-	// Drop lines from ignored OOC accounts / Think characters. Session
-	// log already captured the raw line upstream — this only affects
-	// event dispatch and engine processing.
+	// Drop lines from ignored OOC accounts / Think characters. The
+	// session log still captures the line via IgnoredGameTextEvent so
+	// suppressed lines remain in the transcript; engine, tabs, and
+	// notifications never see it.
 	if c.ignore.ShouldDrop(result.Text) {
+		c.emit(types.IgnoredGameTextEvent{
+			Text:      result.Text,
+			Timestamp: time.Now(),
+		})
 		return
 	}
 

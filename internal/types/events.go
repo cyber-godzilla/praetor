@@ -51,6 +51,17 @@ type GameTextEvent struct {
 
 func (GameTextEvent) eventMarker() {}
 
+// IgnoredGameTextEvent is emitted when a line was suppressed by the
+// IgnoreFilter. It is not routed to tabs, the engine, or notifications;
+// only the session log consumes it so suppressed lines remain in the
+// captured transcript.
+type IgnoredGameTextEvent struct {
+	Text      string
+	Timestamp time.Time
+}
+
+func (IgnoredGameTextEvent) eventMarker() {}
+
 // MinimapRoom represents a room on the minimap.
 type MinimapRoom struct {
 	X, Y       int

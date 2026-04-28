@@ -1,6 +1,10 @@
 package client
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/cyber-godzilla/praetor/internal/protocol"
+)
 
 func TestIgnoreFilter_OOC_CanonicalExample(t *testing.T) {
 	f := NewIgnoreFilter()
@@ -89,36 +93,44 @@ func TestIgnoreFilter_SetReplacesEntries(t *testing.T) {
 	}
 }
 
-// integrationLineFromHandleGameText is exercised indirectly via the
-// public ShouldDrop. We assert the canonical examples produce a drop
-// and a near-miss does not, so the regex/lookup contract holds for
-// the strings the caller will actually pass in.
-func TestIgnoreFilter_RealisticGameTextExamples(t *testing.T) {
+// TestIgnoreFilter_IntegrationViaHTMLParse verifies the wired path:
+// real (HTML-escaped) game text → ParseHTMLWithIndent → ShouldDrop.
+// Production probe of session logs confirmed the server sends HTML-
+// escaped angle brackets (e.g. "&lt;8:14 pm OOC&gt; ..."), which the
+// parser decodes to literal "<8:14 pm OOC> ...". Without this test,
+// only the regex unit tests cover the contract — they don't prove the
+// caller's actual input is what they expect.
+func TestIgnoreFilter_IntegrationViaHTMLParse(t *testing.T) {
 	f := NewIgnoreFilter()
 	f.SetOOC([]string{"xXSephirothXx", "dArKwInG666"})
 	f.SetThink([]string{"Travis", "Tobias"})
 
+	// Inputs as they arrive on the wire (HTML-escaped + optional
+	// <font> wrapper). The parser must decode the entities and strip
+	// the font tag before our regex sees the text.
 	drops := []string{
-		`<8:14 pm OOC> xXSephirothXx says, "lfg anybody?"`,
-		`<11:59 PM OOC> dArKwInG666 says, "..."`,
-		`<Travis thinks aloud: I shouldn't have done that.>`,
-		`<Tobias thinks aloud: where did the cat go>`,
+		`&lt;8:14 pm OOC&gt; xXSephirothXx says, "lfg anybody?"`,
+		`<font color="#ffff00">&lt;11:59 PM OOC&gt; dArKwInG666 says, "..."</font>`,
+		`&lt;Travis thinks aloud: I shouldn't have done that.&gt;`,
+		`<font color="#88aaff">&lt;Tobias thinks aloud: where did the cat go&gt;</font>`,
 	}
-	for _, d := range drops {
-		if !f.ShouldDrop(d) {
-			t.Errorf("expected drop: %q", d)
+	for _, raw := range drops {
+		parsed := protocol.ParseHTMLWithIndent(raw, 0)
+		if !f.ShouldDrop(parsed.Text) {
+			t.Errorf("expected drop for parsed text %q (raw input %q)", parsed.Text, raw)
 		}
 	}
 
 	keeps := []string{
-		`<8:14 pm OOC> Marcus says, "anyone selling armor?"`, // unlisted
-		`<Andrea thinks aloud: hmm.>`,                        // unlisted
-		`Travis arrives from the south.`,                     // narrative, not channel
-		`You hear xXSephirothXx muttering nearby.`,           // not OOC channel
+		`&lt;8:14 pm OOC&gt; Marcus says, "anyone selling armor?"`, // unlisted account
+		`&lt;Andrea thinks aloud: hmm.&gt;`,                        // unlisted character
+		`Travis arrives from the south.`,                           // narrative, no channel
+		`You hear xXSephirothXx muttering nearby.`,                 // not OOC channel
 	}
-	for _, k := range keeps {
-		if f.ShouldDrop(k) {
-			t.Errorf("expected keep: %q", k)
+	for _, raw := range keeps {
+		parsed := protocol.ParseHTMLWithIndent(raw, 0)
+		if f.ShouldDrop(parsed.Text) {
+			t.Errorf("expected keep for parsed text %q (raw input %q)", parsed.Text, raw)
 		}
 	}
 }
