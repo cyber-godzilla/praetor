@@ -88,3 +88,37 @@ func TestIgnoreFilter_SetReplacesEntries(t *testing.T) {
 		t.Error("new entry not honored after Set replacement")
 	}
 }
+
+// integrationLineFromHandleGameText is exercised indirectly via the
+// public ShouldDrop. We assert the canonical examples produce a drop
+// and a near-miss does not, so the regex/lookup contract holds for
+// the strings the caller will actually pass in.
+func TestIgnoreFilter_RealisticGameTextExamples(t *testing.T) {
+	f := NewIgnoreFilter()
+	f.SetOOC([]string{"xXSephirothXx", "dArKwInG666"})
+	f.SetThink([]string{"Travis", "Tobias"})
+
+	drops := []string{
+		`<8:14 pm OOC> xXSephirothXx says, "lfg anybody?"`,
+		`<11:59 PM OOC> dArKwInG666 says, "..."`,
+		`<Travis thinks aloud: I shouldn't have done that.>`,
+		`<Tobias thinks aloud: where did the cat go>`,
+	}
+	for _, d := range drops {
+		if !f.ShouldDrop(d) {
+			t.Errorf("expected drop: %q", d)
+		}
+	}
+
+	keeps := []string{
+		`<8:14 pm OOC> Marcus says, "anyone selling armor?"`, // unlisted
+		`<Andrea thinks aloud: hmm.>`,                        // unlisted
+		`Travis arrives from the south.`,                     // narrative, not channel
+		`You hear xXSephirothXx muttering nearby.`,           // not OOC channel
+	}
+	for _, k := range keeps {
+		if f.ShouldDrop(k) {
+			t.Errorf("expected keep: %q", k)
+		}
+	}
+}

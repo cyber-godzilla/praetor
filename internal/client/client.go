@@ -44,6 +44,10 @@ type Client struct {
 	// htmlIndent tracks <ul> nesting across protocol lines for indentation.
 	htmlIndent int
 
+	// ignore drops lines from listed OOC accounts / Think characters.
+	// It is hot-swappable via SetIgnoreOOC / SetIgnoreThink.
+	ignore *IgnoreFilter
+
 	// authUser and authPassCookie are set by Login and used by handleSecret.
 	authUser       string
 	authPassCookie string
@@ -71,12 +75,23 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		Settings:    Settings{EchoTyped: true, EchoScript: true},
 		events:      make(chan types.Event, 256),
 		reconnector: recon,
+		ignore:      NewIgnoreFilter(),
 	}, nil
 }
 
 // Events returns a read-only channel of game events for the TUI.
 func (c *Client) Events() <-chan types.Event {
 	return c.events
+}
+
+// SetIgnoreOOC replaces the OOC ignorelist (account names).
+func (c *Client) SetIgnoreOOC(names []string) {
+	c.ignore.SetOOC(names)
+}
+
+// SetIgnoreThink replaces the Think ignorelist (character names).
+func (c *Client) SetIgnoreThink(names []string) {
+	c.ignore.SetThink(names)
 }
 
 // Login performs HTTP login and stores the session cookies for auth.
@@ -322,6 +337,13 @@ func (c *Client) handleGameText(line string) {
 		if strings.HasPrefix(stripped, "SKOOT ") {
 			c.handleSkoot(stripped)
 		}
+		return
+	}
+
+	// Drop lines from ignored OOC accounts / Think characters. Session
+	// log already captured the raw line upstream — this only affects
+	// event dispatch and engine processing.
+	if c.ignore.ShouldDrop(result.Text) {
 		return
 	}
 
