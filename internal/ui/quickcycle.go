@@ -138,8 +138,6 @@ func (mp ModePicker) View() string {
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Quick-Cycle Modes"))
-	b.WriteString("\n")
-	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("[Space] toggle  [Enter] select  [Esc] save"))
 	b.WriteString("\n\n")
 
 	maxVisible := mp.height - 12
@@ -184,6 +182,9 @@ func (mp ModePicker) View() string {
 		b.WriteString(arrowStyle.Render("      ▼"))
 		b.WriteByte('\n')
 	}
+
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("[Space] toggle  [Enter] select  [Esc] save"))
 
 	return lipgloss.Place(mp.width, mp.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))

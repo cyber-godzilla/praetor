@@ -446,6 +446,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.modesAvailable = msg.Available
 		// Rebuild menu so the Quick-Cycle Modes item appears/disappears.
 		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
+		a.menu.SetSize(a.width, a.height)
 		return a, nil
 
 	case MenuScriptDirsMsg:
