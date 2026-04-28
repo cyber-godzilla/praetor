@@ -101,10 +101,3 @@ func (f *IgnoreFilter) Match(text string) (IgnoreChannel, string, bool) {
 	}
 	return IgnoreChannelNone, "", false
 }
-
-// ShouldDrop is a temporary shim during the v2 refactor. Task 6 will
-// remove it once handleGameText is migrated to Match.
-func (f *IgnoreFilter) ShouldDrop(text string) bool {
-	_, _, hit := f.Match(text)
-	return hit
-}

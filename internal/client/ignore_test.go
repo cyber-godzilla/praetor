@@ -122,6 +122,47 @@ func TestIgnoreFilter_SetReplacesEntries(t *testing.T) {
 	}
 }
 
+// TestIgnoreFilter_PlaceholderFormat pins the placeholder text format
+// the spec calls for. The format is "[suppressed: <name> <channel>]"
+// using IgnoreChannel.String() (which returns "OOC" or "think").
+func TestIgnoreFilter_PlaceholderFormat(t *testing.T) {
+	cases := []struct {
+		name    string
+		ch      IgnoreChannel
+		wantFmt string
+	}{
+		{"xXSephirothXx", IgnoreChannelOOC, "[suppressed: xXSephirothXx OOC]"},
+		{"Travis", IgnoreChannelThink, "[suppressed: Travis think]"},
+		{"M0rt1c1aNvOiD", IgnoreChannelOOC, "[suppressed: M0rt1c1aNvOiD OOC]"},
+	}
+	for _, tc := range cases {
+		got := "[suppressed: " + tc.name + " " + tc.ch.String() + "]"
+		if got != tc.wantFmt {
+			t.Errorf("placeholder for %s/%s: got %q, want %q",
+				tc.name, tc.ch, got, tc.wantFmt)
+		}
+	}
+}
+
+// TestIgnoreChannel_String pins the exact channel labels used in the
+// placeholder. A future "normalization" that capitalizes "think" would
+// silently break the spec's placeholder format.
+func TestIgnoreChannel_String(t *testing.T) {
+	cases := []struct {
+		ch   IgnoreChannel
+		want string
+	}{
+		{IgnoreChannelNone, ""},
+		{IgnoreChannelOOC, "OOC"},
+		{IgnoreChannelThink, "think"},
+	}
+	for _, tc := range cases {
+		if got := tc.ch.String(); got != tc.want {
+			t.Errorf("IgnoreChannel(%d).String() = %q, want %q", tc.ch, got, tc.want)
+		}
+	}
+}
+
 // TestIgnoreFilter_IntegrationViaHTMLParse verifies the wired path:
 // real (HTML-escaped) game text → ParseHTMLWithIndent → Match.
 // Production probe of session logs confirmed the server sends HTML-

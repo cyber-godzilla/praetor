@@ -51,6 +51,45 @@ type GameTextEvent struct {
 
 func (GameTextEvent) eventMarker() {}
 
+// IgnoreChannel mirrors internal/client.IgnoreChannel. It is declared
+// here so internal/types does not import internal/client (which would
+// be a cycle — client already imports types).
+type IgnoreChannel int
+
+const (
+	IgnoreChannelNone IgnoreChannel = iota
+	IgnoreChannelOOC
+	IgnoreChannelThink
+)
+
+// String returns a short channel label suitable for placeholder text.
+func (c IgnoreChannel) String() string {
+	switch c {
+	case IgnoreChannelOOC:
+		return "OOC"
+	case IgnoreChannelThink:
+		return "think"
+	default:
+		return ""
+	}
+}
+
+// SuppressedGameTextEvent is emitted in place of GameTextEvent when a
+// line matches an ignorelist. Tabs render the placeholder by default
+// and the original on Alt+I (App.expandSuppressed). The session log,
+// engine, and desktop notify never see this event.
+type SuppressedGameTextEvent struct {
+	Channel           IgnoreChannel
+	SourceName        string
+	PlaceholderText   string
+	PlaceholderStyled []StyledSegment
+	OriginalText      string
+	OriginalStyled    []StyledSegment
+	Timestamp         time.Time
+}
+
+func (SuppressedGameTextEvent) eventMarker() {}
+
 // MinimapRoom represents a room on the minimap.
 type MinimapRoom struct {
 	X, Y       int

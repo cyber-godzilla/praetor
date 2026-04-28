@@ -340,10 +340,12 @@ func (c *Client) handleGameText(line string) {
 		return
 	}
 
-	// Drop lines from ignored OOC accounts / Think characters. Session
-	// log already captured the raw line upstream — this only affects
-	// event dispatch and engine processing.
-	if c.ignore.ShouldDrop(result.Text) {
+	// Lines from ignored OOC accounts / Think characters are emitted as
+	// SuppressedGameTextEvent (placeholder + original) instead of
+	// GameTextEvent. The session log, desktop notify, and engine all key
+	// off GameTextEvent, so the early return suppresses them as required.
+	if ch, name, hit := c.ignore.Match(result.Text); hit {
+		c.emitSuppressed(result, ch, name)
 		return
 	}
 
@@ -373,6 +375,29 @@ func (c *Client) handleGameText(line string) {
 		c.drainQueue()
 		c.emitStatusUpdate()
 	}
+}
+
+// emitSuppressed builds a SuppressedGameTextEvent for the given parse
+// result and channel/name capture, then emits it. Engine processing
+// and the regular GameTextEvent are skipped by the caller.
+func (c *Client) emitSuppressed(result protocol.HTMLResult, ch IgnoreChannel, name string) {
+	placeholderText := fmt.Sprintf("[suppressed: %s %s]", name, ch.String())
+	placeholderStyled := []types.StyledSegment{
+		{
+			Text:   placeholderText,
+			Color:  "#888888",
+			Italic: true,
+		},
+	}
+	c.emit(types.SuppressedGameTextEvent{
+		Channel:           types.IgnoreChannel(ch),
+		SourceName:        name,
+		PlaceholderText:   placeholderText,
+		PlaceholderStyled: placeholderStyled,
+		OriginalText:      result.Text,
+		OriginalStyled:    result.Segments,
+		Timestamp:         time.Now(),
+	})
 }
 
 // emitStatusUpdate sends a StatusUpdateEvent with current mode, display state, and metrics.
