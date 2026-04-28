@@ -61,9 +61,11 @@ type ModesAvailableMsg struct {
 const kittyDeleteAll = "\033_Ga=d,d=A,q=2;\033\\"
 
 // graphicsClear returns the Kitty delete-all escape when running in Kitty
-// graphics mode, and an empty string otherwise. This prevents leaking
-// Kitty-specific APC sequences to terminals that don't support them.
+// graphics mode, and an empty string otherwise. Used by overlay views
+// (menu, help, screens) that wipe the terminal image area; also notifies
+// the sidebar so the next return to the game view re-emits the images.
 func (a App) graphicsClear() string {
+	a.sidebar.InvalidateGraphics()
 	if a.graphicsMode == graphics.ModeKitty {
 		return kittyDeleteAll
 	}
@@ -1326,9 +1328,10 @@ func (a App) View() string {
 
 	var content string
 	var kittyMinimap, kittyCompass string
+	var graphicsChanged bool
 	if a.sidebarVisible {
 		sidebar := a.sidebar.View()
-		kittyMinimap, kittyCompass = a.sidebar.GraphicsEscapes()
+		graphicsChanged, kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, fixedContent, sidebar)
 	} else {
 		content = fixedContent
@@ -1349,21 +1352,24 @@ func (a App) View() string {
 
 	result := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// Always clear previous Kitty images before drawing new ones.
-	// This prevents ghost images after resize or tab switch.
-	result += a.graphicsClear()
-
-	// Inject Kitty graphics escapes AFTER layout, using ANSI cursor
-	// positioning to place images in the sidebar.
-	sidebarCol := a.width - a.sidebarWidth + 2
-	if kittyMinimap != "" {
-		// Minimap: row 2 (after tab bar)
-		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
-	}
-	if kittyCompass != "" {
-		// Compass: after minimap (row 2 + minimap height)
-		compassRow := 2 + a.sidebar.MinimapHeight()
-		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
+	// Only emit kitty escapes when the graphics actually changed since
+	// the last frame (or when an overlay invalidated them). Skipping
+	// the per-keystroke re-emit eliminates the visible flash that the
+	// previous unconditional clear+re-emit caused.
+	if graphicsChanged {
+		if a.graphicsMode == graphics.ModeKitty {
+			result += kittyDeleteAll
+		}
+		sidebarCol := a.width - a.sidebarWidth + 2
+		if kittyMinimap != "" {
+			// Minimap: row 2 (after tab bar)
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
+		}
+		if kittyCompass != "" {
+			// Compass: after minimap (row 2 + minimap height)
+			compassRow := 2 + a.sidebar.MinimapHeight()
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
+		}
 	}
 
 	return result

@@ -31,9 +31,19 @@ type Sidebar struct {
 	graphicsMode  graphics.Mode
 
 	// Graphics cache — avoid re-rendering every frame.
-	graphicsDirty            bool
-	cachedMinimapEsc         string
-	cachedCompassEsc         string
+	graphicsDirty    bool
+	cachedMinimapEsc string
+	cachedCompassEsc string
+
+	// lastEmittedMinimap / lastEmittedCompass track the most recent
+	// kitty/sixel escape sequences that were actually emitted to the
+	// terminal. Re-emitting unchanged images causes a visible flash
+	// because kitty `a=T` transmits create a fresh image each time, so
+	// ConsumeGraphics returns "" when the cache matches what was last
+	// emitted. Overlay views (menu, help) call InvalidateGraphics
+	// because their graphicsClear() wiped the terminal.
+	lastEmittedMinimap       string
+	lastEmittedCompass       string
 	cachedPlaceholder        string
 	cachedCompassPlaceholder string
 }
@@ -155,6 +165,33 @@ func (s *Sidebar) GraphicsEscapes() (string, string) {
 		s.rebuildGraphicsCache()
 	}
 	return s.cachedMinimapEsc, s.cachedCompassEsc
+}
+
+// ConsumeGraphics returns the minimap and compass escape sequences
+// only when they differ from what was last emitted. The boolean is
+// true when the caller should clear and re-emit; false means the
+// terminal already shows the current images and emitting them again
+// would just cause flicker. Mutates the last-emitted snapshot, so
+// each frame should call this exactly once.
+func (s *Sidebar) ConsumeGraphics() (changed bool, minimap, compass string) {
+	if s.graphicsDirty {
+		s.rebuildGraphicsCache()
+	}
+	if s.cachedMinimapEsc == s.lastEmittedMinimap && s.cachedCompassEsc == s.lastEmittedCompass {
+		return false, "", ""
+	}
+	s.lastEmittedMinimap = s.cachedMinimapEsc
+	s.lastEmittedCompass = s.cachedCompassEsc
+	return true, s.cachedMinimapEsc, s.cachedCompassEsc
+}
+
+// InvalidateGraphics clears the last-emitted snapshot so the next
+// ConsumeGraphics call re-emits regardless of cache equality. Call
+// this when an overlay view (menu, help) issued a delete-all and the
+// terminal images are now gone.
+func (s *Sidebar) InvalidateGraphics() {
+	s.lastEmittedMinimap = ""
+	s.lastEmittedCompass = ""
 }
 
 // View renders the sidebar content.
