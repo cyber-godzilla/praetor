@@ -566,6 +566,7 @@ func (c *Client) handleLocalCommand(input string) {
 			c.emit(types.GameTextEvent{
 				Styled: []types.StyledSegment{{
 					Text:   fmt.Sprintf("unknown wiki bookmark %q (type /wiki for the list)", rest),
+					Color:  "#e8a838",
 					Italic: true,
 				}},
 				Timestamp: time.Now(),
@@ -578,6 +579,7 @@ func (c *Client) handleLocalCommand(input string) {
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   "opening wiki: " + url,
+				Color:  "#e8a838",
 				Italic: true,
 			}},
 			Timestamp: time.Now(),
@@ -598,6 +600,7 @@ func (c *Client) handleLocalCommand(input string) {
 				c.emit(types.GameTextEvent{
 					Styled: []types.StyledSegment{{
 						Text:   fmt.Sprintf("unknown map %q. did you mean: %s? (or /maps for the list)", rest, strings.Join(suggestions, ", ")),
+						Color:  "#e8a838",
 						Italic: true,
 					}},
 					Timestamp: time.Now(),
@@ -607,6 +610,7 @@ func (c *Client) handleLocalCommand(input string) {
 				c.emit(types.GameTextEvent{
 					Styled: []types.StyledSegment{{
 						Text:   fmt.Sprintf("unknown map %q (type /maps for the list)", rest),
+						Color:  "#e8a838",
 						Italic: true,
 					}},
 					Timestamp: time.Now(),
@@ -620,6 +624,7 @@ func (c *Client) handleLocalCommand(input string) {
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   "opening map: " + url,
+				Color:  "#e8a838",
 				Italic: true,
 			}},
 			Timestamp: time.Now(),

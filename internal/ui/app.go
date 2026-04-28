@@ -849,6 +849,17 @@ func (a App) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				for i := range a.tabs {
 					a.tabs[i].Pane.SetExpanded(a.expandSuppressed)
 				}
+				notice := "Suppressed lines: collapsed"
+				if a.expandSuppressed {
+					notice = "Suppressed lines: revealed"
+				}
+				if len(a.tabs) > 0 {
+					a.tabs[0].Pane.Append([]types.StyledSegment{{
+						Text:   notice,
+						Color:  "#e8a838",
+						Italic: true,
+					}})
+				}
 				return a, nil
 			}
 		}
