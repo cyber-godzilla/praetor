@@ -36,6 +36,7 @@ type Config struct {
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
 	Highlights    []HighlightConfig   `yaml:"highlights"`
+	Ignorelist    Ignorelist          `yaml:"ignorelist"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 	Logging       LoggingConfig       `yaml:"logging"`
 }
@@ -65,6 +66,11 @@ type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
 	Style   string `yaml:"style"` // red, gold, green, blue
 	Active  bool   `yaml:"active"`
+}
+
+type Ignorelist struct {
+	OOC   []string `yaml:"ooc"`
+	Think []string `yaml:"think"`
 }
 
 type NotificationsConfig struct {

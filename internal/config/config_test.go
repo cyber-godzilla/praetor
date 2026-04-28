@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -319,6 +320,45 @@ func containsLegacyUIEcho(s string) bool {
 	// Look for "\n  echo_commands:" — 2-space indent = direct child of ui:.
 	// Under custom_tabs the indent is 4+ spaces.
 	return contains(s, "\n  echo_commands:")
+}
+
+func TestIgnorelist_RoundTrip(t *testing.T) {
+	cfg := Defaults()
+	cfg.Ignorelist.OOC = []string{"xXSephirothXx", "dArKwInG666"}
+	cfg.Ignorelist.Think = []string{"Travis", "Andrea"}
+
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !reflect.DeepEqual(loaded.Ignorelist.OOC, cfg.Ignorelist.OOC) {
+		t.Errorf("OOC mismatch: got %v, want %v", loaded.Ignorelist.OOC, cfg.Ignorelist.OOC)
+	}
+	if !reflect.DeepEqual(loaded.Ignorelist.Think, cfg.Ignorelist.Think) {
+		t.Errorf("Think mismatch: got %v, want %v", loaded.Ignorelist.Think, cfg.Ignorelist.Think)
+	}
+}
+
+func TestIgnorelist_MissingDefaultsToEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	minimal := []byte("server:\n  host: game.eternalcitygame.com\n  port: 8080\n  protocol: ws\n  login_url: https://login.eternalcitygame.com/login.php\n")
+	if err := os.WriteFile(path, minimal, 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Ignorelist.OOC) != 0 {
+		t.Errorf("OOC should default empty, got %v", cfg.Ignorelist.OOC)
+	}
+	if len(cfg.Ignorelist.Think) != 0 {
+		t.Errorf("Think should default empty, got %v", cfg.Ignorelist.Think)
+	}
 }
 
 func TestLoadConfigDefaults(t *testing.T) {
