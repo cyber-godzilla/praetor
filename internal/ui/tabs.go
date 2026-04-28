@@ -159,6 +159,32 @@ func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, 
 	return routed
 }
 
+// RouteSuppressed sends a SuppressedGameTextEvent's placeholder + original
+// segments to every matching tab. Routing follows the same rules as
+// RouteText (All + visible custom tabs whose patterns match), but
+// matching uses the original plain text and the pane stores both
+// renditions so Alt+I can swap them in place. Echo gating does not apply
+// because suppressed lines are never command echoes.
+func RouteSuppressed(tabs []TabDef, placeholder, original []types.StyledSegment, originalText string) uint64 {
+	var routed uint64
+	for i := range tabs {
+		switch tabs[i].Kind {
+		case TabKindAll:
+			tabs[i].Pane.AppendSuppressed(placeholder, original)
+			routed |= 1 << uint(i)
+		case TabKindCustom:
+			if !tabs[i].Visible {
+				continue
+			}
+			if MatchesTab(originalText, tabs[i].Rules) {
+				tabs[i].Pane.AppendSuppressed(placeholder, original)
+				routed |= 1 << uint(i)
+			}
+		}
+	}
+	return routed
+}
+
 // isExcludeOnly reports whether the tab has no active include rules.
 // Zero-rule tabs are considered exclude-only (they catch everything).
 func isExcludeOnly(rules []TabRule) bool {

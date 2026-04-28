@@ -109,29 +109,30 @@ type App struct {
 	debugMode      bool   // show Debug tab (--debug flag)
 	scrollback     int
 
-	tabs          []TabDef
-	metrics       MetricsPane
-	debug         DebugPane
-	tabEditor     TabEditor
-	sidebar       *Sidebar
-	status        StatusBar
-	input         Input
-	login         LoginScreen
-	accountSelect AccountSelect
-	menu          Menu
-	quickCycle    QuickCycle
-	modePicker    ModePicker
-	highlightsMgr HighlightsManager
-	highlights    []config.HighlightConfig
-	help          HelpScreen
-	colorWords    bool
-	echoTyped     bool
-	echoScript    bool
-	autoReconnect bool
-	hideIPs       bool
-	gameLogs      bool
-	logPath       string
-	unread        []bool
+	tabs             []TabDef
+	metrics          MetricsPane
+	debug            DebugPane
+	tabEditor        TabEditor
+	sidebar          *Sidebar
+	status           StatusBar
+	input            Input
+	login            LoginScreen
+	accountSelect    AccountSelect
+	menu             Menu
+	quickCycle       QuickCycle
+	modePicker       ModePicker
+	highlightsMgr    HighlightsManager
+	highlights       []config.HighlightConfig
+	help             HelpScreen
+	colorWords       bool
+	echoTyped        bool
+	echoScript       bool
+	autoReconnect    bool
+	hideIPs          bool
+	expandSuppressed bool // toggled by Alt+I; propagates to every tab's OutputPane
+	gameLogs         bool
+	logPath          string
+	unread           []bool
 
 	splash                  Splash
 	credentialPrompt        CredentialPrompt
@@ -800,6 +801,14 @@ func (a App) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case 'x':
 				// Alt+X: disable all automation
 				return a, func() tea.Msg { return SetModeMsg{Mode: "disable"} }
+
+			case 'i':
+				// Alt+I: toggle global expand for suppressed lines
+				a.expandSuppressed = !a.expandSuppressed
+				for i := range a.tabs {
+					a.tabs[i].Pane.SetExpanded(a.expandSuppressed)
+				}
+				return a, nil
 			}
 		}
 
@@ -905,6 +914,27 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			routed := RouteText(a.tabs, styled, ev.Text, ev.IsEcho)
 			// Only count non-empty text for unread markers.
 			if ev.Text != "" {
+				routedTabs |= routed
+			}
+
+		case types.SuppressedGameTextEvent:
+			// Apply the same display transforms as GameTextEvent, but on
+			// the ORIGINAL styled segments. The placeholder renders as-is.
+			styled := ev.OriginalStyled
+			if a.colorWords {
+				styled = colorwords.ApplyColorWords(styled)
+			}
+			styled = applyHighlights(styled, a.highlights)
+			if a.hideIPs {
+				styled = maskIPs(styled)
+			}
+
+			// Route to All + matching custom tabs. Matching uses the
+			// ORIGINAL text so custom tab filters see the real content;
+			// the pane stores both placeholder and original so Alt+I
+			// can swap renditions in place.
+			routed := RouteSuppressed(a.tabs, ev.PlaceholderStyled, styled, ev.OriginalText)
+			if ev.OriginalText != "" {
 				routedTabs |= routed
 			}
 
