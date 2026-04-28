@@ -687,9 +687,6 @@ func main() {
 				}
 			}
 			// Side effects (logging, notifications) for the whole batch.
-			// IgnoredGameTextEvent is consumed here (session log only) and
-			// filtered out before the batch reaches the App.
-			appBatch := batch[:0:len(batch)]
 			for _, ev := range batch {
 				switch e := ev.(type) {
 				case types.GameTextEvent:
@@ -697,13 +694,6 @@ func main() {
 						sessLog.Log(e.Timestamp, e.Text)
 					}
 					desktopNotify.CheckText(e.Text)
-					appBatch = append(appBatch, ev)
-				case types.IgnoredGameTextEvent:
-					// Suppressed lines: log only. Do not run desktop notify,
-					// do not forward to App (no tab routing, no engine).
-					if sessLog != nil {
-						sessLog.Log(e.Timestamp, e.Text)
-					}
 				case types.SKOOTUpdateEvent:
 					if e.Health != nil {
 						desktopNotify.CheckHealth(*e.Health)
@@ -711,15 +701,11 @@ func main() {
 					if e.Fatigue != nil {
 						desktopNotify.CheckFatigue(*e.Fatigue)
 					}
-					appBatch = append(appBatch, ev)
 				case types.ModeChangeEvent:
 					desktopNotify.Prune()
-					appBatch = append(appBatch, ev)
-				default:
-					appBatch = append(appBatch, ev)
 				}
 			}
-			p.Send(ui.EventMsg{Events: appBatch})
+			p.Send(ui.EventMsg{Events: batch})
 		}
 	}()
 
