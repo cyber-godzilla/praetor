@@ -7,13 +7,23 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
+// paneLine is one entry in the output buffer. For normal lines,
+// placeholder is nil and original carries the rendered segments. For
+// suppressed lines, both fields are populated; the View renders the
+// placeholder when the pane is collapsed and the original when expanded.
+type paneLine struct {
+	placeholder []types.StyledSegment // nil for normal lines
+	original    []types.StyledSegment // always populated
+}
+
 // OutputPane is a scrollable text buffer for the All, Combat, and Social tabs.
 type OutputPane struct {
-	lines     [][]types.StyledSegment
+	lines     []paneLine
 	maxLines  int
 	width     int
 	height    int
 	scrollPos int // 0 = bottom (auto-scroll)
+	expanded  bool
 
 	// Render cache: we keep previously rendered display rows so View()
 	// only needs to render lines appended since the last call.
@@ -36,10 +46,22 @@ func NewOutputPane(maxLines int) OutputPane {
 	}
 }
 
-// Append adds a line of styled segments to the buffer, trimming old lines if
-// the buffer exceeds maxLines.
+// Append adds a normal line to the buffer.
 func (o *OutputPane) Append(segments []types.StyledSegment) {
-	o.lines = append(o.lines, segments)
+	o.appendLine(paneLine{original: segments})
+}
+
+// AppendSuppressed adds a line that has both a collapsed placeholder
+// rendition and an expanded original rendition. The View renders one
+// or the other depending on the pane's expand state.
+func (o *OutputPane) AppendSuppressed(placeholder, original []types.StyledSegment) {
+	o.appendLine(paneLine{placeholder: placeholder, original: original})
+}
+
+// appendLine adds one paneLine, trimming oldest entries when the
+// scrollback exceeds maxLines (and trimming the render cache in sync).
+func (o *OutputPane) appendLine(line paneLine) {
+	o.lines = append(o.lines, line)
 	if len(o.lines) > o.maxLines {
 		excess := len(o.lines) - o.maxLines
 		o.lines = o.lines[excess:]
@@ -70,6 +92,20 @@ func (o *OutputPane) Append(segments []types.StyledSegment) {
 			}
 		}
 	}
+}
+
+// SetExpanded flips the global reveal mode for this pane. When true,
+// View renders the original styled segments for every paneLine; when
+// false, the placeholder is shown for paneLines that have one (normal
+// lines always render their original segments).
+func (o *OutputPane) SetExpanded(expanded bool) {
+	if o.expanded == expanded {
+		return
+	}
+	o.expanded = expanded
+	o.cachedRows = nil
+	o.rowCounts = nil
+	o.cachedLines = 0
 }
 
 // ScrollUp scrolls up by n display rows.
@@ -118,7 +154,13 @@ func (o *OutputPane) View() string {
 
 	// Render only lines added since the last call.
 	if o.cachedLines < len(o.lines) {
-		for _, segments := range o.lines[o.cachedLines:] {
+		for _, line := range o.lines[o.cachedLines:] {
+			var segments []types.StyledSegment
+			if line.placeholder != nil && !o.expanded {
+				segments = line.placeholder
+			} else {
+				segments = line.original
+			}
 			rendered := renderSegments(segments, o.width)
 			parts := strings.Split(rendered, "\n")
 			o.cachedRows = append(o.cachedRows, parts...)
