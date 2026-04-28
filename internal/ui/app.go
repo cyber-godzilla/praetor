@@ -413,10 +413,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case HelpCloseMsg:
-		a.state = stateMenu
-		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
-		a.menu.SetSize(a.width, a.height)
-		return a, nil
+		// /help is reached via slash command from the game state, so
+		// Esc returns to the game (matching /wiki and /maps), not the
+		// Esc menu.
+		a.state = stateGame
+		return a, a.input.Focus()
 
 	case HelpSearchMsg:
 		// Handled by wrapper — sends ?query to server or opens wiki.
