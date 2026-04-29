@@ -108,13 +108,14 @@ func BuildImage(exits types.Exits, width int) *image.RGBA {
 
 // Render returns a layout placeholder and an encoded graphics escape for
 // the compass in the given mode. ModeNone returns a text fallback and no
-// escape.
-func Render(mode graphics.Mode, exits types.Exits, width int) (placeholder string, escape string) {
+// escape. imageID is forwarded to the underlying encoder so that kitty
+// re-emits replace the image in place rather than accumulate copies.
+func Render(mode graphics.Mode, exits types.Exits, width, imageID int) (placeholder string, escape string) {
 	if mode == graphics.ModeNone {
 		return compassFallback(width), ""
 	}
 	img := BuildImage(exits, width)
-	return View(width), graphics.Encode(mode, img, width, Rows)
+	return View(width), graphics.Encode(mode, img, width, Rows, imageID)
 }
 
 func compassFallback(width int) string {

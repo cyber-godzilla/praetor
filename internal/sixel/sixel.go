@@ -10,37 +10,46 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// upscaleFactor controls how much the source image is enlarged before
-// sixel encoding. The minimap source is cols*5 × rows*10 px; doubling
-// brings rendered output to ~full cell allocation on terminals with
-// typical 10x20-pixel cells (Windows Terminal, foot, mintty, xterm).
-const upscaleFactor = 2
+// Sixel renders pixels at native image size — there is no protocol-
+// level "scale to N cells" hint like kitty's c=/r=. To keep the image
+// inside the cell area lipgloss reserved for it, we resize the source
+// image to (cols × cellPxW) × (rows × cellPxH) before encoding.
+//
+// The constants below are intentionally smaller than the cell pixel
+// dimensions of any common Linux terminal font (which typically run
+// 8-10 wide × 14-22 tall). Picking conservative values means the
+// image lands inside its cell allocation with some margin even on
+// terminals with the smallest cells; the cost is a visible gap on
+// terminals with larger cells. Overflow would push surrounding
+// sidebar content out of view, which is the worse failure mode.
+const (
+	cellPxW = 6
+	cellPxH = 12
+)
 
 // Encode renders an RGBA image as a Sixel DCS escape sequence.
-// cols and rows are accepted for parity with other encoders. Sixel
-// renders at the source image's raw pixel size, so we upscale to better
-// fill the cell area lipgloss reserves on the terminal grid.
+// cols and rows specify the cell footprint the caller wants the image
+// to occupy; the source image is resized so the rendered pixels stay
+// within that allocation.
 func Encode(img *image.RGBA, cols, rows int) string {
-	_ = cols
-	_ = rows
+	src := resize(img, cols*cellPxW, rows*cellPxH)
 	var buf bytes.Buffer
 	enc := gosixel.NewEncoder(&buf)
-	src := upscale(img, upscaleFactor)
 	if err := enc.Encode(src); err != nil {
 		return ""
 	}
 	return buf.String()
 }
 
-// upscale returns a copy of src enlarged by an integer factor using
-// nearest-neighbor sampling. Preserves the pixel-art look of the
-// minimap and keeps single-pixel walls crisp.
-func upscale(src *image.RGBA, factor int) *image.RGBA {
-	if factor <= 1 {
+// resize returns a copy of src scaled to w × h via nearest-neighbor
+// sampling. Preserves the pixel-art look of the minimap and keeps
+// single-pixel walls crisp. If the target dimensions are non-positive
+// the original is returned unchanged.
+func resize(src *image.RGBA, w, h int) *image.RGBA {
+	if w <= 0 || h <= 0 {
 		return src
 	}
-	b := src.Bounds()
-	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*factor, b.Dy()*factor))
-	xdraw.NearestNeighbor.Scale(dst, dst.Bounds(), src, b, xdraw.Over, nil)
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	xdraw.NearestNeighbor.Scale(dst, dst.Bounds(), src, src.Bounds(), xdraw.Over, nil)
 	return dst
 }

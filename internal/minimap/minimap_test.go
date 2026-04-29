@@ -36,12 +36,15 @@ func TestRender_ModeKitty_ProducesEscape(t *testing.T) {
 	m := NewMinimap()
 	m.SetSize(40, 12)
 	m.Update(sampleRooms(), nil)
-	placeholder, esc := m.Render(graphics.ModeKitty)
+	placeholder, esc := m.Render(graphics.ModeKitty, 1)
 	if placeholder == "" {
 		t.Error("expected non-empty placeholder for layout")
 	}
 	if !strings.HasPrefix(esc, "\x1b_G") {
 		t.Errorf("expected kitty APC escape, got %q", esc[:mnInt(4, len(esc))])
+	}
+	if !strings.Contains(esc, "i=1") {
+		t.Errorf("expected i=1 in escape for image-id replace-in-place, got: %q", esc[:mnInt(80, len(esc))])
 	}
 }
 
@@ -49,7 +52,7 @@ func TestRender_ModeNone_ReturnsFallback(t *testing.T) {
 	m := NewMinimap()
 	m.SetSize(40, 12)
 	m.Update(sampleRooms(), nil)
-	placeholder, esc := m.Render(graphics.ModeNone)
+	placeholder, esc := m.Render(graphics.ModeNone, 1)
 	if esc != "" {
 		t.Errorf("expected empty escape for ModeNone, got %d bytes", len(esc))
 	}

@@ -7,8 +7,17 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/compass"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
+	"github.com/cyber-godzilla/praetor/internal/kitty"
 	"github.com/cyber-godzilla/praetor/internal/minimap"
 	"github.com/cyber-godzilla/praetor/internal/types"
+)
+
+// Stable kitty image IDs for the sidebar's two graphics. Re-emitting
+// with the same id atomically replaces the existing image in place
+// (no visible flash). Sixel ignores these.
+const (
+	minimapImageID = 1
+	compassImageID = 2
 )
 
 // Sidebar displays the minimap, compass rose, vitals bars, and mode info.
@@ -30,20 +39,20 @@ type Sidebar struct {
 	minimap       minimap.Minimap
 	graphicsMode  graphics.Mode
 
-	// Graphics cache — avoid re-rendering every frame.
+	// Graphics cache — avoid re-rendering the PNG every frame.
 	graphicsDirty    bool
 	cachedMinimapEsc string
 	cachedCompassEsc string
 
-	// lastEmittedMinimap / lastEmittedCompass track the most recent
-	// kitty/sixel escape sequences that were actually emitted to the
-	// terminal. Re-emitting unchanged images causes a visible flash
-	// because kitty `a=T` transmits create a fresh image each time, so
-	// ConsumeGraphics returns "" when the cache matches what was last
-	// emitted. Overlay views (menu, help) call InvalidateGraphics
-	// because their graphicsClear() wiped the terminal.
-	lastEmittedMinimap       string
-	lastEmittedCompass       string
+	// emittedImages tracks whether the kitty images currently exist
+	// in the terminal. ConsumeGraphics sets it true; HideGraphics
+	// (sidebar collapse) and InvalidateGraphics (overlay's delete-all)
+	// set it false. With kitty image IDs in use, re-emitting the same
+	// image is an atomic replace — no flicker — so kitty path emits on
+	// every game frame. Sixel uses dirtySinceEmit since its protocol
+	// has no equivalent of in-place replacement.
+	emittedImages            bool
+	dirtySinceEmit           bool // sixel-only: emit only when underlying data changed
 	cachedPlaceholder        string
 	cachedCompassPlaceholder string
 }
@@ -53,14 +62,15 @@ func NewSidebar(minimapScale float64, minimapHeight int, mode graphics.Mode) Sid
 	mm := minimap.NewMinimap()
 	mm.SetScale(minimapScale)
 	return Sidebar{
-		mode:          "disable",
-		health:        100,
-		fatigue:       100,
-		satiation:     100,
-		minimapHeight: minimapHeight,
-		minimap:       mm,
-		graphicsMode:  mode,
-		graphicsDirty: true,
+		mode:           "disable",
+		health:         100,
+		fatigue:        100,
+		satiation:      100,
+		minimapHeight:  minimapHeight,
+		minimap:        mm,
+		graphicsMode:   mode,
+		graphicsDirty:  true,
+		dirtySinceEmit: true,
 	}
 }
 
@@ -74,6 +84,7 @@ func newSidebarPtr(minimapScale float64, minimapHeight int, mode graphics.Mode) 
 func (s *Sidebar) SetSize(w, h int) {
 	if s.width != w || s.height != h {
 		s.graphicsDirty = true
+		s.dirtySinceEmit = true
 	}
 	s.width = w
 	s.height = h
@@ -93,6 +104,7 @@ func (s *Sidebar) SetCompact(compact bool) {
 func (s *Sidebar) UpdateExits(exits types.Exits) {
 	if s.exits != exits {
 		s.graphicsDirty = true
+		s.dirtySinceEmit = true
 	}
 	s.exits = exits
 }
@@ -138,6 +150,7 @@ func (s *Sidebar) UpdateMapURL(url string) {
 func (s *Sidebar) UpdateMinimap(rooms []types.MinimapRoom, walls []types.MinimapWall) {
 	s.minimap.Update(rooms, walls)
 	s.graphicsDirty = true
+	s.dirtySinceEmit = true
 }
 
 // MinimapHeight returns the minimap display height in terminal rows.
@@ -151,47 +164,59 @@ func (s *Sidebar) rebuildGraphicsCache() {
 	if innerW < 4 {
 		innerW = 4
 	}
-	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(s.graphicsMode)
-	s.cachedCompassPlaceholder, s.cachedCompassEsc = compass.Render(s.graphicsMode, s.exits, innerW)
+	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(s.graphicsMode, minimapImageID)
+	s.cachedCompassPlaceholder, s.cachedCompassEsc = compass.Render(s.graphicsMode, s.exits, innerW, compassImageID)
 	s.graphicsDirty = false
 }
 
-// GraphicsEscapes returns terminal graphics escape sequences for the
-// minimap and compass. Returns ("", "") when running in a terminal
-// without Kitty or Sixel support. Must be injected into the final
-// output outside of Lipgloss rendering.
-func (s *Sidebar) GraphicsEscapes() (string, string) {
+// ConsumeGraphics returns the kitty/sixel escape sequences to inject
+// into the current frame. The escapes are returned on every game
+// frame, regardless of whether the underlying data changed:
+//
+//   - Kitty: each emit replaces the image at a fixed image id
+//     atomically, so re-emitting is free of visible flicker and
+//     self-heals if the terminal silently lost the image.
+//   - Sixel: pixels live inline in the terminal's cell buffer. Any
+//     surrounding text write overwrites them, so we must re-emit
+//     every frame to keep the image visible. Sixel does flicker
+//     briefly on each frame redraw — the alternative was "image
+//     disappears between data updates," which is worse.
+//
+// The caller is responsible for positioning the escapes (cursor save +
+// goto + restore) before injecting them into the rendered frame.
+func (s *Sidebar) ConsumeGraphics() (minimap, compass string) {
 	if s.graphicsDirty {
 		s.rebuildGraphicsCache()
 	}
+	s.dirtySinceEmit = false
+	s.emittedImages = true
 	return s.cachedMinimapEsc, s.cachedCompassEsc
 }
 
-// ConsumeGraphics returns the minimap and compass escape sequences
-// only when they differ from what was last emitted. The boolean is
-// true when the caller should clear and re-emit; false means the
-// terminal already shows the current images and emitting them again
-// would just cause flicker. Mutates the last-emitted snapshot, so
-// each frame should call this exactly once.
-func (s *Sidebar) ConsumeGraphics() (changed bool, minimap, compass string) {
-	if s.graphicsDirty {
-		s.rebuildGraphicsCache()
+// HideGraphics returns escape sequences that surgically delete the
+// sidebar's images from the terminal, without affecting other images.
+// Used when the sidebar is collapsed (Alt+S) so the kitty image
+// doesn't linger over the now-empty sidebar slot. Returns "" if no
+// images are currently emitted, or if the graphics mode lacks an
+// equivalent (sixel pixels are overwritten by normal text writes).
+func (s *Sidebar) HideGraphics() string {
+	if !s.emittedImages {
+		return ""
 	}
-	if s.cachedMinimapEsc == s.lastEmittedMinimap && s.cachedCompassEsc == s.lastEmittedCompass {
-		return false, "", ""
+	s.emittedImages = false
+	s.dirtySinceEmit = true // ensure we re-emit when sidebar comes back
+	if s.graphicsMode != graphics.ModeKitty {
+		return ""
 	}
-	s.lastEmittedMinimap = s.cachedMinimapEsc
-	s.lastEmittedCompass = s.cachedCompassEsc
-	return true, s.cachedMinimapEsc, s.cachedCompassEsc
+	return kitty.DeleteByID(minimapImageID) + kitty.DeleteByID(compassImageID)
 }
 
-// InvalidateGraphics clears the last-emitted snapshot so the next
-// ConsumeGraphics call re-emits regardless of cache equality. Call
-// this when an overlay view (menu, help) issued a delete-all and the
-// terminal images are now gone.
+// InvalidateGraphics tells the sidebar that an external action (e.g.
+// an overlay view's delete-all escape) wiped the terminal images.
+// Next ConsumeGraphics will re-emit unconditionally.
 func (s *Sidebar) InvalidateGraphics() {
-	s.lastEmittedMinimap = ""
-	s.lastEmittedCompass = ""
+	s.emittedImages = false
+	s.dirtySinceEmit = true
 }
 
 // View renders the sidebar content.

@@ -157,7 +157,7 @@ func (m Minimap) BuildImage() *image.RGBA {
 // Render returns a layout placeholder and an encoded graphics escape for
 // the given graphics mode. For ModeNone the placeholder is a boxed
 // fallback note and the escape is empty.
-func (m Minimap) Render(mode graphics.Mode) (placeholder string, escape string) {
+func (m Minimap) Render(mode graphics.Mode, imageID int) (placeholder string, escape string) {
 	if mode == graphics.ModeNone {
 		return fallbackPlaceholder(m.width, m.height), ""
 	}
@@ -174,7 +174,7 @@ func (m Minimap) Render(mode graphics.Mode) (placeholder string, escape string) 
 	if img == nil {
 		return placeholder, ""
 	}
-	escape = graphics.Encode(mode, img, m.width, m.height)
+	escape = graphics.Encode(mode, img, m.width, m.height, imageID)
 	return placeholder, escape
 }
 

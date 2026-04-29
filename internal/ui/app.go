@@ -1327,14 +1327,14 @@ func (a App) View() string {
 	fixedContent := padLines(tabContent, contentWidth, a.contentHeight())
 
 	var content string
-	var kittyMinimap, kittyCompass string
-	var graphicsChanged bool
+	var kittyMinimap, kittyCompass, hideEscape string
 	if a.sidebarVisible {
 		sidebar := a.sidebar.View()
-		graphicsChanged, kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics()
+		kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics()
 		content = lipgloss.JoinHorizontal(lipgloss.Top, fixedContent, sidebar)
 	} else {
 		content = fixedContent
+		hideEscape = a.sidebar.HideGraphics()
 	}
 
 	sections = append(sections, content)
@@ -1352,24 +1352,24 @@ func (a App) View() string {
 
 	result := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// Only emit kitty escapes when the graphics actually changed since
-	// the last frame (or when an overlay invalidated them). Skipping
-	// the per-keystroke re-emit eliminates the visible flash that the
-	// previous unconditional clear+re-emit caused.
-	if graphicsChanged {
-		if a.graphicsMode == graphics.ModeKitty {
-			result += kittyDeleteAll
-		}
-		sidebarCol := a.width - a.sidebarWidth + 2
-		if kittyMinimap != "" {
-			// Minimap: row 2 (after tab bar)
-			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
-		}
-		if kittyCompass != "" {
-			// Compass: after minimap (row 2 + minimap height)
-			compassRow := 2 + a.sidebar.MinimapHeight()
-			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
-		}
+	// Inject sidebar graphics. With kitty image IDs, re-emitting the
+	// same image is an atomic in-place replacement (no flicker), so
+	// the sidebar emits on every game frame when visible — that's
+	// also self-healing if anything silently wiped the image. When
+	// the sidebar is hidden, surgical delete escapes remove just the
+	// sidebar's images without touching anything else.
+	sidebarCol := a.width - a.sidebarWidth + 2
+	if kittyMinimap != "" {
+		// Minimap: row 2 (after tab bar)
+		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
+	}
+	if kittyCompass != "" {
+		// Compass: after minimap (row 2 + minimap height)
+		compassRow := 2 + a.sidebar.MinimapHeight()
+		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
+	}
+	if hideEscape != "" {
+		result += hideEscape
 	}
 
 	return result

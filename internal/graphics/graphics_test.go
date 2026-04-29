@@ -18,21 +18,31 @@ func makeTestImage() *image.RGBA {
 }
 
 func TestEncode_ModeNone_ReturnsEmpty(t *testing.T) {
-	out := Encode(ModeNone, makeTestImage(), 2, 2)
+	out := Encode(ModeNone, makeTestImage(), 2, 2, 0)
 	if out != "" {
 		t.Fatalf("expected empty string for ModeNone, got %d bytes", len(out))
 	}
 }
 
 func TestEncode_ModeKitty_ReturnsKittyEscape(t *testing.T) {
-	out := Encode(ModeKitty, makeTestImage(), 2, 2)
+	out := Encode(ModeKitty, makeTestImage(), 2, 2, 1)
 	if !strings.HasPrefix(out, "\x1b_G") {
 		t.Fatalf("expected kitty APC prefix \\x1b_G, got %q", out[:min(4, len(out))])
+	}
+	if !strings.Contains(out, "i=1") {
+		t.Errorf("expected i=1 in kitty escape (image id), got: %q", out[:min(80, len(out))])
+	}
+}
+
+func TestEncode_ModeKitty_ZeroIDOmitsAttribute(t *testing.T) {
+	out := Encode(ModeKitty, makeTestImage(), 2, 2, 0)
+	if strings.Contains(out, "i=") {
+		t.Errorf("expected no i= attribute when imageID=0, got: %q", out[:min(80, len(out))])
 	}
 }
 
 func TestEncode_ModeSixel_ReturnsSixelEscape(t *testing.T) {
-	out := Encode(ModeSixel, makeTestImage(), 2, 2)
+	out := Encode(ModeSixel, makeTestImage(), 2, 2, 0)
 	if !strings.HasPrefix(out, "\x1bP") {
 		t.Fatalf("expected sixel DCS prefix \\x1bP, got %q", out[:min(4, len(out))])
 	}

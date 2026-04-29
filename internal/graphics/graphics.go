@@ -32,11 +32,13 @@ func (m Mode) String() string {
 
 // Encode dispatches img to the encoder for the given Mode. Returns "" when
 // mode is ModeNone. cols and rows are the terminal cell dimensions for
-// display (Kitty uses them; Sixel ignores them).
-func Encode(mode Mode, img *image.RGBA, cols, rows int) string {
+// display (Kitty uses them; Sixel ignores them). imageID, when positive
+// and the mode is Kitty, makes re-emits replace the image in place;
+// Sixel ignores it (the protocol has no equivalent).
+func Encode(mode Mode, img *image.RGBA, cols, rows, imageID int) string {
 	switch mode {
 	case ModeKitty:
-		return kitty.Encode(img, cols, rows)
+		return kitty.Encode(img, cols, rows, imageID)
 	case ModeSixel:
 		return sixel.Encode(img, cols, rows)
 	}

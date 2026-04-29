@@ -19,17 +19,20 @@ func TestBuildImage_NonNil(t *testing.T) {
 }
 
 func TestRender_ModeKitty_ProducesEscape(t *testing.T) {
-	placeholder, esc := Render(graphics.ModeKitty, sampleExits(), 20)
+	placeholder, esc := Render(graphics.ModeKitty, sampleExits(), 20, 2)
 	if placeholder == "" {
 		t.Error("expected non-empty placeholder")
 	}
 	if !strings.HasPrefix(esc, "\x1b_G") {
 		t.Errorf("expected kitty APC escape, got prefix %q", esc[:compassMinInt(4, len(esc))])
 	}
+	if !strings.Contains(esc, "i=2") {
+		t.Errorf("expected i=2 in escape for image-id replace-in-place, got: %q", esc[:compassMinInt(80, len(esc))])
+	}
 }
 
 func TestRender_ModeNone_ReturnsFallbackText(t *testing.T) {
-	placeholder, esc := Render(graphics.ModeNone, sampleExits(), 20)
+	placeholder, esc := Render(graphics.ModeNone, sampleExits(), 20, 2)
 	if esc != "" {
 		t.Errorf("expected empty escape for ModeNone, got %d bytes", len(esc))
 	}
