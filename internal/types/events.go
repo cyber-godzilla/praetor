@@ -218,3 +218,9 @@ func (WikiOpenMenuEvent) eventMarker() {}
 type MapsOpenMenuEvent struct{}
 
 func (MapsOpenMenuEvent) eventMarker() {}
+
+// CalcOpenMenuEvent triggers the rank-bonus calculator modal.
+// Emitted by the /calc and /rb slash commands.
+type CalcOpenMenuEvent struct{}
+
+func (CalcOpenMenuEvent) eventMarker() {}
