@@ -102,21 +102,34 @@ func (s RBCalcScreen) View() string {
 		Padding(1, 2).
 		Width(boxWidth)
 
-	curBasics, curSub, _, _ := s.parsedInputs()
+	curBasics, curSub, tgtBasics, tgtSub := s.parsedInputs()
+	hasTarget := tgtBasics > 0 || tgtSub > 0
+
+	var left strings.Builder
+	left.WriteString(s.renderRBTable("Current", curBasics, curSub))
+	if hasTarget {
+		left.WriteString("\n")
+		left.WriteString(s.renderRBTable("Target", tgtBasics, tgtSub))
+	}
+
+	var body string
+	if hasTarget {
+		right := s.renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub)
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Padding(0, 2, 0, 0).Render(left.String()),
+			right,
+		)
+	} else {
+		body = left.String()
+	}
 
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Rank Bonus Calculator"))
 	b.WriteString("\n\n")
-
-	// Input header.
 	b.WriteString(s.renderInputHeader())
 	b.WriteString("\n\n")
-
-	// Current RB table.
-	b.WriteString(s.renderRBTable("Current", curBasics, curSub))
+	b.WriteString(body)
 	b.WriteString("\n")
-
-	// Footer hint.
 	b.WriteString(dimStyle.Render("[Tab] field   [O/D/N] mode   [T] Self-Trained   [H] Self-Taught   [Esc] close"))
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
@@ -233,4 +246,69 @@ func formatRB(v float64) string {
 		return strconv.Itoa(int(v))
 	}
 	return strconv.FormatFloat(v, 'f', 1, 64)
+}
+
+// renderTrainingPanel produces the right-hand training-cost block.
+func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub int) string {
+	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
+	onStyle := lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
+	offStyle := lipgloss.NewStyle().Foreground(colorDim)
+
+	deltaBasics := tgtBasics - curBasics
+	deltaSub := tgtSub - curSub
+
+	var b strings.Builder
+	b.WriteString(headerStyle.Render("Training cost"))
+	b.WriteByte('\n')
+	b.WriteString(fmt.Sprintf("ΔBasics: %+d\n", deltaBasics))
+	b.WriteString(fmt.Sprintf("ΔSubskill: %+d\n\n", deltaSub))
+
+	toggleLine := func(key, label, desc string, on bool) string {
+		state := "OFF"
+		stateStyle := offStyle
+		if on {
+			state = "ON"
+			stateStyle = onStyle
+		}
+		head := fmt.Sprintf("[%s] %s: %s", key, label, stateStyle.Render(state))
+		return head + "\n    " + dimStyle.Render(desc) + "\n"
+	}
+	b.WriteString(toggleLine("T", "Self-Trained", "Using selftrain command", s.selfTrained))
+	b.WriteString(toggleLine("H", "Self-Taught", "Has self-taught trait", s.selfTaught))
+	b.WriteByte('\n')
+
+	b.WriteString(headerStyle.Render("Skill Point Cost to Train"))
+	b.WriteByte('\n')
+	b.WriteString(fmt.Sprintf("%-6s%8s%8s%8s%8s\n", "Slot", "Easy", "Avg", "Diff", "Impos."))
+
+	difficulties := []calc.Difficulty{
+		calc.DifficultyEasy, calc.DifficultyAverage,
+		calc.DifficultyDifficult, calc.DifficultyImpossible,
+	}
+	for slot := 1; slot <= 20; slot++ {
+		b.WriteString(fmt.Sprintf("%-6s", ordinal(slot)))
+		for _, d := range difficulties {
+			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught)
+			b.WriteString(fmt.Sprintf(" %6d ", cost))
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+// ordinal renders 1->"1st", 2->"2nd", 3->"3rd", 4->"4th", ..., 20->"20th".
+func ordinal(n int) string {
+	suffix := "th"
+	if n%100 < 11 || n%100 > 13 {
+		switch n % 10 {
+		case 1:
+			suffix = "st"
+		case 2:
+			suffix = "nd"
+		case 3:
+			suffix = "rd"
+		}
+	}
+	return strconv.Itoa(n) + suffix
 }

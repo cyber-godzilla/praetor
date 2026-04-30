@@ -173,3 +173,76 @@ func TestRBCalc_View_NoncombatModeShowsSingleRow(t *testing.T) {
 		t.Errorf("Noncombat view should not show 'Bers.' row label")
 	}
 }
+
+func TestRBCalc_View_NoTargetHidesComparisonAndCost(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1150"
+	s.fieldBufs[1] = "500"
+	view := s.View()
+	if strings.Contains(view, "Training cost") {
+		t.Error("Training cost panel should be hidden without target ranks")
+	}
+	if strings.Count(view, "Easy") > 1 {
+		t.Errorf("only the current table should be visible; got %d 'Easy' columns", strings.Count(view, "Easy"))
+	}
+}
+
+func TestRBCalc_View_TargetShowsSecondTable(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1150"
+	s.fieldBufs[1] = "500"
+	s.fieldBufs[2] = "2000"
+	s.fieldBufs[3] = "850"
+	view := s.View()
+	if strings.Count(view, "Basic") < 2 {
+		t.Errorf("two RB tables should each have a 'Basic' column; got %d occurrences", strings.Count(view, "Basic"))
+	}
+	if !strings.Contains(view, "Target") {
+		t.Error("target table label missing")
+	}
+}
+
+func TestRBCalc_View_TrainingCostShowsTogglesAndTable(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1150"
+	s.fieldBufs[1] = "500"
+	s.fieldBufs[2] = "2000"
+	s.fieldBufs[3] = "850"
+	view := s.View()
+	for _, want := range []string{
+		"Training cost",
+		"ΔBasics",
+		"ΔSubskill",
+		"Self-Trained",
+		"Using selftrain command",
+		"Self-Taught",
+		"Has self-taught trait",
+		"Skill Point Cost to Train",
+		"1st",
+		"20th",
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("training panel missing %q", want)
+		}
+	}
+}
+
+func TestRBCalc_View_SelfTrainedDoublesBaseLayerCost(t *testing.T) {
+	// At slot 1 easy training 0->1, cost is 10 (selfTrained off) and
+	// 20 (selfTrained on). Verify both numbers appear depending on
+	// the toggle state.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "0"
+	s.fieldBufs[3] = "1"
+	off := s.View()
+	if !strings.Contains(off, " 10 ") {
+		t.Errorf("selfTrained-off slot 1 easy 0->1 should show 10; got:\n%s", off)
+	}
+	s.selfTrained = true
+	on := s.View()
+	if !strings.Contains(on, " 20 ") {
+		t.Errorf("selfTrained-on slot 1 easy 0->1 should show 20; got:\n%s", on)
+	}
+}
