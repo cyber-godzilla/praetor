@@ -306,10 +306,10 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return w, cmd
 
-	case ui.SidebarToggleMsg:
-		// Save sidebar state to config.
+	case ui.DisplayModeChangeMsg:
+		// Persist the cycled display mode (sidebar/topbar/off).
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.UI.SidebarOpen = msg.Open
+			w.cfg.UI.DisplayMode = string(msg.Mode)
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -692,7 +692,7 @@ func main() {
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
-	app := ui.NewApp(cfg.UI.SidebarOpen, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
+	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

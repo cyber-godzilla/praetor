@@ -145,7 +145,7 @@ func (h HelpScreen) View() string {
 	keyEntries := []struct{ key, desc string }{
 		{"Tab / Shift+Tab", "Next / previous tab"},
 		{"Alt+1..9, Alt+0", "Jump to tab by number (0 = 10th)"},
-		{"Alt+S", "Toggle sidebar"},
+		{"Alt+S", "Cycle display: sidebar → topbar → off"},
 		{"Alt+M", "Quick-cycle automation mode"},
 		{"Alt+I", "Toggle suppressed line reveal"},
 		{"Alt+X", "Disable all automation"},

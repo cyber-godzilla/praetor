@@ -2,12 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/compass"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
-	"github.com/cyber-godzilla/praetor/internal/kitty"
 	"github.com/cyber-godzilla/praetor/internal/minimap"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
@@ -19,6 +19,14 @@ const (
 	minimapImageID = 1
 	compassImageID = 2
 )
+
+// kittyDeleteAllSidebar is the escape sent to wipe sidebar/topbar
+// kitty graphics. We use d=A (delete all) rather than d=I (delete by
+// id) because some kitty-compatible terminals (notably foot's recent
+// builds and certain wezterm versions) don't honor d=I,i=N reliably.
+// Since the sidebar is currently the only thing in this app that
+// emits kitty graphics, "delete all" is equivalent.
+const kittyDeleteAllSidebar = "\033_Ga=d,d=A,q=2;\033\\"
 
 // Sidebar displays the minimap, compass rose, vitals bars, and mode info.
 type Sidebar struct {
@@ -52,7 +60,8 @@ type Sidebar struct {
 	// every game frame. Sixel uses dirtySinceEmit since its protocol
 	// has no equivalent of in-place replacement.
 	emittedImages            bool
-	dirtySinceEmit           bool // sixel-only: emit only when underlying data changed
+	dirtySinceEmit           bool   // sixel-only: emit only when underlying data changed
+	lastEmitAnchor           string // "sidebar" or "topbar" — used to detect mode-change transitions
 	cachedPlaceholder        string
 	cachedCompassPlaceholder string
 }
@@ -85,6 +94,17 @@ func (s *Sidebar) SetSize(w, h int) {
 	if s.width != w || s.height != h {
 		s.graphicsDirty = true
 		s.dirtySinceEmit = true
+		// On a dimension change, kitty's existing placements stay at
+		// their old absolute cell positions — and our next emit at
+		// the new positions creates new placements alongside them
+		// (see kitty graphics protocol; a=T creates new placements
+		// rather than moving them). Wipe them now so the next View
+		// paints fresh, then mark the sidebar as needing a re-emit.
+		if s.emittedImages && s.graphicsMode == graphics.ModeKitty {
+			_, _ = os.Stdout.Write([]byte(kittyDeleteAllSidebar))
+			s.emittedImages = false
+			s.lastEmitAnchor = ""
+		}
 	}
 	s.width = w
 	s.height = h
@@ -182,15 +202,27 @@ func (s *Sidebar) rebuildGraphicsCache() {
 //     briefly on each frame redraw — the alternative was "image
 //     disappears between data updates," which is worse.
 //
+// anchor identifies where the caller plans to place the images this
+// frame (e.g. "sidebar" or "topbar"). When the anchor changes from
+// the previous emission, transition contains kitty delete-by-id
+// escapes for the previous placements so they don't linger at the old
+// position; the caller must inject transition before the new escapes.
+//
 // The caller is responsible for positioning the escapes (cursor save +
 // goto + restore) before injecting them into the rendered frame.
-func (s *Sidebar) ConsumeGraphics() (minimap, compass string) {
+func (s *Sidebar) ConsumeGraphics(anchor string) (transition, minimap, compass string) {
 	if s.graphicsDirty {
 		s.rebuildGraphicsCache()
 	}
+	if s.emittedImages && s.lastEmitAnchor != "" && s.lastEmitAnchor != anchor {
+		if s.graphicsMode == graphics.ModeKitty {
+			transition = kittyDeleteAllSidebar
+		}
+	}
+	s.lastEmitAnchor = anchor
 	s.dirtySinceEmit = false
 	s.emittedImages = true
-	return s.cachedMinimapEsc, s.cachedCompassEsc
+	return transition, s.cachedMinimapEsc, s.cachedCompassEsc
 }
 
 // HideGraphics returns escape sequences that surgically delete the
@@ -205,10 +237,11 @@ func (s *Sidebar) HideGraphics() string {
 	}
 	s.emittedImages = false
 	s.dirtySinceEmit = true // ensure we re-emit when sidebar comes back
+	s.lastEmitAnchor = ""
 	if s.graphicsMode != graphics.ModeKitty {
 		return ""
 	}
-	return kitty.DeleteByID(minimapImageID) + kitty.DeleteByID(compassImageID)
+	return kittyDeleteAllSidebar
 }
 
 // InvalidateGraphics tells the sidebar that an external action (e.g.
@@ -217,6 +250,96 @@ func (s *Sidebar) HideGraphics() string {
 func (s *Sidebar) InvalidateGraphics() {
 	s.emittedImages = false
 	s.dirtySinceEmit = true
+	s.lastEmitAnchor = ""
+}
+
+// TopbarView renders the same data as View, but laid out horizontally
+// across the top of the screen rather than vertically down a column.
+// Three tiles, top-aligned: minimap (innerW × minimapHeight), compass
+// (innerW × compass.Rows, padded with empty rows to minimapHeight tall),
+// and a right panel with lighting + the four vital bars stretched to
+// fill the remaining width. Returns a string of exactly minimapHeight
+// rows separated by '\n'. The caller is responsible for placing it
+// above the main content area.
+func (s *Sidebar) TopbarView(totalWidth int) string {
+	if s.graphicsDirty {
+		s.rebuildGraphicsCache()
+	}
+
+	innerW := s.width - 2
+	if innerW < 4 {
+		innerW = 4
+	}
+	rows := s.minimapHeight
+	if rows < 1 {
+		rows = 1
+	}
+
+	pad := func(line string, w int) string {
+		need := w - lipgloss.Width(line)
+		if need <= 0 {
+			return line
+		}
+		return line + strings.Repeat(" ", need)
+	}
+	emptyRow := strings.Repeat(" ", innerW)
+	padTile := func(text string, w int) []string {
+		split := strings.Split(text, "\n")
+		out := make([]string, rows)
+		for i := 0; i < rows; i++ {
+			if i < len(split) {
+				out[i] = pad(split[i], w)
+			} else {
+				out[i] = strings.Repeat(" ", w)
+			}
+		}
+		return out
+	}
+
+	minimapLines := padTile(s.cachedPlaceholder, innerW)
+	if minimapLines[0] == "" || lipgloss.Width(minimapLines[0]) == 0 {
+		// Fallback if cache wasn't built (e.g., no rooms yet) — fill rows with whitespace.
+		for i := range minimapLines {
+			minimapLines[i] = emptyRow
+		}
+	}
+
+	compassPlaceholder := s.cachedCompassPlaceholder
+	if compassPlaceholder == "" {
+		compassPlaceholder = compass.View(innerW)
+	}
+	compassLines := padTile(compassPlaceholder, innerW)
+
+	// Right panel width: cap at innerW so the bars match their sidebar-
+	// mode width rather than stretching to fill the remaining horizontal
+	// space (which on a wide terminal would produce hugely elongated
+	// bars). Cap fits within the available room minus the two tiles
+	// and their gaps.
+	available := totalWidth - innerW*2 - 2
+	rightW := innerW
+	if rightW > available {
+		rightW = available
+	}
+	if rightW < 10 {
+		rightW = 10
+	}
+	rightLines := make([]string, 0, rows)
+	rightLines = append(rightLines, pad(s.renderLighting(), rightW))
+	rightLines = append(rightLines, pad(s.renderBar("HP", s.health, rightW), rightW))
+	rightLines = append(rightLines, pad(s.renderBar("FT", s.fatigue, rightW), rightW))
+	rightLines = append(rightLines, pad(s.renderBar("EN", s.encumbrance, rightW), rightW))
+	rightLines = append(rightLines, pad(s.renderBar("SA", s.satiation, rightW), rightW))
+	for len(rightLines) < rows {
+		rightLines = append(rightLines, strings.Repeat(" ", rightW))
+	}
+	rightLines = rightLines[:rows]
+
+	gap := " "
+	var lines []string
+	for i := 0; i < rows; i++ {
+		lines = append(lines, minimapLines[i]+gap+compassLines[i]+gap+rightLines[i])
+	}
+	return strings.Join(lines, "\n")
 }
 
 // View renders the sidebar content.

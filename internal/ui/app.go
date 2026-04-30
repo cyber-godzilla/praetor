@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"math/rand"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -41,9 +42,10 @@ type CredentialPromptMsg struct {
 	AlreadyStored bool
 }
 
-// SidebarToggleMsg is sent when the sidebar is toggled so config can be saved.
-type SidebarToggleMsg struct {
-	Open bool
+// DisplayModeChangeMsg is sent when the user cycles the display mode
+// (Alt+S) so the wrapper can persist the new mode to config.
+type DisplayModeChangeMsg struct {
+	Mode DisplayMode
 }
 
 // OpenModePickerMsg provides the list of all available modes to the mode picker.
@@ -60,16 +62,53 @@ type ModesAvailableMsg struct {
 // kittyDeleteAll clears all Kitty graphics images from the terminal.
 const kittyDeleteAll = "\033_Ga=d,d=A,q=2;\033\\"
 
-// graphicsClear returns the Kitty delete-all escape when running in Kitty
-// graphics mode, and an empty string otherwise. Used by overlay views
-// (menu, help, screens) that wipe the terminal image area; also notifies
-// the sidebar so the next return to the game view re-emits the images.
+// graphicsClear returns terminal escapes that clear the sidebar/topbar
+// graphics area before an overlay view (menu, help, screen) draws over
+// it. Also notifies the sidebar so the next return to the game view
+// re-emits the images.
+//
+//   - Kitty: a single delete-all-images APC sequence — pixels are
+//     overlays so this wipes them regardless of cell content underneath.
+//   - Sixel: pixels live inline in the cell buffer; if the cells beneath
+//     happen to be whitespace in the new frame too, BT's line-diff
+//     skips the rewrite and the pixels persist visibly. Force a clear
+//     by writing whitespace at every cell row that may contain sixel
+//     pixels DIRECTLY to stdout, bypassing BT's renderer (which would
+//     truncate or skip the multi-row sequence). Sidebar mode doesn't
+//     need this because the sidebar's text content differs from any
+//     overlay's centered render, so BT writes those rows naturally.
 func (a App) graphicsClear() string {
 	a.sidebar.InvalidateGraphics()
-	if a.graphicsMode == graphics.ModeKitty {
+	switch a.graphicsMode {
+	case graphics.ModeKitty:
 		return kittyDeleteAll
+	case graphics.ModeSixel:
+		if a.topbarVisible {
+			a.writeSixelClearTopbar()
+		}
 	}
 	return ""
+}
+
+// writeSixelClearTopbar overwrites the topbar's image rows with
+// whitespace by writing cursor-position + spaces escape sequences
+// straight to stdout. We write directly because BT's renderer treats
+// the multi-row escape as one "line" and ansi.Truncate clips it at
+// terminal width — only the first row of clears survives. Bypassing
+// BT lets all rows be cleared in one shot.
+func (a App) writeSixelClearTopbar() {
+	h := a.sidebar.MinimapHeight()
+	if h < 1 || a.width < 1 {
+		return
+	}
+	spaces := strings.Repeat(" ", a.width)
+	var b strings.Builder
+	b.WriteString("\x1b[s")
+	for row := 1; row <= h; row++ {
+		fmt.Fprintf(&b, "\x1b[%d;1H%s", row, spaces)
+	}
+	b.WriteString("\x1b[u")
+	_, _ = os.Stdout.Write([]byte(b.String()))
 }
 
 // appState tracks the current screen.
@@ -97,15 +136,40 @@ const (
 	stateIgnorelistThink                      // editing Think ignorelist
 )
 
+// DisplayMode chooses how the minimap/compass/vitals are presented.
+// Cycles via Alt+S in the order: sidebar → topbar → off → sidebar.
+type DisplayMode string
+
+const (
+	DisplayModeSidebar DisplayMode = "sidebar"
+	DisplayModeTopbar  DisplayMode = "topbar"
+	DisplayModeOff     DisplayMode = "off"
+)
+
+// nextDisplayMode returns the mode that follows m in the Alt+S cycle.
+func nextDisplayMode(m DisplayMode) DisplayMode {
+	switch m {
+	case DisplayModeSidebar:
+		return DisplayModeTopbar
+	case DisplayModeTopbar:
+		return DisplayModeOff
+	case DisplayModeOff:
+		return DisplayModeSidebar
+	default:
+		return DisplayModeSidebar
+	}
+}
+
 // App is the root Bubbletea model composing all TUI components.
 type App struct {
 	width  int
 	height int
 
 	activeTab      int
-	sidebarOpen    bool
+	displayMode    DisplayMode
 	sidebarWidth   int
-	sidebarVisible bool // computed: sidebarOpen AND terminal large enough
+	sidebarVisible bool // computed: displayMode==sidebar AND terminal large enough
+	topbarVisible  bool // computed: displayMode==topbar AND terminal large enough
 	sidebarCompact bool // computed: only show minimap+compass (no bars/lighting)
 	state          appState
 	authError      string // error message from failed auth
@@ -161,7 +225,7 @@ type App struct {
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
+func NewApp(displayMode string, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, autoReconnect bool, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -171,9 +235,17 @@ func NewApp(sidebarOpen bool, defaultTab string, scrollback int, accounts []stri
 		sidebarWidth = 40
 	}
 
+	mode := DisplayMode(displayMode)
+	switch mode {
+	case DisplayModeSidebar, DisplayModeTopbar, DisplayModeOff:
+		// ok
+	default:
+		mode = DisplayModeSidebar
+	}
+
 	a := App{
 		activeTab:    tab,
-		sidebarOpen:  sidebarOpen,
+		displayMode:  mode,
 		sidebarWidth: sidebarWidth,
 		debugMode:    debugMode,
 		scrollback:   scrollback,
@@ -831,11 +903,36 @@ func (a App) updateMain(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !reservedAltKeys[lower] {
 			switch lower {
 			case 's':
-				// Alt+S: toggle sidebar
-				a.sidebarOpen = !a.sidebarOpen
+				// Alt+S: cycle display mode (sidebar → topbar → off → sidebar).
+				prev := a.displayMode
+				next := nextDisplayMode(prev)
+				a.displayMode = next
 				a.recalcLayout()
-				open := a.sidebarOpen
-				return a, func() tea.Msg { return SidebarToggleMsg{Open: open} }
+				// On any transition that involves a kitty-graphics
+				// position change or removal, write the delete-all
+				// escape DIRECTLY to stdout. Embedding it in BT's frame
+				// string (either at the head or tail) was observed to
+				// not always reach the terminal in time / in order;
+				// writing direct sidesteps BT's renderer for this one
+				// escape and reliably wipes the kitty image registry
+				// before the next View paints fresh placements.
+				if prev != next {
+					switch a.graphicsMode {
+					case graphics.ModeKitty:
+						_, _ = os.Stdout.Write([]byte(kittyDeleteAll))
+					case graphics.ModeSixel:
+						// Sixel pixels live in the cell buffer; the
+						// next View redraw won't overwrite cells that
+						// land on whitespace in both frames. Force a
+						// clear of the topbar strip so old pixels
+						// don't ghost into the new mode.
+						if prev == DisplayModeTopbar {
+							a.writeSixelClearTopbar()
+						}
+					}
+					a.sidebar.InvalidateGraphics()
+				}
+				return a, func() tea.Msg { return DisplayModeChangeMsg{Mode: next} }
 
 			case 'm':
 				// Alt+M: quick-cycle to next mode
@@ -1177,16 +1274,18 @@ func (a *App) switchToVisibleTab(n int) {
 
 // recalcLayout recalculates component sizes based on terminal dimensions.
 func (a *App) recalcLayout() {
-	// Compute effective sidebar visibility based on terminal size.
-	// Minimap height + compass rows (7) = minimum for compact mode.
-	// Compact + lighting (1) + vitals (4) = full mode.
+	// Sidebar fit math: minimap height + compass rows (7) = minimum for
+	// compact mode. Compact + lighting (1) + vitals (4) = full mode.
 	minimapAndCompass := a.sidebar.MinimapHeight() + compass.Rows
 	fullSidebar := minimapAndCompass + 5 // lighting + 4 vitals
 
-	a.sidebarVisible = a.sidebarOpen
+	a.sidebarVisible = false
+	a.topbarVisible = false
 	a.sidebarCompact = false
 
-	if a.sidebarVisible {
+	switch a.displayMode {
+	case DisplayModeSidebar:
+		a.sidebarVisible = true
 		contentHeight := a.height - 6
 		// Hide sidebar if width < 2x sidebar width.
 		if a.width < a.sidebarWidth*2 {
@@ -1198,6 +1297,16 @@ func (a *App) recalcLayout() {
 		} else if contentHeight < fullSidebar+2 {
 			a.sidebarCompact = true
 		}
+	case DisplayModeTopbar:
+		a.topbarVisible = true
+		// Topbar wants minimap (sidebarWidth wide) + compass
+		// (sidebarWidth wide) + room for lighting/bars on the right
+		// (~30 cells). Hide if too narrow. Vertically the topbar takes
+		// minimap height; require enough rows for it plus the chrome
+		// (tab/status/input ≈ 3) plus a meaningful content area (≥ 5).
+		if a.width < a.sidebarWidth*2+30 || a.height < a.sidebar.MinimapHeight()+8 {
+			a.topbarVisible = false
+		}
 	}
 
 	sidebarWidth := 0
@@ -1207,6 +1316,10 @@ func (a *App) recalcLayout() {
 
 	// Heights: tabBar=1 + border=1, statusBar=1 + border=1, input=1 + border=1 = 6 total chrome
 	contentHeight := a.height - 6
+	if a.topbarVisible {
+		// Topbar block + horizontal-rule separator below it.
+		contentHeight -= a.sidebar.MinimapHeight() + 1
+	}
 	if contentHeight < 1 {
 		contentHeight = 1
 	}
@@ -1222,7 +1335,14 @@ func (a *App) recalcLayout() {
 	}
 	a.metrics.SetSize(contentWidth, contentHeight)
 	a.debug.SetSize(contentWidth, contentHeight)
-	a.sidebar.SetSize(sidebarWidth, contentHeight)
+	// The Sidebar component owns the minimap + compass image data even
+	// when displayMode is topbar, so size it with the configured
+	// sidebarWidth whenever any display mode is visible.
+	sidebarRenderWidth := 0
+	if a.sidebarVisible || a.topbarVisible {
+		sidebarRenderWidth = a.sidebarWidth
+	}
+	a.sidebar.SetSize(sidebarRenderWidth, contentHeight)
 	a.sidebar.SetCompact(a.sidebarCompact)
 	a.status.SetWidth(a.width)
 	a.input.SetWidth(a.width)
@@ -1247,6 +1367,10 @@ func (a *App) recalcLayout() {
 // contentHeight returns the available content height.
 func (a App) contentHeight() int {
 	h := a.height - 6
+	if a.topbarVisible {
+		// Topbar block + horizontal-rule separator below it.
+		h -= a.sidebar.MinimapHeight() + 1
+	}
 	if h < 1 {
 		h = 1
 	}
@@ -1296,7 +1420,18 @@ func (a App) View() string {
 
 	var sections []string
 
-	// Tab bar
+	// Topbar (if active): rendered at the very top, above the tab bar.
+	// The kitty/sixel images are positioned at row 1 (matching this
+	// section's screen position) over the topbar's whitespace
+	// placeholders. A thin horizontal rule visually separates the
+	// topbar block from the tab bar below it.
+	if a.topbarVisible {
+		sections = append(sections, a.sidebar.TopbarView(a.width))
+		ruleStyle := lipgloss.NewStyle().Foreground(colorDim)
+		sections = append(sections, ruleStyle.Render(strings.Repeat("─", a.width)))
+	}
+
+	// Tab bar (below topbar when topbar is visible)
 	sections = append(sections, a.renderTabBar())
 
 	// Content area (tab content + optional sidebar)
@@ -1327,11 +1462,14 @@ func (a App) View() string {
 	fixedContent := padLines(tabContent, contentWidth, a.contentHeight())
 
 	var content string
-	var kittyMinimap, kittyCompass, hideEscape string
+	var kittyMinimap, kittyCompass, transitionEscape, hideEscape string
 	if a.sidebarVisible {
 		sidebar := a.sidebar.View()
-		kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics()
+		transitionEscape, kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics("sidebar")
 		content = lipgloss.JoinHorizontal(lipgloss.Top, fixedContent, sidebar)
+	} else if a.topbarVisible {
+		transitionEscape, kittyMinimap, kittyCompass = a.sidebar.ConsumeGraphics("topbar")
+		content = fixedContent
 	} else {
 		content = fixedContent
 		hideEscape = a.sidebar.HideGraphics()
@@ -1352,24 +1490,55 @@ func (a App) View() string {
 
 	result := lipgloss.JoinVertical(lipgloss.Left, sections...)
 
-	// Inject sidebar graphics. With kitty image IDs, re-emitting the
-	// same image is an atomic in-place replacement (no flicker), so
-	// the sidebar emits on every game frame when visible — that's
-	// also self-healing if anything silently wiped the image. When
-	// the sidebar is hidden, surgical delete escapes remove just the
-	// sidebar's images without touching anything else.
-	sidebarCol := a.width - a.sidebarWidth + 2
-	if kittyMinimap != "" {
-		// Minimap: row 2 (after tab bar)
-		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
+	// Inject sidebar/topbar graphics. With kitty image IDs, re-emitting
+	// the same image is an atomic in-place replacement (no flicker), so
+	// emit on every game frame when a display mode is visible — that's
+	// also self-healing if anything silently wiped the image. When the
+	// display is off, surgical delete escapes remove just our images
+	// without touching anything else on screen.
+	if transitionEscape != "" {
+		// Mode just changed — clean up previous placements BEFORE
+		// any cells get written this frame (matches what graphicsClear
+		// does for menu transitions). Putting the delete at the tail
+		// of the frame doesn't reliably take effect on all kitty-
+		// compatible terminals.
+		result = transitionEscape + result
 	}
-	if kittyCompass != "" {
-		// Compass: after minimap (row 2 + minimap height)
-		compassRow := 2 + a.sidebar.MinimapHeight()
-		result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
+	if a.sidebarVisible && (kittyMinimap != "" || kittyCompass != "") {
+		// Sidebar mode: minimap and compass stacked vertically in the
+		// right-side strip.
+		sidebarCol := a.width - a.sidebarWidth + 2
+		if kittyMinimap != "" {
+			// Minimap: row 2 (after tab bar)
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 2, sidebarCol, kittyMinimap)
+		}
+		if kittyCompass != "" {
+			// Compass: below minimap
+			compassRow := 2 + a.sidebar.MinimapHeight()
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", compassRow, sidebarCol, kittyCompass)
+		}
+	} else if a.topbarVisible && (kittyMinimap != "" || kittyCompass != "") {
+		// Topbar mode: minimap and compass placed side-by-side at the
+		// very top of the screen, above the tab bar.
+		innerW := a.sidebarWidth - 2
+		if innerW < 4 {
+			innerW = 4
+		}
+		if kittyMinimap != "" {
+			// Minimap at top-left (row 1, col 1) — topbar is rendered
+			// before the tab bar so it occupies rows 1 through
+			// minimapHeight.
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 1, 1, kittyMinimap)
+		}
+		if kittyCompass != "" {
+			// Compass: row 1, after minimap tile + 1-cell gap.
+			result += fmt.Sprintf("\033[s\033[%d;%dH%s\033[u", 1, innerW+2, kittyCompass)
+		}
 	}
 	if hideEscape != "" {
-		result += hideEscape
+		// Same reasoning as transitionEscape above: prepend the
+		// delete so it's processed before any cell writes.
+		result = hideEscape + result
 	}
 
 	return result

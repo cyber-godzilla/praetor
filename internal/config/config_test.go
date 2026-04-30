@@ -53,11 +53,49 @@ ui:
 	if cfg.Commands.DefaultDelay.String() != "800ms" {
 		t.Errorf("Commands.DefaultDelay = %v, want 800ms", cfg.Commands.DefaultDelay)
 	}
-	if cfg.UI.SidebarOpen != false {
-		t.Error("UI.SidebarOpen should be false")
+	if cfg.UI.DisplayMode != "off" {
+		t.Errorf("UI.DisplayMode = %q, want %q (migrated from sidebar_open: false)", cfg.UI.DisplayMode, "off")
 	}
 	if len(cfg.Commands.HighPriority) != 2 {
 		t.Errorf("HighPriority len = %d, want 2", len(cfg.Commands.HighPriority))
+	}
+}
+
+func TestLoadConfigDisplayMode(t *testing.T) {
+	cases := []struct {
+		name string
+		ui   string
+		want string
+	}{
+		{"explicit topbar", "  display_mode: topbar\n", "topbar"},
+		{"explicit sidebar", "  display_mode: sidebar\n", "sidebar"},
+		{"explicit off", "  display_mode: off\n", "off"},
+		{"legacy sidebar_open true", "  sidebar_open: true\n", "sidebar"},
+		{"legacy sidebar_open false", "  sidebar_open: false\n", "off"},
+		{"unknown value falls back to sidebar", "  display_mode: bogus\n", "sidebar"},
+	}
+	header := `server:
+  host: game.eternalcitygame.com
+  port: 8080
+  protocol: ws
+  login_url: https://login.eternalcitygame.com/login.php
+ui:
+`
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(cfgPath, []byte(header+tc.ui), 0644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(cfgPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.UI.DisplayMode != tc.want {
+				t.Errorf("DisplayMode = %q, want %q", cfg.UI.DisplayMode, tc.want)
+			}
+		})
 	}
 }
 

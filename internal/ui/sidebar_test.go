@@ -13,7 +13,7 @@ func TestSidebar_ModeNone_RendersFallback(t *testing.T) {
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
 
-	mm, cp := s.ConsumeGraphics()
+	_, mm, cp := s.ConsumeGraphics("sidebar")
 	if mm != "" || cp != "" {
 		t.Errorf("expected empty escapes in ModeNone, got mm=%d bytes cp=%d bytes", len(mm), len(cp))
 	}
@@ -37,11 +37,11 @@ func TestSidebar_Kitty_ConsumeReturnsOnEveryCall(t *testing.T) {
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
 
-	mm1, _ := s.ConsumeGraphics()
+	_, mm1, _ := s.ConsumeGraphics("sidebar")
 	if mm1 == "" {
 		t.Fatal("expected first ConsumeGraphics to return minimap escape")
 	}
-	mm2, _ := s.ConsumeGraphics()
+	_, mm2, _ := s.ConsumeGraphics("sidebar")
 	if mm2 != mm1 {
 		t.Errorf("expected second ConsumeGraphics to return same escape; got different bytes")
 	}
@@ -56,28 +56,46 @@ func TestSidebar_Sixel_ConsumeReturnsOnEveryCall(t *testing.T) {
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
 
-	mm1, _ := s.ConsumeGraphics()
+	_, mm1, _ := s.ConsumeGraphics("sidebar")
 	if mm1 == "" {
 		t.Fatal("expected first ConsumeGraphics to return sixel escape")
 	}
-	mm2, _ := s.ConsumeGraphics()
+	_, mm2, _ := s.ConsumeGraphics("sidebar")
 	if mm2 != mm1 {
 		t.Errorf("expected sixel escape to be returned on every call; got different bytes")
 	}
 }
 
-func TestSidebar_HideGraphics_KittyEmitsDeletes(t *testing.T) {
+func TestSidebar_AnchorChangeEmitsTransitionDelete(t *testing.T) {
+	// kitty creates a NEW placement on each `a=T` rather than moving
+	// the existing one, so when the display mode flips we have to
+	// emit explicit delete-by-id escapes for the previous position.
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
-	_, _ = s.ConsumeGraphics() // mark as emitted
+	transition, _, _ := s.ConsumeGraphics("sidebar")
+	if transition != "" {
+		t.Errorf("first emit should not have a transition delete, got: %q", transition)
+	}
+	transition, _, _ = s.ConsumeGraphics("topbar")
+	if !strings.Contains(transition, "a=d,d=A") {
+		t.Errorf("anchor change should emit kitty delete-all (a=d,d=A); got: %q", transition)
+	}
+	transition, _, _ = s.ConsumeGraphics("topbar")
+	if transition != "" {
+		t.Errorf("same-anchor re-emit should not have a transition delete, got: %q", transition)
+	}
+}
+
+func TestSidebar_HideGraphics_KittyEmitsDelete(t *testing.T) {
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar") // mark as emitted
 
 	hide := s.HideGraphics()
-	if !strings.Contains(hide, "a=d,d=I,i=1") {
-		t.Errorf("expected delete-by-id for minimap (i=1), got: %q", hide)
-	}
-	if !strings.Contains(hide, "a=d,d=I,i=2") {
-		t.Errorf("expected delete-by-id for compass (i=2), got: %q", hide)
+	if !strings.Contains(hide, "a=d,d=A") {
+		t.Errorf("expected kitty delete-all escape (a=d,d=A), got: %q", hide)
 	}
 
 	// Idempotent: second call returns "".
@@ -100,12 +118,12 @@ func TestSidebar_InvalidateGraphics_ResetsEmittedFlag(t *testing.T) {
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
-	_, _ = s.ConsumeGraphics() // mark emitted
+	_, _, _ = s.ConsumeGraphics("sidebar") // mark emitted
 	s.InvalidateGraphics()
 	if got := s.HideGraphics(); got != "" {
 		t.Errorf("expected HideGraphics after Invalidate to be no-op, got %d bytes", len(got))
 	}
-	if mm, _ := s.ConsumeGraphics(); mm == "" {
+	if _, mm, _ := s.ConsumeGraphics("sidebar"); mm == "" {
 		t.Errorf("expected ConsumeGraphics to keep returning escapes")
 	}
 }

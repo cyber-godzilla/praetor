@@ -111,7 +111,12 @@ type SessionLoggingConfig struct {
 }
 
 type UIConfig struct {
-	SidebarOpen     bool              `yaml:"sidebar_open"`
+	// DisplayMode controls how the minimap/compass/vitals are shown:
+	//   "sidebar" — vertical strip down the right (default)
+	//   "topbar"  — horizontal strip across the top
+	//   "off"     — game pane only, sidebar/topbar hidden
+	// Migrated from the legacy sidebar_open bool by migrateLegacyDisplay.
+	DisplayMode     string            `yaml:"display_mode"`
 	DefaultTab      string            `yaml:"default_tab"`
 	Scrollback      int               `yaml:"scrollback"`
 	SidebarWidth    int               `yaml:"sidebar_width"`
@@ -160,7 +165,7 @@ func Defaults() *Config {
 		},
 		Scripts: []string{},
 		UI: UIConfig{
-			SidebarOpen:     true,
+			DisplayMode:     "sidebar",
 			DefaultTab:      "all",
 			Scrollback:      5000,
 			SidebarWidth:    40,
@@ -222,6 +227,7 @@ func Load(path string) (*Config, error) {
 	}
 
 	migrateLegacyEcho(cfg, data)
+	migrateLegacyDisplay(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -254,6 +260,38 @@ func migrateLegacyEcho(cfg *Config, data []byte) {
 	}
 	if _, hasScript := ui["echo_script_commands"]; !hasScript {
 		cfg.UI.EchoScript = b
+	}
+}
+
+// migrateLegacyDisplay translates the deprecated ui.sidebar_open bool
+// into the new ui.display_mode string when the new key is absent.
+// sidebar_open=true  → display_mode="sidebar"
+// sidebar_open=false → display_mode="off"
+// Validate normalizes the result; unknown values fall back to "sidebar".
+func migrateLegacyDisplay(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	ui, ok := raw["ui"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if _, hasNew := ui["display_mode"]; hasNew {
+		return
+	}
+	legacy, hasLegacy := ui["sidebar_open"]
+	if !hasLegacy {
+		return
+	}
+	b, ok := legacy.(bool)
+	if !ok {
+		return
+	}
+	if b {
+		cfg.UI.DisplayMode = "sidebar"
+	} else {
+		cfg.UI.DisplayMode = "off"
 	}
 }
 
@@ -292,6 +330,10 @@ func (c *Config) Validate() error {
 	}
 
 	// UI
+	validDisplayModes := map[string]bool{"sidebar": true, "topbar": true, "off": true}
+	if !validDisplayModes[c.UI.DisplayMode] {
+		c.UI.DisplayMode = "sidebar"
+	}
 	validTabs := map[string]bool{"all": true, "general": true, "combat": true, "social": true, "metrics": true}
 	if !validTabs[c.UI.DefaultTab] {
 		c.UI.DefaultTab = "all"
