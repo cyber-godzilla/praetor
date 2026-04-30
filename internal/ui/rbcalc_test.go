@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -123,5 +124,52 @@ func TestRBCalc_EscEmitsCloseMsg(t *testing.T) {
 	msg := cmd()
 	if _, ok := msg.(RBCalcCloseMsg); !ok {
 		t.Errorf("Esc should emit RBCalcCloseMsg, got %T", msg)
+	}
+}
+
+func TestRBCalc_View_NonEmpty(t *testing.T) {
+	s := newCalcScreen()
+	if s.View() == "" {
+		t.Fatal("View should be non-empty even with no inputs")
+	}
+}
+
+func TestRBCalc_View_RendersInputLabels(t *testing.T) {
+	s := newCalcScreen()
+	view := s.View()
+	for _, lbl := range []string{"Current:", "Target:", "Basics", "Subskill"} {
+		if !strings.Contains(view, lbl) {
+			t.Errorf("View missing label %q", lbl)
+		}
+	}
+}
+
+func TestRBCalc_View_DefensiveScreenshotCase(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1150"
+	s.fieldBufs[1] = "500"
+	view := s.View()
+	// The Def. row Easy column should show 280 (canonical screenshot value).
+	if !strings.Contains(view, "280") {
+		t.Errorf("View missing canonical Def. Easy = 280; got:\n%s", view)
+	}
+	// Impossible row Aggressive column = 42.7
+	if !strings.Contains(view, "42.7") {
+		t.Errorf("View missing canonical Aggr. Impos. = 42.7")
+	}
+}
+
+func TestRBCalc_View_NoncombatModeShowsSingleRow(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1150"
+	s.fieldBufs[1] = "500"
+	s.mode = calc.ModeNoncombat
+	view := s.View()
+	if !strings.Contains(view, "280") {
+		t.Errorf("Noncombat Easy should show 280; got:\n%s", view)
+	}
+	// Noncombat shouldn't render posture row labels.
+	if strings.Contains(view, "Bers.") {
+		t.Errorf("Noncombat view should not show 'Bers.' row label")
 	}
 }
