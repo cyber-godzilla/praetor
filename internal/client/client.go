@@ -634,6 +634,9 @@ func (c *Client) handleLocalCommand(input string) {
 	case "/reconnect":
 		c.Reconnect()
 
+	case "/calc", "/rb":
+		c.emit(types.CalcOpenMenuEvent{})
+
 	default:
 		log.Printf("[CLIENT] unknown command: %s", cmd)
 	}
