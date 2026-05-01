@@ -76,6 +76,24 @@ func TestRBCalc_NonDigitRunesIgnored(t *testing.T) {
 	}
 }
 
+func TestRBCalc_DeleteKeyClearsFocusedField(t *testing.T) {
+	s := newCalcScreen()
+	for _, r := range "12345" {
+		s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	if s.fieldBufs[0] != "" {
+		t.Errorf("Delete should clear focused field; got %q", s.fieldBufs[0])
+	}
+	// Other fields untouched.
+	s.fieldBufs[2] = "999"
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyDelete})
+	if s.fieldBufs[2] != "999" {
+		t.Errorf("Delete should only clear the focused field; fieldBufs[2] = %q, want %q",
+			s.fieldBufs[2], "999")
+	}
+}
+
 func TestRBCalc_BackspaceDeletes(t *testing.T) {
 	s := newCalcScreen()
 	for _, r := range "12345" {

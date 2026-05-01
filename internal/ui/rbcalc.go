@@ -57,6 +57,9 @@ func (s RBCalcScreen) Update(msg tea.KeyMsg) (RBCalcScreen, tea.Cmd) {
 			s.fieldBufs[s.fieldFocus] = buf[:len(buf)-1]
 		}
 		return s, nil
+	case tea.KeyDelete:
+		s.fieldBufs[s.fieldFocus] = ""
+		return s, nil
 	case tea.KeyRunes:
 		if len(msg.Runes) != 1 {
 			return s, nil
