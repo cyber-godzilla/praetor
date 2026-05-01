@@ -103,17 +103,20 @@ func (s RBCalcScreen) View() string {
 		Width(boxWidth)
 
 	curBasics, curSub, tgtBasics, tgtSub := s.parsedInputs()
-	hasTarget := tgtBasics > 0 || tgtSub > 0
+	// Target RB table needs both inputs (RB combines basics + sub);
+	// the cost panel only depends on the subskill range.
+	hasTargetTable := tgtBasics > 0 && tgtSub > 0
+	hasCostPanel := tgtSub > 0
 
 	var left strings.Builder
 	left.WriteString(s.renderRBTable("Current", curBasics, curSub))
-	if hasTarget {
+	if hasTargetTable {
 		left.WriteString("\n")
 		left.WriteString(s.renderRBTable("Target", tgtBasics, tgtSub))
 	}
 
 	var body string
-	if hasTarget {
+	if hasCostPanel {
 		right := s.renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub)
 		body = lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Padding(0, 2, 0, 0).Render(left.String()),
