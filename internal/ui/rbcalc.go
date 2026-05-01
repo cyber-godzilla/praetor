@@ -24,6 +24,8 @@ type RBCalcScreen struct {
 	mode          calc.Mode
 	selfTrained   bool
 	selfTaught    bool
+	healing       bool
+	slotPage      int // 0 = slots 1-10, 1 = slots 11-20
 }
 
 // NewRBCalcScreen returns a fresh calculator with empty inputs and
@@ -74,8 +76,14 @@ func (s RBCalcScreen) Update(msg tea.KeyMsg) (RBCalcScreen, tea.Cmd) {
 		case 'T', 't':
 			s.selfTrained = !s.selfTrained
 			return s, nil
-		case 'H', 'h':
+		case 'L', 'l':
 			s.selfTaught = !s.selfTaught
+			return s, nil
+		case 'H', 'h':
+			s.healing = !s.healing
+			return s, nil
+		case 'S', 's':
+			s.slotPage = 1 - s.slotPage
 			return s, nil
 		}
 		// Numeric input.
@@ -133,7 +141,7 @@ func (s RBCalcScreen) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(body)
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("[Tab] field   [O/D/N] mode   [T] Self-Trained   [H] Self-Taught   [Esc] close"))
+	b.WriteString(dimStyle.Render("[Tab] field   [O/D/N] mode   [T] Self-Trained   [L] Self-Taught   [H] Healing   [S] slots   [Esc] close"))
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
@@ -257,14 +265,25 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 	onStyle := lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
 	offStyle := lipgloss.NewStyle().Foreground(colorDim)
+	warnStyle := lipgloss.NewStyle().Foreground(colorGreen)
 
 	deltaBasics := tgtBasics - curBasics
 	deltaSub := tgtSub - curSub
 
+	// Basics is global (no slot system in-game); for most skills it costs
+	// the same as Easy at slot 1. Tailoring/leatherworking are game-side
+	// exceptions where basics is free — not modeled here.
+	basicsSP := calc.TrainSPCost(curBasics, tgtBasics, 1, calc.DifficultyEasy,
+		s.selfTrained, s.selfTaught, s.healing)
+
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("Training cost"))
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("ΔBasics: %+d\n", deltaBasics))
+	if deltaBasics > 0 {
+		b.WriteString(fmt.Sprintf("ΔBasics: %+d (%d SP)\n", deltaBasics, basicsSP))
+	} else {
+		b.WriteString(fmt.Sprintf("ΔBasics: %+d\n", deltaBasics))
+	}
 	b.WriteString(fmt.Sprintf("ΔSubskill: %+d\n\n", deltaSub))
 
 	toggleLine := func(key, label, desc string, on bool) string {
@@ -278,10 +297,18 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 		return head + "\n    " + dimStyle.Render(desc) + "\n"
 	}
 	b.WriteString(toggleLine("T", "Self-Trained", "Using selftrain command", s.selfTrained))
-	b.WriteString(toggleLine("H", "Self-Taught", "Has self-taught trait", s.selfTaught))
+	b.WriteString(toggleLine("L", "Self-Taught", "Has self-taught trait", s.selfTaught))
+	b.WriteString(toggleLine("H", "Healing", "Healing-typed skill (+5 SP/rank)", s.healing))
 	b.WriteByte('\n')
 
-	b.WriteString(headerStyle.Render("Skill Point Cost to Train"))
+	pageLabel := "Slots 1-10"
+	startSlot, endSlot := 1, 10
+	if s.slotPage == 1 {
+		pageLabel = "Slots 11-20"
+		startSlot, endSlot = 11, 20
+	}
+	b.WriteString(headerStyle.Render("Skill Point Cost to Train  ") +
+		dimStyle.Render("("+pageLabel+", [S] toggles)"))
 	b.WriteByte('\n')
 	b.WriteString(fmt.Sprintf("%-6s%8s%8s%8s%8s\n", "Slot", "Easy", "Avg", "Diff", "Impos."))
 
@@ -289,12 +316,22 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 		calc.DifficultyEasy, calc.DifficultyAverage,
 		calc.DifficultyDifficult, calc.DifficultyImpossible,
 	}
-	for slot := 1; slot <= 20; slot++ {
+	for slot := startSlot; slot <= endSlot; slot++ {
 		b.WriteString(fmt.Sprintf("%-6s", ordinal(slot)))
 		for _, d := range difficulties {
-			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught, false)
+			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught, s.healing)
 			b.WriteString(fmt.Sprintf(" %6d ", cost))
 		}
+		b.WriteByte('\n')
+	}
+
+	// Ranks above 1150 always cost as if self-trained, regardless of the
+	// toggle. The wiki cost formula already encodes that, so the numbers
+	// above are correct either way — but warn the user so they know the
+	// /selftrain command is required to actually train those ranks.
+	if tgtSub > 1150 && !s.selfTrained {
+		b.WriteByte('\n')
+		b.WriteString(warnStyle.Render("Note: ranks 1151+ require /selftrain (cost shown reflects this)"))
 		b.WriteByte('\n')
 	}
 	return b.String()

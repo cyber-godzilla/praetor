@@ -115,8 +115,8 @@ func TestTrainSPCost_HealingAddsFiveSPPerRank(t *testing.T) {
 		diff           Difficulty
 		extra          int // expected delta vs healing=false
 	}{
-		{0, 1, 1, DifficultyEasy, 5},     // 1 rank
-		{1, 11, 1, DifficultyEasy, 50},   // 10 ranks × 5
+		{0, 1, 1, DifficultyEasy, 5},   // 1 rank
+		{1, 11, 1, DifficultyEasy, 50}, // 10 ranks × 5
 		{0, 10, 1, DifficultyAverage, 50},
 		{100, 200, 5, DifficultyDifficult, 500},
 	}

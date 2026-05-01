@@ -27,8 +27,12 @@ func TestRBCalc_InitialState(t *testing.T) {
 	if s.mode != calc.ModeDefensive {
 		t.Errorf("initial mode = %v, want ModeDefensive", s.mode)
 	}
-	if s.selfTrained || s.selfTaught {
-		t.Errorf("toggles should default off; got selfTrained=%v selfTaught=%v", s.selfTrained, s.selfTaught)
+	if s.selfTrained || s.selfTaught || s.healing {
+		t.Errorf("toggles should default off; got selfTrained=%v selfTaught=%v healing=%v",
+			s.selfTrained, s.selfTaught, s.healing)
+	}
+	if s.slotPage != 0 {
+		t.Errorf("initial slotPage = %d, want 0", s.slotPage)
 	}
 }
 
@@ -107,11 +111,39 @@ func TestRBCalc_TToggleSelfTrained(t *testing.T) {
 	}
 }
 
-func TestRBCalc_HToggleSelfTaught(t *testing.T) {
+func TestRBCalc_LToggleSelfTaught(t *testing.T) {
+	s := newCalcScreen()
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
+	if !s.selfTaught {
+		t.Error("L should turn selfTaught ON")
+	}
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	if s.selfTaught {
+		t.Error("l should turn selfTaught back OFF")
+	}
+}
+
+func TestRBCalc_HToggleHealing(t *testing.T) {
 	s := newCalcScreen()
 	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
-	if !s.selfTaught {
-		t.Error("H should turn selfTaught ON")
+	if !s.healing {
+		t.Error("H should turn healing ON")
+	}
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	if s.healing {
+		t.Error("h should turn healing back OFF")
+	}
+}
+
+func TestRBCalc_STogglesSlotPage(t *testing.T) {
+	s := newCalcScreen()
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'S'}})
+	if s.slotPage != 1 {
+		t.Errorf("S should flip slotPage to 1, got %d", s.slotPage)
+	}
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}})
+	if s.slotPage != 0 {
+		t.Errorf("s should flip slotPage back to 0, got %d", s.slotPage)
 	}
 }
 
@@ -217,13 +249,125 @@ func TestRBCalc_View_TrainingCostShowsTogglesAndTable(t *testing.T) {
 		"Using selftrain command",
 		"Self-Taught",
 		"Has self-taught trait",
+		"Healing",
+		"Healing-typed skill (+5 SP/rank)",
 		"Skill Point Cost to Train",
+		"Slots 1-10",
 		"1st",
-		"20th",
+		"10th",
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("training panel missing %q", want)
 		}
+	}
+}
+
+func TestRBCalc_View_BasicsSPShownInline(t *testing.T) {
+	// curBasics=0, tgtBasics=1, selfTrained/selfTaught/healing all off:
+	// basics SP = TrainSPCost(0, 1, 1, Easy, ...) = 10. Verify it
+	// surfaces on the ΔBasics line.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "100"
+	s.fieldBufs[2] = "1"
+	s.fieldBufs[3] = "200"
+	view := s.View()
+	if !strings.Contains(view, "ΔBasics: +1 (10 SP)") {
+		t.Errorf("expected ΔBasics line to include '(10 SP)'; got:\n%s", view)
+	}
+}
+
+func TestRBCalc_View_BasicsSPHiddenWhenNoBasicsDelta(t *testing.T) {
+	// No basics increase → don't render the parenthetical SP cost.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "100"
+	s.fieldBufs[1] = "100"
+	s.fieldBufs[2] = "100"
+	s.fieldBufs[3] = "200"
+	view := s.View()
+	if strings.Contains(view, "(0 SP)") {
+		t.Errorf("ΔBasics with zero delta should not render '(0 SP)'; got:\n%s", view)
+	}
+}
+
+func TestRBCalc_View_SlotPagePaginates(t *testing.T) {
+	// Default page (0) shows slots 1-10 only; page 1 shows slots 11-20.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "0"
+	s.fieldBufs[3] = "10"
+
+	page0 := s.View()
+	if !strings.Contains(page0, "1st") || !strings.Contains(page0, "10th") {
+		t.Errorf("page 0 should show 1st and 10th; got:\n%s", page0)
+	}
+	if strings.Contains(page0, "11th") || strings.Contains(page0, "20th") {
+		t.Errorf("page 0 should NOT show 11th or 20th; got:\n%s", page0)
+	}
+	if !strings.Contains(page0, "Slots 1-10") {
+		t.Errorf("page 0 should label 'Slots 1-10'")
+	}
+
+	s.slotPage = 1
+	page1 := s.View()
+	if !strings.Contains(page1, "11th") || !strings.Contains(page1, "20th") {
+		t.Errorf("page 1 should show 11th and 20th; got:\n%s", page1)
+	}
+	if strings.Contains(page1, " 1st") || strings.Contains(page1, "10th\n") {
+		// (looser checks: 1st could appear elsewhere; rely on row labels)
+		t.Errorf("page 1 should NOT include 1st-10th rows; got:\n%s", page1)
+	}
+	if !strings.Contains(page1, "Slots 11-20") {
+		t.Errorf("page 1 should label 'Slots 11-20'")
+	}
+}
+
+func TestRBCalc_View_HealingAdds5SPPerRank(t *testing.T) {
+	// 0->1 easy at slot 1: cost 10 normally, 15 with healing (+5).
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "0"
+	s.fieldBufs[3] = "1"
+	off := s.View()
+	if !strings.Contains(off, " 10 ") {
+		t.Errorf("healing-off should show 10; got:\n%s", off)
+	}
+	s.healing = true
+	on := s.View()
+	if !strings.Contains(on, " 15 ") {
+		t.Errorf("healing-on should show 15 (10 + 5); got:\n%s", on)
+	}
+}
+
+func TestRBCalc_View_OverThresholdWarning(t *testing.T) {
+	// tgtSub > 1150 with selfTrained=false → green warning visible.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "0"
+	s.fieldBufs[3] = "1200"
+	view := s.View()
+	if !strings.Contains(view, "ranks 1151+ require /selftrain") {
+		t.Errorf("expected 1151+ warning when target > 1150 and selfTrained off; got:\n%s", view)
+	}
+
+	// With selfTrained ON, no warning needed.
+	s.selfTrained = true
+	if got := s.View(); strings.Contains(got, "1151+ require") {
+		t.Errorf("warning should be hidden when selfTrained=true; got:\n%s", got)
+	}
+}
+
+func TestRBCalc_View_NoWarningBelowThreshold(t *testing.T) {
+	s := newCalcScreen()
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "0"
+	s.fieldBufs[3] = "1150"
+	if got := s.View(); strings.Contains(got, "1151+ require") {
+		t.Errorf("warning should be hidden at exactly 1150; got:\n%s", got)
 	}
 }
 
