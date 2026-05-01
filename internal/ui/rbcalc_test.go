@@ -250,7 +250,6 @@ func TestRBCalc_View_TrainingCostShowsTogglesAndTable(t *testing.T) {
 		"Self-Taught",
 		"Has self-taught trait",
 		"Healing",
-		"Healing-typed skill (+5 SP/rank)",
 		"Skill Point Cost to Train",
 		"Slots 1-10",
 		"1st",
@@ -262,31 +261,66 @@ func TestRBCalc_View_TrainingCostShowsTogglesAndTable(t *testing.T) {
 	}
 }
 
-func TestRBCalc_View_BasicsSPShownInline(t *testing.T) {
-	// curBasics=0, tgtBasics=1, selfTrained/selfTaught/healing all off:
-	// basics SP = TrainSPCost(0, 1, 1, Easy, ...) = 10. Verify it
-	// surfaces on the ΔBasics line.
+func TestRBCalc_View_CostTableHasBasicColumnBeforeEasy(t *testing.T) {
+	// The cost table's column header is: Slot Basic Easy Avg Diff Impos.
 	s := newCalcScreen()
-	s.fieldBufs[0] = "0"
-	s.fieldBufs[1] = "100"
-	s.fieldBufs[2] = "1"
-	s.fieldBufs[3] = "200"
+	s.fieldBufs[3] = "1"
 	view := s.View()
-	if !strings.Contains(view, "ΔBasics: +1 (10 SP)") {
-		t.Errorf("expected ΔBasics line to include '(10 SP)'; got:\n%s", view)
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "Slot") && strings.Contains(line, "Easy") &&
+			strings.Contains(line, "Avg") {
+			basicIdx := strings.Index(line, "Basic")
+			easyIdx := strings.Index(line, "Easy")
+			if basicIdx == -1 {
+				t.Fatalf("cost-table header missing 'Basic'; got: %q", line)
+			}
+			if basicIdx > easyIdx {
+				t.Errorf("'Basic' should precede 'Easy'; got: %q", line)
+			}
+			return
+		}
 	}
+	t.Errorf("cost-table header row not found in:\n%s", view)
 }
 
-func TestRBCalc_View_BasicsSPHiddenWhenNoBasicsDelta(t *testing.T) {
-	// No basics increase → don't render the parenthetical SP cost.
+func TestRBCalc_View_BasicsCostUsesBasicsDeltaPerSlot(t *testing.T) {
+	// basics 0→1: slot 1 = 10 (1×5 + 5 first-rank), slot 5 = 22 (1×9 +
+	// 13 first-rank). Verify those numbers appear in the 1st- and
+	// 5th-row Basic columns. Set sub delta huge so the Easy column
+	// doesn't collide with these values.
 	s := newCalcScreen()
-	s.fieldBufs[0] = "100"
-	s.fieldBufs[1] = "100"
-	s.fieldBufs[2] = "100"
-	s.fieldBufs[3] = "200"
+	s.fieldBufs[0] = "0"
+	s.fieldBufs[1] = "0"
+	s.fieldBufs[2] = "1"
+	s.fieldBufs[3] = "1000" // sub delta huge → Easy column ≫ basics column
 	view := s.View()
-	if strings.Contains(view, "(0 SP)") {
-		t.Errorf("ΔBasics with zero delta should not render '(0 SP)'; got:\n%s", view)
+
+	// Lipgloss JoinHorizontal puts the cost table on the same line as
+	// the left-side RB tables, so search for the slot label as a
+	// substring rather than a line prefix.
+	rowFor := func(label string) string {
+		needle := label + " "
+		for _, ln := range strings.Split(view, "\n") {
+			if strings.Contains(ln, needle) {
+				return ln
+			}
+		}
+		return ""
+	}
+
+	row1 := rowFor("1st")
+	if row1 == "" {
+		t.Fatalf("slot 1 row not found in:\n%s", view)
+	}
+	if !strings.Contains(row1, "10") {
+		t.Errorf("slot 1 Basic column should show 10 (basics 0→1 at slot 1); got: %q", row1)
+	}
+	row5 := rowFor("5th")
+	if row5 == "" {
+		t.Fatalf("slot 5 row not found in:\n%s", view)
+	}
+	if !strings.Contains(row5, "22") {
+		t.Errorf("slot 5 Basic column should show 22 (basics 0→1 at slot 5); got: %q", row5)
 	}
 }
 

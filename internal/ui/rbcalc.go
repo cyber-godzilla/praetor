@@ -141,7 +141,7 @@ func (s RBCalcScreen) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(body)
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("[Tab] field   [O/D/N] mode   [T] Self-Trained   [L] Self-Taught   [H] Healing   [S] slots   [Esc] close"))
+	b.WriteString(dimStyle.Render("[Tab] Field   [O/D/N] Mode   [T] Self-Trained   [L] Self-Taught   [H] Healing   [S] Slots   [Esc] Close"))
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
@@ -270,20 +270,10 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	deltaBasics := tgtBasics - curBasics
 	deltaSub := tgtSub - curSub
 
-	// Basics is global (no slot system in-game); for most skills it costs
-	// the same as Easy at slot 1. Tailoring/leatherworking are game-side
-	// exceptions where basics is free — not modeled here.
-	basicsSP := calc.TrainSPCost(curBasics, tgtBasics, 1, calc.DifficultyEasy,
-		s.selfTrained, s.selfTaught, s.healing)
-
 	var b strings.Builder
 	b.WriteString(headerStyle.Render("Training cost"))
 	b.WriteByte('\n')
-	if deltaBasics > 0 {
-		b.WriteString(fmt.Sprintf("ΔBasics: %+d (%d SP)\n", deltaBasics, basicsSP))
-	} else {
-		b.WriteString(fmt.Sprintf("ΔBasics: %+d\n", deltaBasics))
-	}
+	b.WriteString(fmt.Sprintf("ΔBasics: %+d\n", deltaBasics))
 	b.WriteString(fmt.Sprintf("ΔSubskill: %+d\n\n", deltaSub))
 
 	toggleLine := func(key, label, desc string, on bool) string {
@@ -298,7 +288,7 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	}
 	b.WriteString(toggleLine("T", "Self-Trained", "Using selftrain command", s.selfTrained))
 	b.WriteString(toggleLine("L", "Self-Taught", "Has self-taught trait", s.selfTaught))
-	b.WriteString(toggleLine("H", "Healing", "Healing-typed skill (+5 SP/rank)", s.healing))
+	b.WriteString(toggleLine("H", "Healing", "Healing", s.healing))
 	b.WriteByte('\n')
 
 	pageLabel := "Slots 1-10"
@@ -310,14 +300,19 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	b.WriteString(headerStyle.Render("Skill Point Cost to Train  ") +
 		dimStyle.Render("("+pageLabel+", [S] toggles)"))
 	b.WriteByte('\n')
-	b.WriteString(fmt.Sprintf("%-6s%8s%8s%8s%8s\n", "Slot", "Easy", "Avg", "Diff", "Impos."))
+	b.WriteString(fmt.Sprintf("%-6s%8s%8s%8s%8s%8s\n", "Slot", "Basic", "Easy", "Avg", "Diff", "Impos."))
 
+	// Basic column tracks the basics rank delta; the rest track subskill.
+	// DifficultyBasic computes as Easy in the calc package (same SP rate).
 	difficulties := []calc.Difficulty{
 		calc.DifficultyEasy, calc.DifficultyAverage,
 		calc.DifficultyDifficult, calc.DifficultyImpossible,
 	}
 	for slot := startSlot; slot <= endSlot; slot++ {
 		b.WriteString(fmt.Sprintf("%-6s", ordinal(slot)))
+		basicCost := calc.TrainSPCost(curBasics, tgtBasics, slot, calc.DifficultyBasic,
+			s.selfTrained, s.selfTaught, s.healing)
+		b.WriteString(fmt.Sprintf(" %6d ", basicCost))
 		for _, d := range difficulties {
 			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught, s.healing)
 			b.WriteString(fmt.Sprintf(" %6d ", cost))
