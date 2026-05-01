@@ -134,6 +134,7 @@ func (h HelpScreen) View() string {
 		{"/help", "Show this help screen"},
 		{"/wiki [topic]", "Open wiki bookmarks (or a topic directly)"},
 		{"/maps [location]", "Open map browser (or a location directly)"},
+		{"/calc, /rb", "Rank-bonus / training-cost calculator"},
 	}
 	for _, e := range cmdEntries {
 		lines = append(lines, "  "+keyStyle.Render(padRight(e.key, 22))+descStyle.Render(e.desc))
