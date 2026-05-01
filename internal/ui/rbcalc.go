@@ -292,7 +292,7 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	for slot := 1; slot <= 20; slot++ {
 		b.WriteString(fmt.Sprintf("%-6s", ordinal(slot)))
 		for _, d := range difficulties {
-			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught)
+			cost := calc.TrainSPCost(curSub, tgtSub, slot, d, s.selfTrained, s.selfTaught, false)
 			b.WriteString(fmt.Sprintf(" %6d ", cost))
 		}
 		b.WriteByte('\n')

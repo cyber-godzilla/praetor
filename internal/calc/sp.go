@@ -23,11 +23,17 @@ var spBases = map[Difficulty]spBase{
 // Returns 0 when desRank <= curRank. selfTrained applies the
 // no-trainer penalty multiplier (2x base layer); selfTaught reduces
 // that penalty (1.5x) and also reduces the 1150-2000 layer multiplier
-// (0.5x), per the wiki JS. DifficultyBasic is invalid here (it's not
-// a trainable difficulty) and returns 0.
-func TrainSPCost(curRank, desRank, slot int, diff Difficulty, selfTrained, selfTaught bool) int {
+// (0.5x), per the wiki JS. DifficultyBasic costs the same as
+// DifficultyEasy — basics is not a trainable subskill difficulty in
+// the game, but the calculator surfaces it because most skills' basics
+// SP per rank match the easy rate. healing adds a flat +5 SP per rank
+// trained for healing-typed skills.
+func TrainSPCost(curRank, desRank, slot int, diff Difficulty, selfTrained, selfTaught, healing bool) int {
 	if desRank <= curRank {
 		return 0
+	}
+	if diff == DifficultyBasic {
+		diff = DifficultyEasy
 	}
 	base, ok := spBases[diff]
 	if !ok {
@@ -123,6 +129,10 @@ func TrainSPCost(curRank, desRank, slot int, diff Difficulty, selfTrained, selfT
 			mult = 10.5
 		}
 		total += layer * mult
+	}
+
+	if healing {
+		total += (des - cur) * 5
 	}
 
 	return int(math.Round(total))
