@@ -323,8 +323,9 @@ func (s RBCalcScreen) renderTrainingPanel(curBasics, curSub, tgtBasics, tgtSub i
 	// Ranks above 1150 always cost as if self-trained, regardless of the
 	// toggle. The wiki cost formula already encodes that, so the numbers
 	// above are correct either way — but warn the user so they know the
-	// /selftrain command is required to actually train those ranks.
-	if tgtSub > 1150 && !s.selfTrained {
+	// /selftrain command is required to actually train those ranks. The
+	// rule applies equally to basics and subskills.
+	if (tgtSub > 1150 || tgtBasics > 1150) && !s.selfTrained {
 		b.WriteByte('\n')
 		b.WriteString(warnStyle.Render("Note: ranks 1151+ require /selftrain (cost shown reflects this)"))
 		b.WriteByte('\n')

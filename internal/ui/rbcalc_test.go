@@ -394,6 +394,20 @@ func TestRBCalc_View_OverThresholdWarning(t *testing.T) {
 	}
 }
 
+func TestRBCalc_View_OverThresholdWarning_BasicsSide(t *testing.T) {
+	// Basics target > 1150 also forces self-training. Need tgtSub > 0 to
+	// trigger the cost panel at all.
+	s := newCalcScreen()
+	s.fieldBufs[0] = "1100"
+	s.fieldBufs[1] = "100"
+	s.fieldBufs[2] = "1200"
+	s.fieldBufs[3] = "200"
+	view := s.View()
+	if !strings.Contains(view, "ranks 1151+ require /selftrain") {
+		t.Errorf("expected 1151+ warning when target basics > 1150 and selfTrained off; got:\n%s", view)
+	}
+}
+
 func TestRBCalc_View_NoWarningBelowThreshold(t *testing.T) {
 	s := newCalcScreen()
 	s.fieldBufs[0] = "0"
