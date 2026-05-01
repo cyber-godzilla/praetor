@@ -134,6 +134,7 @@ const (
 	stateMapsMenu                             // browsing map bookmarks
 	stateIgnorelistOOC                        // editing OOC ignorelist
 	stateIgnorelistThink                      // editing Think ignorelist
+	stateRBCalc                               // rank-bonus / training-cost calculator
 )
 
 // DisplayMode chooses how the minimap/compass/vitals are presented.
@@ -212,6 +213,7 @@ type App struct {
 	ignorelistScreen        IgnorelistScreen // shared editor; only one of OOC/Think is open at a time
 	ignoreOOCList           []string
 	ignoreThinkList         []string
+	rbCalcScreen            RBCalcScreen
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
 	wikiMenu                BookmarkMenu
@@ -274,6 +276,7 @@ func NewApp(displayMode string, defaultTab string, scrollback int, accounts []st
 		splash:                  NewSplash(version),
 		wikiMenu:                NewWikiMenu(),
 		mapsMenu:                NewMapsMenu(),
+		rbCalcScreen:            NewRBCalcScreen(),
 		scriptDirsList:          scriptDirs,
 		priorityCmdsList:        priorityCmds,
 		ignoreOOCList:           ignoreOOC,
@@ -394,6 +397,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stateIgnorelistOOC, stateIgnorelistThink:
 			var cmd tea.Cmd
 			a.ignorelistScreen, cmd = a.ignorelistScreen.Update(msg)
+			return a, cmd
+		case stateRBCalc:
+			var cmd tea.Cmd
+			a.rbCalcScreen, cmd = a.rbCalcScreen.Update(msg)
 			return a, cmd
 		case stateNotificationSettings:
 			var cmd tea.Cmd
@@ -595,6 +602,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.autoReconnect, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
 		a.menu.SetSize(a.width, a.height)
 		return a, nil
+
+	case MenuRBCalcMsg:
+		a.rbCalcScreen = NewRBCalcScreen()
+		a.rbCalcScreen.SetSize(a.width, a.height)
+		a.state = stateRBCalc
+		return a, nil
+
+	case RBCalcCloseMsg:
+		a.state = stateGame
+		return a, a.input.Focus()
 
 	case MenuNotificationSettingsMsg:
 		a.notificationSettings = NewNotificationSettingsScreen(a.notificationSettingsCfg)
@@ -1132,6 +1149,9 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 
 		case types.MapsOpenMenuEvent:
 			return a.Update(MenuMapsMsg{})
+
+		case types.CalcOpenMenuEvent:
+			return a.Update(MenuRBCalcMsg{})
 		}
 	}
 
@@ -1359,6 +1379,7 @@ func (a *App) recalcLayout() {
 	a.wikiMenu.SetSize(a.width, a.height)
 	a.mapsMenu.SetSize(a.width, a.height)
 	a.ignorelistScreen.SetSize(a.width, a.height)
+	a.rbCalcScreen.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1414,6 +1435,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.mapsMenu.View()
 	case stateIgnorelistOOC, stateIgnorelistThink:
 		return a.graphicsClear() + a.ignorelistScreen.View()
+	case stateRBCalc:
+		return a.graphicsClear() + a.rbCalcScreen.View()
 	}
 
 	// stateGame:
