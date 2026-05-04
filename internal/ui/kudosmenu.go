@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/cyber-godzilla/praetor/internal/config"
@@ -161,6 +162,10 @@ func (m KudosMenu) Update(msg tea.KeyMsg) (KudosMenu, tea.Cmd) {
 		switch msg.Runes[0] {
 		case 'd', 'D':
 			return m.handleDelete(), nil
+		case 'c', 'C':
+			m.editMode = kudosEditAddFavorite
+			m.editBuf = ""
+			return m, nil
 		}
 		return m, nil
 	}
@@ -202,12 +207,66 @@ func (m KudosMenu) handleDelete() KudosMenu {
 	return m
 }
 
-// updateEditing is a stub; real behavior added in Task 6/7.
 func (m KudosMenu) updateEditing(msg tea.KeyMsg) (KudosMenu, tea.Cmd) {
-	if msg.Type == tea.KeyEscape {
+	switch msg.Type {
+	case tea.KeyEscape:
 		m.editMode = kudosEditNone
 		m.editBuf = ""
 		m.pendingQueueName = ""
+		return m, nil
+	case tea.KeyBackspace:
+		if len(m.editBuf) > 0 {
+			r := []rune(m.editBuf)
+			m.editBuf = string(r[:len(r)-1])
+		}
+		return m, nil
+	case tea.KeyEnter:
+		return m.commitEdit(), nil
+	case tea.KeySpace:
+		m.editBuf += " "
+		return m, nil
+	case tea.KeyRunes:
+		m.editBuf += string(msg.Runes)
+		return m, nil
 	}
 	return m, nil
+}
+
+func (m KudosMenu) commitEdit() KudosMenu {
+	buf := m.editBuf
+	switch m.editMode {
+	case kudosEditAddFavorite:
+		m.kudos.AddFavorite(buf) // dedup + sort handled in config helper
+		m.editMode = kudosEditNone
+		m.editBuf = ""
+		m.rebuildRows()
+		m.cursor = m.findFavoriteRow(buf)
+		if m.cursor < 0 {
+			m.cursor = m.firstSelectable()
+		}
+	case kudosEditAddQueueName:
+		// Filled in Task 7.
+		m.editMode = kudosEditNone
+		m.editBuf = ""
+	case kudosEditAddQueueMessage:
+		// Filled in Task 7.
+		m.editMode = kudosEditNone
+		m.editBuf = ""
+	}
+	return m
+}
+
+func (m KudosMenu) findFavoriteRow(name string) int {
+	target := strings.ToLower(strings.TrimSpace(name))
+	if target == "" {
+		return -1
+	}
+	for i, r := range m.rows {
+		if r.section == kudosSectionFavorites && r.favIdx >= 0 {
+			if strings.ToLower(m.kudos.Favorites[r.favIdx]) == target {
+				return i
+			}
+		}
+	}
+	return -1
 }

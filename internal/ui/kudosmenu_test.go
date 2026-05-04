@@ -145,3 +145,77 @@ func TestKudosMenu_DeleteOnHintRowIsNoop(t *testing.T) {
 		t.Errorf("cursor changed: %d", m.cursor)
 	}
 }
+
+func TestKudosMenu_AddFavoriteFlow(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	if m.editMode != kudosEditAddFavorite {
+		t.Fatalf("editMode=%v", m.editMode)
+	}
+	for _, r := range "Alice" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.editMode != kudosEditNone {
+		t.Errorf("expected editMode=none after commit, got %v", m.editMode)
+	}
+	if len(m.kudos.Favorites) != 1 || m.kudos.Favorites[0] != "Alice" {
+		t.Errorf("favorites=%v", m.kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_AddFavoriteEscCancels(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	for _, r := range "Alice" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.editMode != kudosEditNone {
+		t.Errorf("editMode should reset")
+	}
+	if len(m.kudos.Favorites) != 0 {
+		t.Errorf("Esc should cancel: %v", m.kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_AddFavoriteEmptyIsNoop(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.editMode != kudosEditNone {
+		t.Errorf("editMode should reset")
+	}
+	if len(m.kudos.Favorites) != 0 {
+		t.Errorf("favorites should remain empty: %v", m.kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_AddFavoriteDuplicate(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{Favorites: []string{"Alice"}})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	for _, r := range "alice" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.kudos.Favorites) != 1 || m.kudos.Favorites[0] != "Alice" {
+		t.Errorf("dedup failed: %v", m.kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_AddFavoriteBackspace(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	for _, r := range "Alixe" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	for _, r := range "ce" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.kudos.Favorites) != 1 || m.kudos.Favorites[0] != "Alice" {
+		t.Errorf("after backspace: %v", m.kudos.Favorites)
+	}
+}
