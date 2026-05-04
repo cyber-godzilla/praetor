@@ -38,17 +38,17 @@ func TestParseKudosCommand(t *testing.T) {
 
 func TestIsKudosCommand(t *testing.T) {
 	cases := map[string]bool{
-		"/kudos":             true,
-		"/kudos ":            true,
-		"/kudos Alice":       true,
-		"/kudos Alice text":  true,
-		"/kudo":              false,
-		"/kudosa":            false,
-		"/Kudos":             true,
-		"/KUDOS Alice":       true,
-		"":                   false,
-		"kudos Alice":        false,
-		" /kudos Alice":      false,
+		"/kudos":            true,
+		"/kudos ":           true,
+		"/kudos Alice":      true,
+		"/kudos Alice text": true,
+		"/kudo":             false,
+		"/kudosa":           false,
+		"/Kudos":            true,
+		"/KUDOS Alice":      true,
+		"":                  false,
+		"kudos Alice":       false,
+		" /kudos Alice":     false,
 	}
 	for input, want := range cases {
 		t.Run(input, func(t *testing.T) {
