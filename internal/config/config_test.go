@@ -425,3 +425,44 @@ server:
 		t.Errorf("default Scrollback = %d, want 5000", cfg.UI.Scrollback)
 	}
 }
+
+func TestSaveAndLoad_KudosRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+
+	cfg := Defaults()
+	cfg.Kudos.Favorites = []string{"Alice", "Bjorn"}
+	cfg.Kudos.Queue = []KudosQueueEntry{
+		{Name: "Cara", Message: "thanks for the rescue"},
+		{Name: "Dren", Message: "great storytelling"},
+	}
+
+	if err := Save(cfg, cfgPath); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	got, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !reflect.DeepEqual(got.Kudos.Favorites, []string{"Alice", "Bjorn"}) {
+		t.Errorf("favorites round-trip mismatch: %v", got.Kudos.Favorites)
+	}
+	if !reflect.DeepEqual(got.Kudos.Queue, cfg.Kudos.Queue) {
+		t.Errorf("queue round-trip mismatch: %v", got.Kudos.Queue)
+	}
+}
+
+func TestLoad_KudosMissingSectionDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("server:\n  host: example.com\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if len(got.Kudos.Favorites) != 0 || len(got.Kudos.Queue) != 0 {
+		t.Errorf("expected empty kudos, got %+v", got.Kudos)
+	}
+}

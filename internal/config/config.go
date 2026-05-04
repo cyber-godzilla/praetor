@@ -36,6 +36,7 @@ type Config struct {
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
 	Highlights    []HighlightConfig   `yaml:"highlights"`
+	Kudos         KudosConfig         `yaml:"kudos"`
 	Ignorelist    Ignorelist          `yaml:"ignorelist"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 	Logging       LoggingConfig       `yaml:"logging"`
@@ -66,6 +67,20 @@ type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
 	Style   string `yaml:"style"` // red, gold, green, blue
 	Active  bool   `yaml:"active"`
+}
+
+// KudosConfig stores favorites and queued kudos messages, persisted in
+// config.yaml. Favorites is a sorted list of character names. Queue is a
+// FIFO of pending kudos messages.
+type KudosConfig struct {
+	Favorites []string          `yaml:"favorites"`
+	Queue     []KudosQueueEntry `yaml:"queue"`
+}
+
+// KudosQueueEntry is a single queued kudos message.
+type KudosQueueEntry struct {
+	Name    string `yaml:"name"`
+	Message string `yaml:"message"`
 }
 
 type Ignorelist struct {
@@ -176,6 +191,10 @@ func Defaults() *Config {
 			EchoScript:      true,
 		},
 		Highlights: []HighlightConfig{},
+		Kudos: KudosConfig{
+			Favorites: []string{},
+			Queue:     []KudosQueueEntry{},
+		},
 		Notifications: NotificationsConfig{
 			Desktop: DesktopNotificationsConfig{
 				HealthBelow: ThresholdConfig{
