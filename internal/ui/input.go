@@ -10,6 +10,13 @@ type InputSubmitMsg struct {
 	Value string
 }
 
+// InputSetValueMsg, when handled by App, replaces the input text and
+// places the cursor at end. Used by the Kudos menu to pre-fill
+// "@kudos <name>" after the user picks a Favorite.
+type InputSetValueMsg struct {
+	Value string
+}
+
 // Input is the text input bar with command history.
 type Input struct {
 	textinput textinput.Model

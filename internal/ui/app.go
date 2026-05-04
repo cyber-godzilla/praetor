@@ -758,6 +758,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Forward to caller (main.go handles this)
 		return a, nil
 
+	case InputSetValueMsg:
+		a.input.textinput.SetValue(msg.Value)
+		a.input.textinput.CursorEnd()
+		return a, a.input.Focus()
+
 	case LoginSubmitMsg:
 		// Transition to authenticating state; main.go handles the actual auth
 		a.state = stateAuthenticating
