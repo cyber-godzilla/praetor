@@ -745,6 +745,7 @@ func main() {
 	// events from the channel into a single batch so Bubbletea renders once
 	// per burst instead of once per line.
 	go func() {
+		var kudosPromptShown bool
 		for event := range gc.Events() {
 			batch := []types.Event{event}
 			// Drain any additional events already queued.
@@ -774,6 +775,11 @@ func main() {
 					}
 					if e.Fatigue != nil {
 						desktopNotify.CheckFatigue(*e.Fatigue)
+					}
+					if shouldShowKudosPrompt(kudosPromptShown, len(cfg.Kudos.Queue), len(e.Rooms)) {
+						kudosPromptShown = true
+						queueLen := len(cfg.Kudos.Queue)
+						p.Send(ui.KudosLoginPromptMsg{Count: queueLen})
 					}
 				case types.ModeChangeEvent:
 					desktopNotify.Prune()

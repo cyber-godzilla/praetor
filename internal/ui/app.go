@@ -29,6 +29,13 @@ type EventMsg struct {
 	Events []types.Event
 }
 
+// KudosLoginPromptMsg fires the once-per-process inline notice when the
+// user has queued kudos. Wrapper sends this after the first SKOOT map
+// data arrives post-login.
+type KudosLoginPromptMsg struct {
+	Count int
+}
+
 // AuthResultMsg is sent after the HTTP login attempt completes.
 type AuthResultMsg struct {
 	Success bool
@@ -620,6 +627,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case KudosCloseMsg:
 		a.state = stateGame
 		return a, a.input.Focus()
+
+	case KudosLoginPromptMsg:
+		a.ShowKudosLoginPrompt(msg.Count)
+		return a, nil
 
 	case MenuNotificationSettingsMsg:
 		a.notificationSettings = NewNotificationSettingsScreen(a.notificationSettingsCfg)
