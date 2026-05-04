@@ -1494,7 +1494,7 @@ func (a App) View() string {
 	case stateRBCalc:
 		return a.graphicsClear() + a.rbCalcScreen.View()
 	case stateKudosMenu:
-		return a.kudosMenu.View()
+		return a.graphicsClear() + a.kudosMenu.View()
 	}
 
 	// stateGame:
