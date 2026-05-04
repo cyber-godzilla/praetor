@@ -466,3 +466,73 @@ func TestLoad_KudosMissingSectionDefaults(t *testing.T) {
 		t.Errorf("expected empty kudos, got %+v", got.Kudos)
 	}
 }
+
+func TestKudosConfig_AddFavorite(t *testing.T) {
+	cases := []struct {
+		name      string
+		initial   []string
+		add       string
+		want      []string
+		wantAdded bool
+	}{
+		{"add to empty", nil, "Alice", []string{"Alice"}, true},
+		{"sorted insert", []string{"Bjorn"}, "Alice", []string{"Alice", "Bjorn"}, true},
+		{"trims whitespace", nil, "  Alice  ", []string{"Alice"}, true},
+		{"case-insensitive dedup keeps original", []string{"Alice"}, "alice", []string{"Alice"}, false},
+		{"case-insensitive sort", []string{"bob", "Alice"}, "Cara", []string{"Alice", "bob", "Cara"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			k := KudosConfig{Favorites: append([]string(nil), tc.initial...)}
+			added := k.AddFavorite(tc.add)
+			if added != tc.wantAdded {
+				t.Errorf("AddFavorite added=%v, want %v", added, tc.wantAdded)
+			}
+			if !reflect.DeepEqual(k.Favorites, tc.want) {
+				t.Errorf("favorites=%v, want %v", k.Favorites, tc.want)
+			}
+		})
+	}
+}
+
+func TestKudosConfig_HasFavorite(t *testing.T) {
+	k := KudosConfig{Favorites: []string{"Alice", "Bjorn"}}
+	if !k.HasFavorite("alice") {
+		t.Error("expected case-insensitive match for 'alice'")
+	}
+	if k.HasFavorite("Cara") {
+		t.Error("did not expect match for 'Cara'")
+	}
+}
+
+func TestKudosConfig_RemoveFavoriteAt(t *testing.T) {
+	k := KudosConfig{Favorites: []string{"Alice", "Bjorn", "Cara"}}
+	k.RemoveFavoriteAt(1)
+	if !reflect.DeepEqual(k.Favorites, []string{"Alice", "Cara"}) {
+		t.Errorf("after remove[1]: %v", k.Favorites)
+	}
+	k.RemoveFavoriteAt(99)
+	if !reflect.DeepEqual(k.Favorites, []string{"Alice", "Cara"}) {
+		t.Errorf("oob remove changed slice: %v", k.Favorites)
+	}
+}
+
+func TestKudosConfig_QueueAddRemove(t *testing.T) {
+	k := KudosConfig{}
+	k.AddQueueEntry("Cara", "thanks")
+	k.AddQueueEntry("  Cara  ", "  again  ")
+	if len(k.Queue) != 2 {
+		t.Fatalf("queue len=%d", len(k.Queue))
+	}
+	if k.Queue[1].Name != "Cara" || k.Queue[1].Message != "again" {
+		t.Errorf("trim failure: %+v", k.Queue[1])
+	}
+	k.RemoveQueueAt(0)
+	if len(k.Queue) != 1 || k.Queue[0].Message != "again" {
+		t.Errorf("after remove: %+v", k.Queue)
+	}
+	k.RemoveQueueAt(99)
+	if len(k.Queue) != 1 {
+		t.Errorf("oob queue remove changed slice")
+	}
+}

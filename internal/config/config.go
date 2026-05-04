@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -81,6 +83,67 @@ type KudosConfig struct {
 type KudosQueueEntry struct {
 	Name    string `yaml:"name"`
 	Message string `yaml:"message"`
+}
+
+// HasFavorite reports whether name (case-insensitive, trim-insensitive)
+// is already in the Favorites list.
+func (k *KudosConfig) HasFavorite(name string) bool {
+	target := strings.ToLower(strings.TrimSpace(name))
+	if target == "" {
+		return false
+	}
+	for _, f := range k.Favorites {
+		if strings.ToLower(f) == target {
+			return true
+		}
+	}
+	return false
+}
+
+// AddFavorite inserts name into Favorites if not already present
+// (case-insensitive). The list is re-sorted case-insensitively.
+// Returns true if the entry was newly added, false if it was a duplicate
+// or empty after trimming.
+func (k *KudosConfig) AddFavorite(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return false
+	}
+	if k.HasFavorite(trimmed) {
+		return false
+	}
+	k.Favorites = append(k.Favorites, trimmed)
+	sort.SliceStable(k.Favorites, func(i, j int) bool {
+		return strings.ToLower(k.Favorites[i]) < strings.ToLower(k.Favorites[j])
+	})
+	return true
+}
+
+// RemoveFavoriteAt removes the favorite at index i. Out-of-range is a no-op.
+func (k *KudosConfig) RemoveFavoriteAt(i int) {
+	if i < 0 || i >= len(k.Favorites) {
+		return
+	}
+	k.Favorites = append(k.Favorites[:i], k.Favorites[i+1:]...)
+}
+
+// AddQueueEntry appends a new queue entry with name and message both trimmed.
+// Empty (post-trim) name or message is a no-op.
+func (k *KudosConfig) AddQueueEntry(name, message string) {
+	n := strings.TrimSpace(name)
+	m := strings.TrimSpace(message)
+	if n == "" || m == "" {
+		return
+	}
+	k.Queue = append(k.Queue, KudosQueueEntry{Name: n, Message: m})
+}
+
+// RemoveQueueAt removes the queue entry at index i. Out-of-range is a no-op.
+func (k *KudosConfig) RemoveQueueAt(i int) {
+	if i < 0 || i >= len(k.Queue) {
+		return
+	}
+	k.Queue = append(k.Queue[:i], k.Queue[i+1:]...)
 }
 
 type Ignorelist struct {
