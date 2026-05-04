@@ -154,8 +154,52 @@ func (m KudosMenu) Update(msg tea.KeyMsg) (KudosMenu, tea.Cmd) {
 			return m, m.closeCmd("", "@kudos "+e.Name+" "+e.Message)
 		}
 		return m, nil
+	case tea.KeyRunes:
+		if len(msg.Runes) != 1 {
+			return m, nil
+		}
+		switch msg.Runes[0] {
+		case 'd', 'D':
+			return m.handleDelete(), nil
+		}
+		return m, nil
 	}
 	return m, nil
+}
+
+func (m KudosMenu) handleDelete() KudosMenu {
+	if m.cursor < 0 || m.cursor >= len(m.rows) {
+		return m
+	}
+	row := m.rows[m.cursor]
+	if !row.isSelectable() {
+		return m
+	}
+	if row.section == kudosSectionFavorites && row.favIdx >= 0 {
+		m.kudos.RemoveFavoriteAt(row.favIdx)
+	} else if row.section == kudosSectionQueue && row.queueIdx >= 0 {
+		m.kudos.RemoveQueueAt(row.queueIdx)
+	}
+	m.rebuildRows()
+	if m.cursor >= len(m.rows) || !m.rows[m.cursor].isSelectable() {
+		found := -1
+		for i := m.cursor; i < len(m.rows); i++ {
+			if m.rows[i].isSelectable() {
+				found = i
+				break
+			}
+		}
+		if found == -1 {
+			for i := m.cursor - 1; i >= 0; i-- {
+				if m.rows[i].isSelectable() {
+					found = i
+					break
+				}
+			}
+		}
+		m.cursor = found
+	}
+	return m
 }
 
 // updateEditing is a stub; real behavior added in Task 6/7.

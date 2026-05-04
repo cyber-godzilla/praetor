@@ -102,3 +102,46 @@ func TestKudosMenu_EnterOnQueueSendsCommand(t *testing.T) {
 		t.Errorf("queue entry should still exist after Enter: %+v", cm.Kudos.Queue)
 	}
 }
+
+func TestKudosMenu_DeleteFavorite(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{Favorites: []string{"Alice", "Bjorn"}})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if len(m.kudos.Favorites) != 1 || m.kudos.Favorites[0] != "Bjorn" {
+		t.Errorf("after delete: %v", m.kudos.Favorites)
+	}
+	if m.rows[m.cursor].label != "Bjorn" {
+		t.Errorf("cursor not on Bjorn: %+v", m.rows[m.cursor])
+	}
+}
+
+func TestKudosMenu_DeleteQueueEntry(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{
+		Queue: []config.KudosQueueEntry{
+			{Name: "Bob", Message: "thanks"},
+			{Name: "Cara", Message: "great rp"},
+		},
+	})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if len(m.kudos.Queue) != 1 || m.kudos.Queue[0].Name != "Cara" {
+		t.Errorf("after delete: %+v", m.kudos.Queue)
+	}
+}
+
+func TestKudosMenu_DeleteUppercaseD(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{Favorites: []string{"Alice"}})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'D'}})
+	if len(m.kudos.Favorites) != 0 {
+		t.Errorf("uppercase D should also delete: %v", m.kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_DeleteOnHintRowIsNoop(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{}) // both sections empty -> hints only
+	if m.cursor != -1 {
+		t.Fatalf("expected cursor=-1 on all-empty menu, got %d", m.cursor)
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	if m.cursor != -1 {
+		t.Errorf("cursor changed: %d", m.cursor)
+	}
+}
