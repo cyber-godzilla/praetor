@@ -473,6 +473,24 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return w, cmd
 
+	case ui.KudosCloseMsg:
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		if w.cfg != nil && w.cfgPath != "" {
+			w.cfg.Kudos = msg.Kudos
+			if err := config.Save(w.cfg, w.cfgPath); err != nil {
+				log.Printf("[MAIN] save kudos: %v", err)
+			}
+		}
+		if msg.Send != "" {
+			w.gc.SendCommand(msg.Send)
+		}
+		if msg.Prefill != "" {
+			prefill := msg.Prefill
+			return w, tea.Batch(cmd, func() tea.Msg { return ui.InputSetValueMsg{Value: prefill} })
+		}
+		return w, cmd
+
 	case ui.WikiOpenMsg:
 		// Open the wiki URL in the system browser and let the App transition state.
 		go client.OpenBrowser(wiki.URL(msg.Slug))
