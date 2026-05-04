@@ -219,3 +219,85 @@ func TestKudosMenu_AddFavoriteBackspace(t *testing.T) {
 		t.Errorf("after backspace: %v", m.kudos.Favorites)
 	}
 }
+
+func TestKudosMenu_AddQueueFlow(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if m.editMode != kudosEditAddQueueName {
+		t.Fatalf("editMode=%v after q", m.editMode)
+	}
+	for _, r := range "Bob" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.editMode != kudosEditAddQueueMessage {
+		t.Fatalf("expected message-prompt, got %v", m.editMode)
+	}
+	if m.pendingQueueName != "Bob" {
+		t.Errorf("pendingQueueName=%q", m.pendingQueueName)
+	}
+	for _, r := range "thanks" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	for _, r := range "lots" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.editMode != kudosEditNone {
+		t.Errorf("editMode should reset")
+	}
+	if len(m.kudos.Queue) != 1 || m.kudos.Queue[0].Name != "Bob" || m.kudos.Queue[0].Message != "thanks lots" {
+		t.Errorf("queue=%+v", m.kudos.Queue)
+	}
+}
+
+func TestKudosMenu_AddQueueEscAtNameCancels(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	for _, r := range "Bob" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if m.editMode != kudosEditNone || m.pendingQueueName != "" {
+		t.Errorf("Esc should fully reset edit state")
+	}
+	if len(m.kudos.Queue) != 0 {
+		t.Errorf("queue should be empty: %v", m.kudos.Queue)
+	}
+}
+
+func TestKudosMenu_AddQueueEscAtMessageCancels(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	for _, r := range "Bob" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	for _, r := range "thanks" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEscape})
+	if len(m.kudos.Queue) != 0 {
+		t.Errorf("Esc at message step should cancel: %v", m.kudos.Queue)
+	}
+	if m.editMode != kudosEditNone || m.pendingQueueName != "" {
+		t.Errorf("edit state not fully reset")
+	}
+}
+
+func TestKudosMenu_AddQueueEmptyMessageIsNoop(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	for _, r := range "Bob" {
+		m, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if len(m.kudos.Queue) != 0 {
+		t.Errorf("empty message should not queue: %v", m.kudos.Queue)
+	}
+	if m.editMode != kudosEditNone {
+		t.Errorf("editMode should reset")
+	}
+}

@@ -166,6 +166,11 @@ func (m KudosMenu) Update(msg tea.KeyMsg) (KudosMenu, tea.Cmd) {
 			m.editMode = kudosEditAddFavorite
 			m.editBuf = ""
 			return m, nil
+		case 'q', 'Q':
+			m.editMode = kudosEditAddQueueName
+			m.editBuf = ""
+			m.pendingQueueName = ""
+			return m, nil
 		}
 		return m, nil
 	}
@@ -245,13 +250,33 @@ func (m KudosMenu) commitEdit() KudosMenu {
 			m.cursor = m.firstSelectable()
 		}
 	case kudosEditAddQueueName:
-		// Filled in Task 7.
-		m.editMode = kudosEditNone
+		name := strings.TrimSpace(m.editBuf)
+		if name == "" {
+			m.editMode = kudosEditNone
+			m.editBuf = ""
+			return m
+		}
+		m.pendingQueueName = name
+		m.editMode = kudosEditAddQueueMessage
 		m.editBuf = ""
 	case kudosEditAddQueueMessage:
-		// Filled in Task 7.
+		oldLen := len(m.kudos.Queue)
+		m.kudos.AddQueueEntry(m.pendingQueueName, m.editBuf) // helper trims + rejects empties
+		name := m.pendingQueueName
 		m.editMode = kudosEditNone
 		m.editBuf = ""
+		m.pendingQueueName = ""
+		m.rebuildRows()
+		if len(m.kudos.Queue) > oldLen {
+			// Entry was added
+			m.cursor = m.findLastQueueRowFor(name)
+			if m.cursor < 0 {
+				m.cursor = m.firstSelectable()
+			}
+		} else {
+			// Entry was rejected (empty message)
+			m.cursor = m.firstSelectable()
+		}
 	}
 	return m
 }
@@ -269,4 +294,17 @@ func (m KudosMenu) findFavoriteRow(name string) int {
 		}
 	}
 	return -1
+}
+
+func (m KudosMenu) findLastQueueRowFor(name string) int {
+	target := strings.ToLower(strings.TrimSpace(name))
+	last := -1
+	for i, r := range m.rows {
+		if r.section == kudosSectionQueue && r.queueIdx >= 0 {
+			if strings.ToLower(m.kudos.Queue[r.queueIdx].Name) == target {
+				last = i
+			}
+		}
+	}
+	return last
 }
