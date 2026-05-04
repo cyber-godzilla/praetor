@@ -61,3 +61,44 @@ func TestKudosMenu_EscEmitsCloseMsg(t *testing.T) {
 		t.Errorf("Esc should produce empty Prefill/Send, got %+v", cm)
 	}
 }
+
+func TestKudosMenu_EnterOnFavoritePrefillsInput(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{Favorites: []string{"Alice"}})
+	if m.rows[m.cursor].label != "Alice" {
+		t.Fatalf("expected cursor on Alice, got %q", m.rows[m.cursor].label)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected close cmd")
+	}
+	cm := cmd().(KudosCloseMsg)
+	if cm.Prefill != "@kudos Alice" {
+		t.Errorf("Prefill=%q, want %q", cm.Prefill, "@kudos Alice")
+	}
+	if cm.Send != "" {
+		t.Errorf("Send should be empty, got %q", cm.Send)
+	}
+	if len(cm.Kudos.Favorites) != 1 {
+		t.Errorf("favorite should still exist after Enter: %+v", cm.Kudos.Favorites)
+	}
+}
+
+func TestKudosMenu_EnterOnQueueSendsCommand(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{
+		Queue: []config.KudosQueueEntry{{Name: "Bob", Message: "thanks for the rescue"}},
+	})
+	if m.rows[m.cursor].section != kudosSectionQueue {
+		t.Fatalf("expected cursor in queue, got %v", m.rows[m.cursor].section)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cm := cmd().(KudosCloseMsg)
+	if cm.Send != "@kudos Bob thanks for the rescue" {
+		t.Errorf("Send=%q", cm.Send)
+	}
+	if cm.Prefill != "" {
+		t.Errorf("Prefill should be empty, got %q", cm.Prefill)
+	}
+	if len(cm.Kudos.Queue) != 1 {
+		t.Errorf("queue entry should still exist after Enter: %+v", cm.Kudos.Queue)
+	}
+}

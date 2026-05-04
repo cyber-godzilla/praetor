@@ -137,6 +137,23 @@ func (m KudosMenu) Update(msg tea.KeyMsg) (KudosMenu, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case tea.KeyEnter:
+		if m.cursor < 0 || m.cursor >= len(m.rows) {
+			return m, nil
+		}
+		row := m.rows[m.cursor]
+		if !row.isSelectable() {
+			return m, nil
+		}
+		if row.section == kudosSectionFavorites && row.favIdx >= 0 {
+			name := m.kudos.Favorites[row.favIdx]
+			return m, m.closeCmd("@kudos "+name, "")
+		}
+		if row.section == kudosSectionQueue && row.queueIdx >= 0 {
+			e := m.kudos.Queue[row.queueIdx]
+			return m, m.closeCmd("", "@kudos "+e.Name+" "+e.Message)
+		}
+		return m, nil
 	}
 	return m, nil
 }
