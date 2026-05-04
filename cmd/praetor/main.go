@@ -215,6 +215,32 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return w, nil
 		}
+		// Handle /kudos slash commands — managed in the wrapper because mutations
+		// require config.Save and direct UI calls (open menu, inline notice).
+		if isKudosCommand(strings.TrimSpace(msg.Value)) {
+			kind, name, message := parseKudosCommand(strings.TrimSpace(msg.Value))
+			switch kind {
+			case kudosOpenMenu:
+				w.app.OpenKudosMenu(w.cfg.Kudos)
+			case kudosAddFavorite:
+				if w.cfg.Kudos.HasFavorite(name) {
+					w.app.ShowKudosNotice(fmt.Sprintf("%s is already a Kudos Favorite.", name))
+				} else {
+					w.cfg.Kudos.AddFavorite(name)
+					if err := config.Save(w.cfg, w.cfgPath); err != nil {
+						log.Printf("[MAIN] save kudos favorite: %v", err)
+					}
+					w.app.ShowKudosNotice(fmt.Sprintf("Added %s to Kudos Favorites.", name))
+				}
+			case kudosAddQueue:
+				w.cfg.Kudos.AddQueueEntry(name, message)
+				if err := config.Save(w.cfg, w.cfgPath); err != nil {
+					log.Printf("[MAIN] save kudos queue: %v", err)
+				}
+				w.app.ShowKudosNotice(fmt.Sprintf("Queued kudos for %s.", name))
+			}
+			return w, nil
+		}
 		// Route user commands to the client
 		w.gc.SendCommand(msg.Value)
 		// Still let the app process it (for state tracking)
