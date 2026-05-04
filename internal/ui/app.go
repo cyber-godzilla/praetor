@@ -135,6 +135,7 @@ const (
 	stateIgnorelistOOC                        // editing OOC ignorelist
 	stateIgnorelistThink                      // editing Think ignorelist
 	stateRBCalc                               // rank-bonus / training-cost calculator
+	stateKudosMenu                            // kudos favorites + queue overlay
 )
 
 // DisplayMode chooses how the minimap/compass/vitals are presented.
@@ -214,6 +215,7 @@ type App struct {
 	ignoreOOCList           []string
 	ignoreThinkList         []string
 	rbCalcScreen            RBCalcScreen
+	kudosMenu               KudosMenu
 	notificationSettings    NotificationSettingsScreen
 	notificationSettingsCfg config.DesktopNotificationsConfig
 	wikiMenu                BookmarkMenu
@@ -402,6 +404,8 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.rbCalcScreen, cmd = a.rbCalcScreen.Update(msg)
 			return a, cmd
+		case stateKudosMenu:
+			return a.updateKudosMenu(msg)
 		case stateNotificationSettings:
 			var cmd tea.Cmd
 			a.notificationSettings, cmd = a.notificationSettings.Update(msg)
@@ -610,6 +614,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 
 	case RBCalcCloseMsg:
+		a.state = stateGame
+		return a, a.input.Focus()
+
+	case KudosCloseMsg:
 		a.state = stateGame
 		return a, a.input.Focus()
 
@@ -1067,6 +1075,13 @@ func (a App) updateMapsMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, cmd
 }
 
+// updateKudosMenu forwards a KeyMsg to the kudos overlay.
+func (a App) updateKudosMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	a.kudosMenu, cmd = a.kudosMenu.Update(msg)
+	return a, cmd
+}
+
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 	var routedTabs uint64
@@ -1239,6 +1254,41 @@ func (a *App) ShowModeList(modes []string) {
 	a.tabs[0].Pane.Append(segments)
 }
 
+// OpenKudosMenu builds the Kudos overlay from a snapshot of cfg.Kudos
+// and switches to the kudos screen. Mutations propagate via KudosCloseMsg
+// (handled by the wrapper in cmd/praetor/main.go).
+func (a *App) OpenKudosMenu(k config.KudosConfig) {
+	a.kudosMenu = NewKudosMenu(k)
+	a.kudosMenu.SetSize(a.width, a.height)
+	a.state = stateKudosMenu
+}
+
+// ShowKudosNotice appends an italic Skotos-orange line to the All tab,
+// used for /kudos slash-command confirmations.
+func (a *App) ShowKudosNotice(text string) {
+	a.tabs[0].Pane.Append([]types.StyledSegment{{
+		Text:   text,
+		Italic: true,
+		Color:  "#e8a838",
+	}})
+}
+
+// ShowKudosLoginPrompt appends a bold Skotos-orange one-liner to the All
+// tab, fired once per process when the queue is non-empty and the first
+// SKOOT map data arrives after login.
+func (a *App) ShowKudosLoginPrompt(count int) {
+	word := "people"
+	if count == 1 {
+		word = "person"
+	}
+	text := fmt.Sprintf("Don't forget to Kudos! You have %d %s in your Kudos Queue.", count, word)
+	a.tabs[0].Pane.Append([]types.StyledSegment{{
+		Text:  text,
+		Bold:  true,
+		Color: "#e8a838",
+	}})
+}
+
 // findTabByKind returns the index of the first tab with the given kind, or -1.
 func (a App) findTabByKind(kind TabKind) int {
 	for i, t := range a.tabs {
@@ -1385,6 +1435,7 @@ func (a *App) recalcLayout() {
 	a.mapsMenu.SetSize(a.width, a.height)
 	a.ignorelistScreen.SetSize(a.width, a.height)
 	a.rbCalcScreen.SetSize(a.width, a.height)
+	a.kudosMenu.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
@@ -1442,6 +1493,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.ignorelistScreen.View()
 	case stateRBCalc:
 		return a.graphicsClear() + a.rbCalcScreen.View()
+	case stateKudosMenu:
+		return a.kudosMenu.View()
 	}
 
 	// stateGame:
