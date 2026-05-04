@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -299,5 +300,22 @@ func TestKudosMenu_AddQueueEmptyMessageIsNoop(t *testing.T) {
 	}
 	if m.editMode != kudosEditNone {
 		t.Errorf("editMode should reset")
+	}
+}
+
+func TestKudosMenu_ViewRenders(t *testing.T) {
+	m := NewKudosMenu(config.KudosConfig{
+		Favorites: []string{"Alice"},
+		Queue:     []config.KudosQueueEntry{{Name: "Bob", Message: "thanks"}},
+	})
+	m.SetSize(80, 24)
+	out := m.View()
+	if out == "" {
+		t.Fatal("View() returned empty")
+	}
+	for _, want := range []string{"Kudos Favorites", "Kudos Queue", "Alice", "Bob — thanks"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("View missing %q", want)
+		}
 	}
 }

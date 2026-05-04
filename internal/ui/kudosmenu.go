@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
 
@@ -307,4 +308,96 @@ func (m KudosMenu) findLastQueueRowFor(name string) int {
 		}
 	}
 	return last
+}
+
+// View renders the kudos overlay centered on screen.
+func (m KudosMenu) View() string {
+	titleStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	headerStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	cursorStyle := lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
+	arrowStyle := lipgloss.NewStyle().Foreground(colorDim)
+	hintStyle := lipgloss.NewStyle().Foreground(colorDim).Italic(true)
+
+	boxWidth := m.width - 10
+	if boxWidth < 40 {
+		boxWidth = 40
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorOrange).
+		Padding(1, 3).
+		Width(boxWidth)
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Kudos"))
+	b.WriteString("\n\n")
+
+	chrome := 12
+	if m.editMode != kudosEditNone {
+		chrome += 2
+	}
+	maxVisible := m.height - chrome
+	if maxVisible < 6 {
+		maxVisible = 6
+	}
+	start, end := viewportWindowCentered(len(m.rows), maxVisible, m.cursor)
+
+	if start > 0 {
+		b.WriteString(arrowStyle.Render("      ▲"))
+		b.WriteByte('\n')
+	}
+
+	for i := start; i < end; i++ {
+		r := m.rows[i]
+		switch {
+		case r.isBlank:
+			b.WriteByte('\n')
+		case r.isHeader:
+			b.WriteString(headerStyle.Render("  " + r.label))
+			b.WriteByte('\n')
+		case r.isHint:
+			b.WriteString(hintStyle.Render("    " + r.label))
+			b.WriteByte('\n')
+		default:
+			label := r.label
+			maxLabel := boxWidth - 12
+			if maxLabel > 0 && len(label) > maxLabel {
+				label = label[:maxLabel-1] + "…"
+			}
+			if i == m.cursor {
+				b.WriteString(cursorStyle.Render("  > " + label))
+			} else {
+				b.WriteString(dimStyle.Render("    " + label))
+			}
+			b.WriteByte('\n')
+		}
+	}
+
+	if end < len(m.rows) {
+		b.WriteString(arrowStyle.Render("      ▼"))
+		b.WriteByte('\n')
+	}
+
+	b.WriteString("\n")
+	if m.editMode != kudosEditNone {
+		var label string
+		switch m.editMode {
+		case kudosEditAddFavorite:
+			label = "Add favorite — Name: "
+		case kudosEditAddQueueName:
+			label = "Add queue entry — Name: "
+		case kudosEditAddQueueMessage:
+			label = "Add queue entry — Message: "
+		}
+		b.WriteString(headerStyle.Render(label))
+		b.WriteString(m.editBuf)
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render("[Enter] add  [Esc] cancel"))
+	} else {
+		b.WriteString(dimStyle.Render("[↑/↓] navigate  [Enter] use  [C] add favorite  [Q] add queue  [D] delete  [Esc] save & close"))
+	}
+
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center,
+		boxStyle.Render(b.String()))
 }
