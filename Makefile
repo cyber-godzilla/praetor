@@ -1,4 +1,4 @@
-.PHONY: test build run run-sixel run-kitty run-none xterm-sixel foot-sixel vet fmt lint check clean
+.PHONY: test build run run-sixel run-kitty run-none run-pprof xterm-sixel foot-sixel vet fmt lint check clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
@@ -19,6 +19,11 @@ run-kitty: build
 
 run-none: build
 	PRAETOR_GRAPHICS=none ./praetor
+
+# Run with pprof: live HTTP at localhost:6060/debug/pprof/ and
+# heap+goroutine dumps written to ~/.local/state/praetor/pprof/ on exit.
+run-pprof: build
+	./praetor --pprof
 
 # Launch xterm in VT340-emulation mode with enough color registers to
 # render sixel graphics, drop into a shell. From that shell you can

@@ -5,8 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -644,6 +648,8 @@ func describePersistentValue(val interface{}) string {
 func main() {
 	debugFlag := flag.Bool("debug", false, "Enable debug tab and debug-level logging")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
+	pprofFlag := flag.Bool("pprof", false, "Serve net/http/pprof on localhost:6060 and dump heap+goroutine profiles on exit")
+	pprofAddr := flag.String("pprof-addr", "localhost:6060", "Address for the pprof HTTP server (used with --pprof)")
 	flag.Parse()
 
 	if *versionFlag {
@@ -669,6 +675,23 @@ func main() {
 	defer appLog.Close()
 	// Standard log package now routes through slog.
 	log.Printf("praetor %s starting", version)
+
+	var pprofDir string
+	if *pprofFlag {
+		pprofDir = filepath.Join(stateDir, "pprof")
+		if err := os.MkdirAll(pprofDir, 0755); err != nil {
+			log.Printf("[PPROF] mkdir %s: %v", pprofDir, err)
+			pprofDir = ""
+		} else {
+			addr := *pprofAddr
+			go func() {
+				log.Printf("[PPROF] serving http://%s/debug/pprof/", addr)
+				if err := http.ListenAndServe(addr, nil); err != nil {
+					log.Printf("[PPROF] http server: %v", err)
+				}
+			}()
+		}
+	}
 
 	// Ensure config dir and default config exist.
 	cfgFile := filepath.Join(configDir, "config.yaml")
@@ -791,5 +814,36 @@ func main() {
 
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
+	}
+
+	if pprofDir != "" {
+		dumpPprofProfiles(pprofDir)
+	}
+}
+
+func dumpPprofProfiles(dir string) {
+	ts := time.Now().Format("2006-01-02_150405")
+	runtime.GC()
+	heapPath := filepath.Join(dir, "heap_"+ts+".pprof")
+	if f, err := os.Create(heapPath); err != nil {
+		log.Printf("[PPROF] create heap profile: %v", err)
+	} else {
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Printf("[PPROF] write heap profile: %v", err)
+		} else {
+			log.Printf("[PPROF] wrote %s", heapPath)
+		}
+		f.Close()
+	}
+	goroutinePath := filepath.Join(dir, "goroutine_"+ts+".pprof")
+	if f, err := os.Create(goroutinePath); err != nil {
+		log.Printf("[PPROF] create goroutine profile: %v", err)
+	} else {
+		if err := pprof.Lookup("goroutine").WriteTo(f, 0); err != nil {
+			log.Printf("[PPROF] write goroutine profile: %v", err)
+		} else {
+			log.Printf("[PPROF] wrote %s", goroutinePath)
+		}
+		f.Close()
 	}
 }
