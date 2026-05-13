@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -230,6 +231,23 @@ type App struct {
 	modesAvailable          bool
 	version                 string
 	graphicsMode            graphics.Mode
+
+	// Render cache for the tab bar. Pointer so mutations persist across
+	// the value-receiver App copies Bubbletea passes around.
+	tabBar *tabBarCache
+}
+
+// tabBarCache memoizes the rendered tab bar string. The fingerprint
+// (width, activeTab, unreadMask, visMask, nameSig) is the set of
+// inputs renderTabBar consumes; if all match the cache, we skip
+// the Lipgloss work entirely.
+type tabBarCache struct {
+	text       string
+	width      int
+	activeTab  int
+	unreadMask uint64
+	visMask    uint64
+	nameSig    uint64
 }
 
 // NewApp creates a new App with the specified initial configuration.
@@ -281,6 +299,7 @@ func NewApp(displayMode string, defaultTab string, scrollback int, accounts []st
 		gameLogs:      gameLogs,
 		logPath:       logPath,
 		unread:        make([]bool, len(tabs)),
+		tabBar:        &tabBarCache{},
 
 		splash:                  NewSplash(version),
 		wikiMenu:                NewWikiMenu(),
@@ -699,6 +718,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.unread = make([]bool, len(a.tabs))
 		if a.activeTab >= len(a.tabs) {
 			a.activeTab = 0
+		}
+		if a.tabBar != nil {
+			a.tabBar.text = ""
 		}
 		a.recalcLayout()
 		a.state = stateMenu
@@ -1637,9 +1659,23 @@ func (a App) View() string {
 }
 
 // renderTabBar renders the tab bar with active/inactive styling and unread indicators.
+//
+// The full render walks the tab list and calls Lipgloss for each label
+// (activeTabStyle / inactiveTabStyle), then JoinHorizontal, then the
+// tabBarStyle.Width().Render() border pass. The cache short-circuits
+// all of that when the fingerprint hasn't changed since the last call.
 func (a App) renderTabBar() string {
-	var tabLabels []string
+	unreadMask, visMask, nameSig := a.tabBarFingerprint()
+	if a.tabBar != nil && a.tabBar.text != "" &&
+		a.tabBar.width == a.width &&
+		a.tabBar.activeTab == a.activeTab &&
+		a.tabBar.unreadMask == unreadMask &&
+		a.tabBar.visMask == visMask &&
+		a.tabBar.nameSig == nameSig {
+		return a.tabBar.text
+	}
 
+	var tabLabels []string
 	for i, t := range a.tabs {
 		if !t.Visible {
 			continue
@@ -1658,7 +1694,44 @@ func (a App) renderTabBar() string {
 	}
 
 	bar := lipgloss.JoinHorizontal(lipgloss.Top, tabLabels...)
-	return tabBarStyle.Width(a.width).Render(bar)
+	rendered := tabBarStyle.Width(a.width).Render(bar)
+
+	if a.tabBar != nil {
+		a.tabBar.text = rendered
+		a.tabBar.width = a.width
+		a.tabBar.activeTab = a.activeTab
+		a.tabBar.unreadMask = unreadMask
+		a.tabBar.visMask = visMask
+		a.tabBar.nameSig = nameSig
+	}
+	return rendered
+}
+
+// tabBarFingerprint walks the tab list once and returns the bitmasks
+// and name signature renderTabBar uses as its cache key. Tabs beyond
+// index 63 cannot toggle the unread/visible bitmask but still affect
+// the name signature, so they remain rendered correctly even if a
+// future user somehow has >64 tabs.
+func (a App) tabBarFingerprint() (unreadMask, visMask, nameSig uint64) {
+	// FNV-1a 64-bit
+	nameSig = 14695981039346656037
+	for i, t := range a.tabs {
+		if i < 64 {
+			if t.Visible {
+				visMask |= 1 << uint(i)
+			}
+			if i < len(a.unread) && a.unread[i] {
+				unreadMask |= 1 << uint(i)
+			}
+		}
+		for j := 0; j < len(t.Name); j++ {
+			nameSig ^= uint64(t.Name[j])
+			nameSig *= 1099511628211
+		}
+		nameSig ^= '\x00'
+		nameSig *= 1099511628211
+	}
+	return
 }
 
 // ipPattern matches IPv4 addresses in text.
@@ -1716,8 +1789,7 @@ func padLines(text string, width, height int) string {
 		}
 		if i < len(lines) {
 			line := lines[i]
-			// Count visible length (strip ANSI escape sequences for measurement).
-			visLen := lipgloss.Width(line)
+			visLen := visibleWidth(line)
 			if visLen < width {
 				b.WriteString(line)
 				b.WriteString(strings.Repeat(" ", width-visLen))
@@ -1729,6 +1801,72 @@ func padLines(text string, width, height int) string {
 		}
 	}
 	return b.String()
+}
+
+// visibleWidth returns the cell width of a styled string, skipping ANSI
+// escape sequences. Each non-escape rune is counted as one cell.
+//
+// We use this instead of lipgloss.Width / ansi.StringWidth on render
+// hot paths: those functions invoke uax29 grapheme-cluster tables on
+// every call, which dominated CPU in profiling. Praetor's game text is
+// overwhelmingly ASCII with a small set of single-cell Unicode glyphs
+// (HR rules, lighting icons, compass arrows), so one-cell-per-rune is
+// accurate enough for padding decisions.
+func visibleWidth(s string) int {
+	width := 0
+	i := 0
+	for i < len(s) {
+		b := s[i]
+		if b == 0x1b { // ESC
+			i++
+			if i >= len(s) {
+				break
+			}
+			switch s[i] {
+			case '[': // CSI: terminator is a byte in 0x40-0x7e
+				i++
+				for i < len(s) {
+					c := s[i]
+					i++
+					if c >= 0x40 && c <= 0x7e {
+						break
+					}
+				}
+			case ']': // OSC: terminator is BEL or ESC \
+				i++
+				for i < len(s) {
+					c := s[i]
+					if c == 0x07 {
+						i++
+						break
+					}
+					if c == 0x1b && i+1 < len(s) && s[i+1] == '\\' {
+						i += 2
+						break
+					}
+					i++
+				}
+			default: // single-char escape (e.g. ESC c, ESC D)
+				i++
+			}
+			continue
+		}
+		if b < 0x80 {
+			if b >= 0x20 {
+				width++
+			}
+			i++
+			continue
+		}
+		// UTF-8 multibyte rune — count as one cell.
+		_, size := utf8.DecodeRuneInString(s[i:])
+		if size <= 0 {
+			size = 1
+		}
+		width++
+		i += size
+	}
+	return width
 }
 
 // renderAuthenticating shows a loading message during HTTP login.
