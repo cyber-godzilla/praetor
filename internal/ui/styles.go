@@ -24,4 +24,19 @@ var (
 	inputStyle = lipgloss.NewStyle().
 			BorderTop(true).BorderStyle(lipgloss.NormalBorder()).BorderForeground(colorBorder)
 	promptStyle = lipgloss.NewStyle().Foreground(colorOrange)
+
+	barLabelStyle      = lipgloss.NewStyle().Foreground(colorDim)
+	barEmptyStyle      = lipgloss.NewStyle().Background(colorBarEmpty)
+	barFillGreenStyle  = lipgloss.NewStyle().Background(colorGreen)
+	barFillOrangeStyle = lipgloss.NewStyle().Background(colorOrange)
+	barFillRedStyle    = lipgloss.NewStyle().Background(colorRed)
+
+	lightingStyleBlinding     = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffffff"))
+	lightingStyleVeryBright   = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffee66"))
+	lightingStyleBright       = lipgloss.NewStyle().Foreground(lipgloss.Color("#ffcc00"))
+	lightingStyleFairlyLit    = lipgloss.NewStyle().Foreground(lipgloss.Color("#aa8800"))
+	lightingStyleSomewhatDark = lipgloss.NewStyle().Foreground(lipgloss.Color("#887744"))
+	lightingStyleVeryDark     = lipgloss.NewStyle().Foreground(lipgloss.Color("#6666aa"))
+	lightingStyleExtremeDark  = lipgloss.NewStyle().Foreground(lipgloss.Color("#555588"))
+	lightingStylePitchBlack   = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
 )

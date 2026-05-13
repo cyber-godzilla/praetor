@@ -64,6 +64,13 @@ type Sidebar struct {
 	lastEmitAnchor           string // "sidebar" or "topbar" — used to detect mode-change transitions
 	cachedPlaceholder        string
 	cachedCompassPlaceholder string
+
+	// Text-view cache — Bubbletea fires View() on every event (including
+	// cursor blink), but the sidebar's text content only changes on a
+	// handful of state mutations. We memoize the rendered string and
+	// invalidate via viewDirty in the setters that affect it.
+	viewDirty      bool
+	cachedViewText string
 }
 
 // NewSidebar creates a new Sidebar with the given minimap scale, height, and graphics mode.
@@ -80,6 +87,7 @@ func NewSidebar(minimapScale float64, minimapHeight int, mode graphics.Mode) Sid
 		graphicsMode:   mode,
 		graphicsDirty:  true,
 		dirtySinceEmit: true,
+		viewDirty:      true,
 	}
 }
 
@@ -94,6 +102,7 @@ func (s *Sidebar) SetSize(w, h int) {
 	if s.width != w || s.height != h {
 		s.graphicsDirty = true
 		s.dirtySinceEmit = true
+		s.viewDirty = true
 		// On a dimension change, kitty's existing placements stay at
 		// their old absolute cell positions — and our next emit at
 		// the new positions creates new placements alongside them
@@ -117,6 +126,9 @@ func (s *Sidebar) SetSize(w, h int) {
 
 // SetCompact sets whether the sidebar should only show minimap and compass.
 func (s *Sidebar) SetCompact(compact bool) {
+	if s.compact != compact {
+		s.viewDirty = true
+	}
 	s.compact = compact
 }
 
@@ -131,23 +143,30 @@ func (s *Sidebar) UpdateExits(exits types.Exits) {
 
 // UpdateLighting updates the lighting level and raw value.
 func (s *Sidebar) UpdateLighting(l types.LightingLevel, raw int) {
+	if s.lighting != l || s.lightingRaw != raw {
+		s.viewDirty = true
+	}
 	s.lighting = l
 	s.lightingRaw = raw
 }
 
 // UpdateVitals updates the health, fatigue, encumbrance, and satiation values.
 func (s *Sidebar) UpdateVitals(health, fatigue, encumbrance, satiation *int) {
-	if health != nil {
+	if health != nil && *health != s.health {
 		s.health = *health
+		s.viewDirty = true
 	}
-	if fatigue != nil {
+	if fatigue != nil && *fatigue != s.fatigue {
 		s.fatigue = *fatigue
+		s.viewDirty = true
 	}
-	if encumbrance != nil {
+	if encumbrance != nil && *encumbrance != s.encumbrance {
 		s.encumbrance = *encumbrance
+		s.viewDirty = true
 	}
-	if satiation != nil {
+	if satiation != nil && *satiation != s.satiation {
 		s.satiation = *satiation
+		s.viewDirty = true
 	}
 }
 
@@ -179,6 +198,7 @@ func (s Sidebar) MinimapHeight() int {
 }
 
 // rebuildGraphicsCache re-renders minimap and compass images and caches the results.
+// Placeholders feed into the text View, so this also invalidates the view-text cache.
 func (s *Sidebar) rebuildGraphicsCache() {
 	innerW := s.width - 2
 	if innerW < 4 {
@@ -187,6 +207,7 @@ func (s *Sidebar) rebuildGraphicsCache() {
 	s.cachedPlaceholder, s.cachedMinimapEsc = s.minimap.Render(s.graphicsMode, minimapImageID)
 	s.cachedCompassPlaceholder, s.cachedCompassEsc = compass.Render(s.graphicsMode, s.exits, innerW, compassImageID)
 	s.graphicsDirty = false
+	s.viewDirty = true
 }
 
 // ConsumeGraphics returns the kitty/sixel escape sequences to inject
@@ -348,6 +369,13 @@ func (s *Sidebar) View() string {
 		return ""
 	}
 
+	if s.graphicsDirty {
+		s.rebuildGraphicsCache()
+	}
+	if !s.viewDirty && s.cachedViewText != "" {
+		return s.cachedViewText
+	}
+
 	innerWidth := s.width - 2 // Account for border
 	if innerWidth < 1 {
 		innerWidth = 1
@@ -356,9 +384,6 @@ func (s *Sidebar) View() string {
 	var sections []string
 
 	// Minimap (placeholder for Kitty image)
-	if s.graphicsDirty {
-		s.rebuildGraphicsCache()
-	}
 	if s.cachedPlaceholder != "" {
 		sections = append(sections, s.cachedPlaceholder)
 	}
@@ -383,54 +408,38 @@ func (s *Sidebar) View() string {
 
 	content := strings.Join(sections, "\n")
 
-	return sidebarStyle.Width(s.width).Height(s.height).Render(content)
+	s.cachedViewText = sidebarStyle.Width(s.width).Height(s.height).Render(content)
+	s.viewDirty = false
+	return s.cachedViewText
 }
 
 // renderLighting returns a styled lighting indicator.
 func (s Sidebar) renderLighting() string {
 	var symbol, label string
-	var color lipgloss.Color
+	var style lipgloss.Style
 
 	switch s.lighting {
 	case types.LightBlindinglyBright:
-		symbol = "☀"
-		label = "Blindingly Bright"
-		color = lipgloss.Color("#ffffff")
+		symbol, label, style = "☀", "Blindingly Bright", lightingStyleBlinding
 	case types.LightVeryBright:
-		symbol = "☀"
-		label = "Very Brightly Lit"
-		color = lipgloss.Color("#ffee66")
+		symbol, label, style = "☀", "Very Brightly Lit", lightingStyleVeryBright
 	case types.LightBright:
-		symbol = "☀"
-		label = "Brightly Lit"
-		color = lipgloss.Color("#ffcc00")
+		symbol, label, style = "☀", "Brightly Lit", lightingStyleBright
 	case types.LightFairlyLit:
-		symbol = "◐"
-		label = "Fairly Well-Lit"
-		color = lipgloss.Color("#aa8800")
+		symbol, label, style = "◐", "Fairly Well-Lit", lightingStyleFairlyLit
 	case types.LightSomewhatDark:
-		symbol = "◐"
-		label = "Somewhat Dark"
-		color = lipgloss.Color("#887744")
+		symbol, label, style = "◐", "Somewhat Dark", lightingStyleSomewhatDark
 	case types.LightVeryDark:
-		symbol = "☽"
-		label = "Very Dark"
-		color = lipgloss.Color("#6666aa")
+		symbol, label, style = "☽", "Very Dark", lightingStyleVeryDark
 	case types.LightExtremelyDark:
-		symbol = "☽"
-		label = "Extremely Dark"
-		color = lipgloss.Color("#555588")
+		symbol, label, style = "☽", "Extremely Dark", lightingStyleExtremeDark
 	case types.LightPitchBlack:
-		symbol = "●"
-		label = "Pitch Black"
-		color = lipgloss.Color("#444444")
+		symbol, label, style = "●", "Pitch Black", lightingStylePitchBlack
 	default:
-		symbol = "◐"
-		label = "Fairly Well-Lit"
-		color = lipgloss.Color("#aa8800")
+		symbol, label, style = "◐", "Fairly Well-Lit", lightingStyleFairlyLit
 	}
 
-	return lipgloss.NewStyle().Foreground(color).Render(fmt.Sprintf(" %s %s (%d)", symbol, label, s.lightingRaw))
+	return style.Render(fmt.Sprintf(" %s %s (%d)", symbol, label, s.lightingRaw))
 }
 
 // renderBar renders a horizontal bar with label.
@@ -443,14 +452,14 @@ func (s Sidebar) renderBar(label string, value, maxWidth int) string {
 	}
 
 	// Choose color based on thresholds
-	var barColor lipgloss.Color
+	var fillStyle lipgloss.Style
 	switch {
 	case value > 50:
-		barColor = colorGreen
+		fillStyle = barFillGreenStyle
 	case value > 25:
-		barColor = colorOrange
+		fillStyle = barFillOrangeStyle
 	default:
-		barColor = colorRed
+		fillStyle = barFillRedStyle
 	}
 
 	// Label takes 4 chars " HP ", bar gets the rest
@@ -462,9 +471,9 @@ func (s Sidebar) renderBar(label string, value, maxWidth int) string {
 	filled := value * barWidth / 100
 	empty := barWidth - filled
 
-	labelStr := lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf(" %s ", label))
-	filledStr := lipgloss.NewStyle().Background(barColor).Render(strings.Repeat(" ", filled))
-	emptyStr := lipgloss.NewStyle().Background(colorBarEmpty).Render(strings.Repeat(" ", empty))
+	labelStr := barLabelStyle.Render(fmt.Sprintf(" %s ", label))
+	filledStr := fillStyle.Render(strings.Repeat(" ", filled))
+	emptyStr := barEmptyStyle.Render(strings.Repeat(" ", empty))
 
 	return labelStr + filledStr + emptyStr
 }
