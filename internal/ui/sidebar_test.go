@@ -220,6 +220,94 @@ func TestSidebar_View_CompactToggleInvalidates(t *testing.T) {
 
 func intp(i int) *int { return &i }
 
+func TestSidebar_Kitty_PeriodicResetFires(t *testing.T) {
+	// After kittyEmitsPerReset consecutive emissions, ConsumeGraphics
+	// must prepend a kittyDeleteAllSidebar to clear the terminal's
+	// accumulated image-parser state. Drive the counter via the field
+	// rather than calling 10000 times to keep the test fast.
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
+
+	_, _, _ = s.ConsumeGraphics("sidebar") // mark emittedImages=true
+	s.kittyEmitsSinceReset = kittyEmitsPerReset
+
+	transition, _, _ := s.ConsumeGraphics("sidebar")
+	if !strings.Contains(transition, "a=d,d=A") {
+		t.Fatalf("expected periodic reset to emit delete-all; got transition=%q", transition)
+	}
+	if s.kittyEmitsSinceReset != 1 {
+		t.Fatalf("counter should reset to 0 then increment to 1 after the reset emission; got %d", s.kittyEmitsSinceReset)
+	}
+
+	// The immediately following emission should not double up.
+	transition, _, _ = s.ConsumeGraphics("sidebar")
+	if transition != "" {
+		t.Errorf("post-reset emission should not have a transition; got %q", transition)
+	}
+}
+
+func TestSidebar_Kitty_AnchorChangeResetsCounter(t *testing.T) {
+	// An anchor flip already emits delete-all; the counter should
+	// reset alongside it so we don't double-reset on the next
+	// kittyEmitsPerReset boundary.
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
+	s.kittyEmitsSinceReset = kittyEmitsPerReset - 5
+
+	transition, _, _ := s.ConsumeGraphics("topbar") // anchor change
+	if !strings.Contains(transition, "a=d,d=A") {
+		t.Fatalf("anchor change should emit delete-all; got %q", transition)
+	}
+	if s.kittyEmitsSinceReset != 1 {
+		t.Fatalf("counter should reset on anchor change; got %d", s.kittyEmitsSinceReset)
+	}
+}
+
+func TestSidebar_Kitty_HideResetsCounter(t *testing.T) {
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
+	s.kittyEmitsSinceReset = 5000
+
+	_ = s.HideGraphics()
+	if s.kittyEmitsSinceReset != 0 {
+		t.Fatalf("HideGraphics should reset counter; got %d", s.kittyEmitsSinceReset)
+	}
+}
+
+func TestSidebar_Kitty_InvalidateResetsCounter(t *testing.T) {
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
+	s.kittyEmitsSinceReset = 5000
+
+	s.InvalidateGraphics()
+	if s.kittyEmitsSinceReset != 0 {
+		t.Fatalf("InvalidateGraphics should reset counter; got %d", s.kittyEmitsSinceReset)
+	}
+}
+
+func TestSidebar_Sixel_DoesNotInjectPeriodicReset(t *testing.T) {
+	// The periodic reset is kitty-specific; sixel doesn't accumulate
+	// parser state the same way and re-emitting delete-all on the sixel
+	// path has no effect (kittyDeleteAllSidebar is a kitty escape).
+	s := NewSidebar(0.8, 12, graphics.ModeSixel)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
+	s.kittyEmitsSinceReset = kittyEmitsPerReset + 10
+
+	transition, _, _ := s.ConsumeGraphics("sidebar")
+	if transition != "" {
+		t.Errorf("sixel mode should not emit periodic kitty reset; got %q", transition)
+	}
+}
+
 func TestSidebar_InvalidateGraphics_ResetsEmittedFlag(t *testing.T) {
 	// After Invalidate, HideGraphics should be a no-op (terminal
 	// images are already gone) and ConsumeGraphics keeps emitting.

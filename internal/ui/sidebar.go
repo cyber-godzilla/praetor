@@ -28,6 +28,15 @@ const (
 // emits kitty graphics, "delete all" is equivalent.
 const kittyDeleteAllSidebar = "\033_Ga=d,d=A,q=2;\033\\"
 
+// kittyEmitsPerReset controls how often ConsumeGraphics force-injects
+// a kittyDeleteAllSidebar before the regular image emission. Some
+// kitty-compatible terminals accumulate parser state across many
+// identical image re-replacements at the same image id, which surfaces
+// as input-echo lag in long-running sessions. Forcing a delete-all
+// every ~3 minutes worth of cursor-blink frames clears that state
+// before the user notices it.
+const kittyEmitsPerReset = 10000
+
 // Sidebar displays the minimap, compass rose, vitals bars, and mode info.
 type Sidebar struct {
 	width         int
@@ -64,6 +73,15 @@ type Sidebar struct {
 	lastEmitAnchor           string // "sidebar" or "topbar" — used to detect mode-change transitions
 	cachedPlaceholder        string
 	cachedCompassPlaceholder string
+
+	// kittyEmitsSinceReset counts consecutive ConsumeGraphics calls
+	// since the last kittyDeleteAllSidebar was injected. Once it
+	// reaches kittyEmitsPerReset, the next emission prepends another
+	// delete-all to wipe the terminal's accumulated image state.
+	// Reset on anchor change, periodic reset, SetSize, HideGraphics,
+	// and InvalidateGraphics — anywhere the terminal's image-tracking
+	// state is already known to be cleared.
+	kittyEmitsSinceReset int
 
 	// Text-view cache — Bubbletea fires View() on every event (including
 	// cursor blink), but the sidebar's text content only changes on a
@@ -113,6 +131,7 @@ func (s *Sidebar) SetSize(w, h int) {
 			_, _ = os.Stdout.Write([]byte(kittyDeleteAllSidebar))
 			s.emittedImages = false
 			s.lastEmitAnchor = ""
+			s.kittyEmitsSinceReset = 0
 		}
 	}
 	s.width = w
@@ -238,11 +257,21 @@ func (s *Sidebar) ConsumeGraphics(anchor string) (transition, minimap, compass s
 	if s.emittedImages && s.lastEmitAnchor != "" && s.lastEmitAnchor != anchor {
 		if s.graphicsMode == graphics.ModeKitty {
 			transition = kittyDeleteAllSidebar
+			s.kittyEmitsSinceReset = 0
 		}
+	}
+	// Periodic reset: after many consecutive identical emissions, some
+	// kitty terminals start to lag on the parse path. Force a delete-all
+	// roughly every kittyEmitsPerReset frames to flush that state.
+	if transition == "" && s.graphicsMode == graphics.ModeKitty && s.emittedImages &&
+		s.kittyEmitsSinceReset >= kittyEmitsPerReset {
+		transition = kittyDeleteAllSidebar
+		s.kittyEmitsSinceReset = 0
 	}
 	s.lastEmitAnchor = anchor
 	s.dirtySinceEmit = false
 	s.emittedImages = true
+	s.kittyEmitsSinceReset++
 	return transition, s.cachedMinimapEsc, s.cachedCompassEsc
 }
 
@@ -259,6 +288,7 @@ func (s *Sidebar) HideGraphics() string {
 	s.emittedImages = false
 	s.dirtySinceEmit = true // ensure we re-emit when sidebar comes back
 	s.lastEmitAnchor = ""
+	s.kittyEmitsSinceReset = 0
 	if s.graphicsMode != graphics.ModeKitty {
 		return ""
 	}
@@ -272,6 +302,7 @@ func (s *Sidebar) InvalidateGraphics() {
 	s.emittedImages = false
 	s.dirtySinceEmit = true
 	s.lastEmitAnchor = ""
+	s.kittyEmitsSinceReset = 0
 }
 
 // TopbarView renders the same data as View, but laid out horizontally
