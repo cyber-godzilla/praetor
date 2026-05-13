@@ -34,6 +34,17 @@ type OutputPane struct {
 	rowCounts   []int    // display rows per logical line (parallel to lines)
 	cachedLines int      // number of logical lines already rendered
 	cacheWidth  int      // width used for cached renders (invalidate on change)
+
+	// Join cache: the joined viewport string returned by View(). Reused
+	// when (start, end, height) match the prior call — i.e., no new
+	// lines were appended, scrollPos didn't shift the visible window,
+	// and the pane didn't resize. Bubbletea fires View() on every
+	// event including cursor blink, so this saves a strings.Builder
+	// pass per idle frame.
+	joinedCache  string
+	joinedStart  int
+	joinedEnd    int
+	joinedHeight int
 }
 
 // NewOutputPane creates a new OutputPane with the given scrollback limit.
@@ -84,6 +95,8 @@ func (o *OutputPane) appendLine(line paneLine) {
 			o.rowCounts = nil
 			o.cachedLines = 0
 		}
+		// Trimming shifts row indices; joined-string cache is stale.
+		o.joinedCache = ""
 
 		if o.scrollPos > 0 {
 			o.scrollPos -= excess
@@ -106,6 +119,7 @@ func (o *OutputPane) SetExpanded(expanded bool) {
 	o.cachedRows = nil
 	o.rowCounts = nil
 	o.cachedLines = 0
+	o.joinedCache = ""
 }
 
 // ScrollUp scrolls up by n display rows.
@@ -129,6 +143,7 @@ func (o *OutputPane) SetSize(w, h int) {
 		o.cachedRows = nil
 		o.rowCounts = nil
 		o.cachedLines = 0
+		o.joinedCache = ""
 	}
 	o.width = w
 	o.height = h
@@ -150,6 +165,7 @@ func (o *OutputPane) View() string {
 		o.rowCounts = nil
 		o.cachedLines = 0
 		o.cacheWidth = o.width
+		o.joinedCache = ""
 	}
 
 	// Render only lines added since the last call.
@@ -167,6 +183,7 @@ func (o *OutputPane) View() string {
 			o.rowCounts = append(o.rowCounts, len(parts))
 		}
 		o.cachedLines = len(o.lines)
+		o.joinedCache = ""
 	}
 
 	totalRows := len(o.cachedRows)
@@ -191,6 +208,14 @@ func (o *OutputPane) View() string {
 		end = totalRows
 	}
 
+	// Reuse the joined string when the visible window is unchanged.
+	if o.joinedCache != "" &&
+		o.joinedStart == start &&
+		o.joinedEnd == end &&
+		o.joinedHeight == o.height {
+		return o.joinedCache
+	}
+
 	visible := o.cachedRows[start:end]
 
 	var b strings.Builder
@@ -208,7 +233,11 @@ func (o *OutputPane) View() string {
 		rendered++
 	}
 
-	return b.String()
+	o.joinedCache = b.String()
+	o.joinedStart = start
+	o.joinedEnd = end
+	o.joinedHeight = o.height
+	return o.joinedCache
 }
 
 // renderSegments renders a slice of StyledSegments into a styled string,

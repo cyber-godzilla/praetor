@@ -63,6 +63,81 @@ func TestOutputPane_NormalLine_UnaffectedByExpand(t *testing.T) {
 	}
 }
 
+func TestOutputPane_View_CachedAcrossNoOpCalls(t *testing.T) {
+	p := NewOutputPane(100)
+	p.SetSize(80, 5)
+	p.Append(plainSegment("line 1"))
+	p.Append(plainSegment("line 2"))
+
+	v1 := p.View()
+	v2 := p.View()
+	if v1 != v2 {
+		t.Fatal("View() should be byte-identical on repeat call with no state change")
+	}
+	if p.joinedCache == "" {
+		t.Fatal("View should have populated joinedCache")
+	}
+}
+
+func TestOutputPane_View_AppendInvalidatesJoinCache(t *testing.T) {
+	p := NewOutputPane(100)
+	p.SetSize(80, 5)
+	p.Append(plainSegment("alpha"))
+	_ = p.View()
+	before := p.joinedCache
+
+	p.Append(plainSegment("beta"))
+	after := p.View()
+	if before == after {
+		t.Fatal("append should invalidate the joined cache and re-render")
+	}
+	if !strings.Contains(after, "beta") {
+		t.Fatalf("post-append View should contain 'beta'; got %q", after)
+	}
+}
+
+func TestOutputPane_View_ScrollInvalidatesJoinCache(t *testing.T) {
+	p := NewOutputPane(100)
+	p.SetSize(80, 3) // 3-row viewport
+	for i := 0; i < 10; i++ {
+		p.Append(plainSegment("line " + string(rune('A'+i))))
+	}
+	bottom := p.View()
+	p.ScrollUp(2)
+	scrolled := p.View()
+	if bottom == scrolled {
+		t.Fatal("scroll should change the joined output")
+	}
+}
+
+func TestOutputPane_View_WidthChangeInvalidatesJoinCache(t *testing.T) {
+	p := NewOutputPane(100)
+	p.SetSize(80, 5)
+	p.Append(plainSegment("hello world"))
+	_ = p.View()
+	if p.joinedCache == "" {
+		t.Fatal("joinedCache should be populated after first View")
+	}
+	p.SetSize(40, 5)
+	if p.joinedCache != "" {
+		t.Fatal("width change should clear joinedCache")
+	}
+}
+
+func TestOutputPane_View_ExpandToggleInvalidatesJoinCache(t *testing.T) {
+	p := NewOutputPane(100)
+	p.SetSize(80, 5)
+	p.AppendSuppressed(plainSegment("[suppressed]"), plainSegment("original text"))
+	_ = p.View()
+	if p.joinedCache == "" {
+		t.Fatal("joinedCache should be populated")
+	}
+	p.SetExpanded(true)
+	if p.joinedCache != "" {
+		t.Fatal("expand toggle should clear joinedCache")
+	}
+}
+
 func TestOutputPane_AppendKeepsExistingMaxLinesBehavior(t *testing.T) {
 	p := NewOutputPane(2) // tiny scrollback
 	p.SetSize(80, 5)
