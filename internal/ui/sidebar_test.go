@@ -27,23 +27,22 @@ func TestSidebar_ModeNone_RendersFallback(t *testing.T) {
 	}
 }
 
-func TestSidebar_Kitty_ConsumeReturnsOnEveryCall(t *testing.T) {
-	// kitty path: re-emitting at the same image id is an atomic
-	// in-place replace (no flicker), so ConsumeGraphics returns the
-	// escapes on every call — even when nothing changed. This is what
-	// makes the path self-healing if the terminal silently loses the
-	// image.
+func TestSidebar_Kitty_ThrottlesRepeatEmissions(t *testing.T) {
+	// kitty path now skips re-emission on frames where nothing changed
+	// and we're still within the self-heal interval. The image stays
+	// on screen via the previous placement; emitting again every frame
+	// only accumulates parser state in some terminals (input lag).
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
 
 	_, mm1, _ := s.ConsumeGraphics("sidebar")
 	if mm1 == "" {
-		t.Fatal("expected first ConsumeGraphics to return minimap escape")
+		t.Fatal("first ConsumeGraphics must return the minimap escape")
 	}
-	_, mm2, _ := s.ConsumeGraphics("sidebar")
-	if mm2 != mm1 {
-		t.Errorf("expected second ConsumeGraphics to return same escape; got different bytes")
+	_, mm2, cp2 := s.ConsumeGraphics("sidebar")
+	if mm2 != "" || cp2 != "" {
+		t.Errorf("second call within self-heal interval should return empty; got mm=%d bytes cp=%d bytes", len(mm2), len(cp2))
 	}
 }
 
@@ -220,91 +219,108 @@ func TestSidebar_View_CompactToggleInvalidates(t *testing.T) {
 
 func intp(i int) *int { return &i }
 
-func TestSidebar_Kitty_PeriodicResetFires(t *testing.T) {
-	// After kittyEmitsPerReset consecutive emissions, ConsumeGraphics
-	// must prepend a kittyDeleteAllSidebar to clear the terminal's
-	// accumulated image-parser state. Drive the counter via the field
-	// rather than calling 10000 times to keep the test fast.
+func TestSidebar_Kitty_SelfHealEmitsAfterInterval(t *testing.T) {
+	// Even when nothing changes, ConsumeGraphics must re-emit the cached
+	// escape after kittySelfHealInterval frames so a terminal that
+	// silently dropped the image picks it back up within ~1 second.
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10, Color: "#ff0000", Brightness: 25}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
 
-	_, _, _ = s.ConsumeGraphics("sidebar") // mark emittedImages=true
-	s.kittyEmitsSinceReset = kittyEmitsPerReset
-
-	transition, _, _ := s.ConsumeGraphics("sidebar")
-	if !strings.Contains(transition, "a=d,d=A") {
-		t.Fatalf("expected periodic reset to emit delete-all; got transition=%q", transition)
+	// Jump the counter to the threshold; the next call must re-emit.
+	s.kittyFramesSinceEmit = kittySelfHealInterval
+	_, mm, _ := s.ConsumeGraphics("sidebar")
+	if mm == "" {
+		t.Fatal("self-heal interval reached but ConsumeGraphics returned no minimap escape")
 	}
-	if s.kittyEmitsSinceReset != 1 {
-		t.Fatalf("counter should reset to 0 then increment to 1 after the reset emission; got %d", s.kittyEmitsSinceReset)
-	}
-
-	// The immediately following emission should not double up.
-	transition, _, _ = s.ConsumeGraphics("sidebar")
-	if transition != "" {
-		t.Errorf("post-reset emission should not have a transition; got %q", transition)
+	if s.kittyFramesSinceEmit != 0 {
+		t.Fatalf("counter should reset to 0 after self-heal emit; got %d", s.kittyFramesSinceEmit)
 	}
 }
 
-func TestSidebar_Kitty_AnchorChangeResetsCounter(t *testing.T) {
-	// An anchor flip already emits delete-all; the counter should
-	// reset alongside it so we don't double-reset on the next
-	// kittyEmitsPerReset boundary.
+func TestSidebar_Kitty_DirtyDataEmitsImmediately(t *testing.T) {
+	// UpdateMinimap (or any setter that marks dirtySinceEmit) must
+	// bypass the throttle so room changes are visible right away.
+	s := NewSidebar(0.8, 12, graphics.ModeKitty)
+	s.SetSize(40, 30)
+	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0, Size: 10}}, nil)
+	_, _, _ = s.ConsumeGraphics("sidebar")
+
+	// Throttle is engaged: counter at 1, no change since last emit.
+	_, mm1, _ := s.ConsumeGraphics("sidebar")
+	if mm1 != "" {
+		t.Fatalf("expected throttled call to return empty; got %d bytes", len(mm1))
+	}
+
+	// Data changes — next call must emit even though we're well under
+	// the self-heal interval.
+	s.UpdateMinimap([]types.MinimapRoom{{X: 5, Y: 5, Size: 10}}, nil)
+	_, mm2, _ := s.ConsumeGraphics("sidebar")
+	if mm2 == "" {
+		t.Fatal("dirty minimap data should emit immediately, regardless of throttle")
+	}
+}
+
+func TestSidebar_Kitty_AnchorChangeEmitsImmediately(t *testing.T) {
+	// The throttle must not delay anchor-change emissions — the image
+	// has to move (delete at old position, re-emit at new) right away.
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
 	_, _, _ = s.ConsumeGraphics("sidebar")
-	s.kittyEmitsSinceReset = kittyEmitsPerReset - 5
+	// Engage the throttle.
+	_, _, _ = s.ConsumeGraphics("sidebar")
 
-	transition, _, _ := s.ConsumeGraphics("topbar") // anchor change
+	transition, mm, _ := s.ConsumeGraphics("topbar")
 	if !strings.Contains(transition, "a=d,d=A") {
-		t.Fatalf("anchor change should emit delete-all; got %q", transition)
+		t.Errorf("anchor change should emit delete-all transition; got %q", transition)
 	}
-	if s.kittyEmitsSinceReset != 1 {
-		t.Fatalf("counter should reset on anchor change; got %d", s.kittyEmitsSinceReset)
+	if mm == "" {
+		t.Error("anchor change should emit the new-position image, not be throttled")
 	}
 }
 
-func TestSidebar_Kitty_HideResetsCounter(t *testing.T) {
+func TestSidebar_Kitty_HideResetsThrottleCounter(t *testing.T) {
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
 	_, _, _ = s.ConsumeGraphics("sidebar")
-	s.kittyEmitsSinceReset = 5000
+	s.kittyFramesSinceEmit = 30
 
 	_ = s.HideGraphics()
-	if s.kittyEmitsSinceReset != 0 {
-		t.Fatalf("HideGraphics should reset counter; got %d", s.kittyEmitsSinceReset)
+	if s.kittyFramesSinceEmit != 0 {
+		t.Fatalf("HideGraphics should reset throttle counter; got %d", s.kittyFramesSinceEmit)
 	}
 }
 
-func TestSidebar_Kitty_InvalidateResetsCounter(t *testing.T) {
+func TestSidebar_Kitty_InvalidateResetsThrottleCounter(t *testing.T) {
 	s := NewSidebar(0.8, 12, graphics.ModeKitty)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
 	_, _, _ = s.ConsumeGraphics("sidebar")
-	s.kittyEmitsSinceReset = 5000
+	s.kittyFramesSinceEmit = 30
 
 	s.InvalidateGraphics()
-	if s.kittyEmitsSinceReset != 0 {
-		t.Fatalf("InvalidateGraphics should reset counter; got %d", s.kittyEmitsSinceReset)
+	if s.kittyFramesSinceEmit != 0 {
+		t.Fatalf("InvalidateGraphics should reset throttle counter; got %d", s.kittyFramesSinceEmit)
 	}
 }
 
-func TestSidebar_Sixel_DoesNotInjectPeriodicReset(t *testing.T) {
-	// The periodic reset is kitty-specific; sixel doesn't accumulate
-	// parser state the same way and re-emitting delete-all on the sixel
-	// path has no effect (kittyDeleteAllSidebar is a kitty escape).
+func TestSidebar_Sixel_NotThrottled(t *testing.T) {
+	// Sixel pixels live in the cell buffer and get overwritten by any
+	// surrounding text write, so unlike kitty the sixel path must emit
+	// every frame — no throttle for sixel.
 	s := NewSidebar(0.8, 12, graphics.ModeSixel)
 	s.SetSize(40, 30)
 	s.UpdateMinimap([]types.MinimapRoom{{X: 0, Y: 0}}, nil)
-	_, _, _ = s.ConsumeGraphics("sidebar")
-	s.kittyEmitsSinceReset = kittyEmitsPerReset + 10
-
-	transition, _, _ := s.ConsumeGraphics("sidebar")
-	if transition != "" {
-		t.Errorf("sixel mode should not emit periodic kitty reset; got %q", transition)
+	_, mm1, _ := s.ConsumeGraphics("sidebar")
+	if mm1 == "" {
+		t.Fatal("first sixel emit should return escape")
+	}
+	_, mm2, _ := s.ConsumeGraphics("sidebar")
+	if mm2 != mm1 {
+		t.Errorf("sixel must emit on every call; got mm2=%d bytes (mm1=%d)", len(mm2), len(mm1))
 	}
 }
 
