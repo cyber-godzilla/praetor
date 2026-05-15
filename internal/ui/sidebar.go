@@ -30,14 +30,19 @@ const kittyDeleteAllSidebar = "\033_Ga=d,d=A,q=2;\033\\"
 
 // kittySelfHealInterval bounds how many ConsumeGraphics calls can pass
 // without re-emitting the kitty image. Kitty preserves the image
-// placement across frames once placed (no per-frame re-emit is needed
-// for display), but a self-heal pulse is still useful in case the
-// terminal silently dropped the image. ~60 frames at the typical
-// cursor-blink rate gives ~1s recovery latency — fast enough to be
-// imperceptible, slow enough to cut per-frame escape volume to the
-// terminal by ~60×, which prevents the parser-state accumulation that
-// surfaces as input lag in long sessions.
-const kittySelfHealInterval = 60
+// placement across frames once placed, so per-frame re-emit isn't
+// needed for display — but a fallback emit is still needed often
+// enough that:
+//   - Data-change emits (UpdateMinimap → dirtySinceEmit) reliably
+//     reach the terminal even if Bubbletea's line-diff renderer
+//     sometimes coalesces them with adjacent unchanged content.
+//   - A terminal that silently dropped the image recovers within a
+//     visually imperceptible window.
+//
+// 5 frames gives ~80ms recovery in the worst case, while still
+// reducing per-frame escape volume to the terminal by ~5× vs the
+// every-frame emit that drove input-lag accumulation in long sessions.
+const kittySelfHealInterval = 5
 
 // Sidebar displays the minimap, compass rose, vitals bars, and mode info.
 type Sidebar struct {
