@@ -11,10 +11,15 @@ import (
 
 // Encode renders an image as a Kitty graphics protocol escape sequence.
 // cols and rows specify the terminal cell dimensions for display.
-// imageID, if positive, is included as i=<id>; re-emitting an image
-// with the same id atomically replaces the existing image in place
-// (no visible flash). Pass 0 to omit the id and let kitty auto-assign.
-// The image is PNG-encoded, base64-encoded, and chunked at 4096 bytes.
+// imageID, if positive, is included as i=<id> AND as p=<id> (placement
+// id). Re-emitting with the same id atomically replaces both the image
+// data AND the existing placement in place. Without p=, each a=T emit
+// creates a fresh placement at the cursor position alongside any prior
+// placements of the same image, which stacks them at the same cell and
+// causes a ~1px subpixel twitch under rapid re-emission (e.g. during
+// typing-rate View() frames). Pass 0 to omit both ids and let kitty
+// auto-assign. The image is PNG-encoded, base64-encoded, and chunked
+// at 4096 bytes.
 func Encode(img image.Image, cols, rows, imageID int) string {
 	var buf bytes.Buffer
 	png.Encode(&buf, img)
@@ -22,7 +27,7 @@ func Encode(img image.Image, cols, rows, imageID int) string {
 
 	idAttr := ""
 	if imageID > 0 {
-		idAttr = fmt.Sprintf(",i=%d", imageID)
+		idAttr = fmt.Sprintf(",i=%d,p=%d", imageID, imageID)
 	}
 
 	var result strings.Builder
