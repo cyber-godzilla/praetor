@@ -39,7 +39,7 @@
   }
 </script>
 
-<Modal {title}>
+<Modal {title} back>
   {#if hint}<p class="hint dim">{hint}</p>{/if}
   <div class="list">
     {#each items as item, i (item)}

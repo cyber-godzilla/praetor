@@ -6,8 +6,10 @@
 # files), so it is always passed — you never have to remember it.
 
 WAILS_TAGS ?= webkit2_41
-VERSION    ?= dev
-LDFLAGS    := -X main.version=$(VERSION)
+# Leave VERSION empty to use the embedded internal/version default (keeps the
+# GUI and TUI in sync). Pass VERSION=v1.2.3 to stamp a release build.
+VERSION    ?=
+LDFLAGS    := $(if $(VERSION),-ldflags "-X main.version=$(VERSION)",)
 
 .PHONY: dev build installer deps check clean
 
@@ -17,11 +19,11 @@ dev:
 
 ## build: produce build/bin/praetor
 build:
-	wails build -tags "$(WAILS_TAGS)" -ldflags "$(LDFLAGS)"
+	wails build -tags "$(WAILS_TAGS)" $(LDFLAGS)
 
 ## installer: Windows only — build + NSIS installer
 installer:
-	wails build -tags "$(WAILS_TAGS)" -nsis -ldflags "$(LDFLAGS)"
+	wails build -tags "$(WAILS_TAGS)" -nsis $(LDFLAGS)
 
 ## check: toolchain-free checks (no webview needed): frontend + dev-mode compile
 check:

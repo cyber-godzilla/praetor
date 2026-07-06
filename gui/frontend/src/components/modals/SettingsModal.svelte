@@ -16,7 +16,7 @@
   }
 </script>
 
-<Modal title="Settings">
+<Modal title="Settings" back>
   {#if store.config}
     <div class="toggles">
       <label class="t">
@@ -57,6 +57,16 @@
             const v = parseFloat((e.target as HTMLInputElement).value);
             store.config!.UI.MinimapScale = v;
             api.setMinimapScale(v);
+          }} />
+      </div>
+
+      <div class="field">
+        <span>Compass scale</span>
+        <input type="number" min="0.5" max="3" step="0.1" value={ui?.CompassScale}
+          onchange={(e) => {
+            const v = parseFloat((e.target as HTMLInputElement).value);
+            store.config!.UI.CompassScale = v;
+            api.setCompassScale(v);
           }} />
       </div>
 

@@ -42,7 +42,7 @@
   }
 </script>
 
-<Modal title="Persistent Lua Data" wide>
+<Modal title="Persistent Lua Data" wide back>
   {#if notice}<p class="notice dim">{notice}</p>{/if}
   <div class="list">
     {#each keys as k (k.key)}

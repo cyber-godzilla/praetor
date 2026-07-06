@@ -41,7 +41,7 @@
   });
 </script>
 
-<Modal title="Rank-Bonus Calculator" wide>
+<Modal title="Rank-Bonus Calculator" wide back>
   <div class="controls row">
     <label>Mode
       <select bind:value={mode}>

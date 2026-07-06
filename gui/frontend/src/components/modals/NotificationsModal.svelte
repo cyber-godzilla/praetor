@@ -31,7 +31,7 @@
   }
 </script>
 
-<Modal title="Desktop Notifications" wide>
+<Modal title="Desktop Notifications" wide back>
   <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.HealthBelow.Enabled} /> Notify when health below</label>
     <input class="num" type="number" min="0" max="100" bind:value={cfg.HealthBelow.Threshold} />

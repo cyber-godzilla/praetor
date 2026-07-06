@@ -17,6 +17,7 @@ import (
 	"os"
 
 	"github.com/cyber-godzilla/praetor/internal/gui"
+	versioninfo "github.com/cyber-godzilla/praetor/internal/version"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -24,8 +25,9 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// version is set via ldflags at build time.
-var version = "dev"
+// version defaults to the shared embedded version so the GUI and TUI match.
+// Overridable via ldflags: -X main.version=v1.0.0
+var version = versioninfo.Version
 
 //go:embed all:frontend/dist
 var assets embed.FS

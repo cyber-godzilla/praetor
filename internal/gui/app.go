@@ -35,6 +35,7 @@ type GuiApp struct {
 func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 	r := newRenderer()
 	r.setScale(deps.Config.UI.MinimapScale)
+	r.setCompassScale(deps.Config.UI.CompassScale)
 	a := &GuiApp{
 		deps:              deps,
 		render:            r,

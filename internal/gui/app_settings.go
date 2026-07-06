@@ -75,6 +75,17 @@ func (a *GuiApp) SetMinimapScale(scale float64) error {
 	return nil
 }
 
+// SetCompassScale persists and applies the compass scale.
+func (a *GuiApp) SetCompassScale(scale float64) error {
+	a.cfg().UI.CompassScale = scale
+	a.render.setCompassScale(scale)
+	if err := a.save(); err != nil {
+		return err
+	}
+	a.RefreshGraphics()
+	return nil
+}
+
 // ---------------------------------------------------------------------------
 // List / structured settings.
 // ---------------------------------------------------------------------------

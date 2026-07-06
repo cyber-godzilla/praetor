@@ -92,7 +92,14 @@
       queueMicrotask(() => inputEl?.focus());
     }
   });
+
+  // When the app window regains focus, put the cursor back in the input.
+  function onWindowFocus() {
+    if (!store.openModal) inputEl?.focus();
+  }
 </script>
+
+<svelte:window onfocus={onWindowFocus} />
 
 <div class="inputbar">
   <span class="prompt">›</span>
@@ -105,9 +112,14 @@
     autocomplete="off"
     placeholder={store.connState === "connected" ? "" : "(disconnected)"}
   />
-  {#if store.mode && store.mode !== "disable"}
-    <span class="mode" title="Active mode">{store.mode}</span>
-  {/if}
+  <button
+    class="mode"
+    class:active={!!store.mode && store.mode !== "disable"}
+    title="Switch mode"
+    onclick={() => (store.openModal = "modeselect")}
+  >
+    {store.mode && store.mode !== "disable" ? store.mode : "disable"}
+  </button>
 </div>
 
 <style>
@@ -133,10 +145,19 @@
   }
   .mode {
     font-size: 12px;
-    color: var(--accent);
+    font-family: var(--mono);
+    color: var(--fg-dim);
     background: var(--bg-elevated);
-    border: 1px solid var(--accent-dim);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 3px 8px;
+    padding: 4px 10px;
+  }
+  .mode:hover {
+    border-color: var(--accent);
+    color: var(--fg);
+  }
+  .mode.active {
+    color: var(--accent);
+    border-color: var(--accent-dim);
   }
 </style>

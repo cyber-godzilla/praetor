@@ -4,12 +4,13 @@
 
 import type { Segment, HighlightConfig } from "./types";
 
-// Style -> {background, foreground}, matching the four TUI highlight styles.
-const STYLE_COLORS: Record<string, { bg: string; fg: string }> = {
-  red: { bg: "#e05c5c", fg: "#ffffff" },
+// Style -> {background, foreground} for the four highlight styles. Single
+// source of truth, shared by the renderer and the highlights editor UI.
+export const STYLE_COLORS: Record<string, { bg: string; fg: string }> = {
+  red: { bg: "#cc4444", fg: "#ffffff" },
   gold: { bg: "#e8a838", fg: "#000000" },
-  green: { bg: "#6cc46c", fg: "#000000" },
-  blue: { bg: "#5c8ce0", fg: "#ffffff" },
+  green: { bg: "#55cc55", fg: "#000000" },
+  blue: { bg: "#88aaff", fg: "#000000" },
 };
 
 export interface CompiledHighlight {

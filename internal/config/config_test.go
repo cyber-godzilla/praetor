@@ -177,8 +177,8 @@ func TestValidate_ClampsValues(t *testing.T) {
 	if cfg.UI.SidebarWidth != 40 {
 		t.Errorf("SidebarWidth = %d, want 40", cfg.UI.SidebarWidth)
 	}
-	if cfg.UI.MinimapScale != 0.8 {
-		t.Errorf("MinimapScale = %f, want 0.8", cfg.UI.MinimapScale)
+	if cfg.UI.MinimapScale != 1.0 {
+		t.Errorf("MinimapScale = %f, want 1.0", cfg.UI.MinimapScale)
 	}
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)
@@ -258,8 +258,8 @@ server:
 	if cfg.UI.SidebarWidth != 40 {
 		t.Errorf("default SidebarWidth = %d, want 40", cfg.UI.SidebarWidth)
 	}
-	if cfg.UI.MinimapScale != 0.8 {
-		t.Errorf("default MinimapScale = %f, want 0.8", cfg.UI.MinimapScale)
+	if cfg.UI.MinimapScale != 1.0 {
+		t.Errorf("default MinimapScale = %f, want 1.0", cfg.UI.MinimapScale)
 	}
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("default MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)

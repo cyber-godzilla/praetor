@@ -1,18 +1,32 @@
 :root {
-  --bg: #14141a;
-  --bg-panel: #1c1c24;
-  --bg-elevated: #24242e;
-  --bg-input: #10101a;
-  --border: #33333f;
-  --border-bright: #4a4a5a;
+  /* Palette anchored on the TUI (internal/ui/styles.go) so both clients match. */
+  --bg: #0a0a14; /* TUI colorBG */
+  --bg-panel: #12121e;
+  --bg-elevated: #1a1a28;
+  --bg-hover: #20202e;
+  --bg-input: #08080f;
+  --border: #444444; /* TUI colorBorder */
+  --border-bright: #5a5a6a;
   --fg: #d8d8e0;
-  --fg-dim: #8a8a99;
+  --fg-dim: #888888; /* TUI colorDim */
   --fg-bright: #ffffff;
-  --accent: #e8a838;
+  --accent: #e8a838; /* TUI colorOrange */
   --accent-dim: #9c7220;
-  --green: #6cc46c;
-  --red: #e05c5c;
-  --blue: #5c8ce0;
+  --green: #55cc55; /* TUI colorGreen */
+  --red: #cc4444; /* TUI colorRed */
+  --blue: #88aaff; /* TUI colorBlue */
+  --bar-empty: #333333; /* TUI colorBarEmpty */
+
+  /* Lighting label colors (TUI lightingStyle*) */
+  --light-blinding: #ffffff;
+  --light-verybright: #ffee66;
+  --light-bright: #ffcc00;
+  --light-fairlylit: #aa8800;
+  --light-somewhatdark: #887744;
+  --light-verydark: #6666aa;
+  --light-extremedark: #555588;
+  --light-pitchblack: #444444;
+
   --mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", ui-monospace, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }

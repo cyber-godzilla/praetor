@@ -200,6 +200,7 @@ type UIConfig struct {
 	SidebarWidth    int               `yaml:"sidebar_width"`
 	MinimapScale    float64           `yaml:"minimap_scale"`
 	MinimapHeight   int               `yaml:"minimap_height"`
+	CompassScale    float64           `yaml:"compass_scale"`
 	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
 	ColorWords      bool              `yaml:"color_words"`
 	EchoTyped       bool              `yaml:"echo_typed_commands"`
@@ -247,8 +248,9 @@ func Defaults() *Config {
 			DefaultTab:      "all",
 			Scrollback:      5000,
 			SidebarWidth:    40,
-			MinimapScale:    0.8,
+			MinimapScale:    1.0,
 			MinimapHeight:   12,
+			CompassScale:    1.0,
 			QuickCycleModes: []string{"disable"},
 			EchoTyped:       true,
 			EchoScript:      true,
@@ -427,10 +429,13 @@ func (c *Config) Validate() error {
 		c.UI.SidebarWidth = 40
 	}
 	if c.UI.MinimapScale <= 0 {
-		c.UI.MinimapScale = 0.8
+		c.UI.MinimapScale = 1.0
 	}
 	if c.UI.MinimapHeight < 4 {
 		c.UI.MinimapHeight = 12
+	}
+	if c.UI.CompassScale <= 0 {
+		c.UI.CompassScale = 1.0
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}

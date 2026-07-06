@@ -23,11 +23,13 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	"github.com/cyber-godzilla/praetor/internal/ui"
+	versioninfo "github.com/cyber-godzilla/praetor/internal/version"
 	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
 
-// Set via ldflags: go build -ldflags "-X main.version=v1.0.0"
-var version = "dev"
+// version defaults to the shared embedded version (internal/version) so the
+// TUI and GUI stay in sync. Overridable via ldflags: -X main.version=v1.0.0
+var version = versioninfo.Version
 
 // wrapper wraps the App model and intercepts messages to wire them to the Client.
 type wrapper struct {

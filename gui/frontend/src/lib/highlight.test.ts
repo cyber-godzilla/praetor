@@ -13,7 +13,7 @@ describe("applyHighlights", () => {
     const out = applyHighlights(segs, hl);
     expect(out.map((s) => s.text)).toEqual(["you find a ", "RUBY", " here"]);
     const match = out[1];
-    expect(match.bg).toBe("#e05c5c");
+    expect(match.bg).toBe("#cc4444");
     expect(match.color).toBe("#ffffff");
   });
 
@@ -34,7 +34,7 @@ describe("applyHighlights", () => {
     const segs: Segment[] = [{ text: "silver and gold" }];
     const out = applyHighlights(segs, compileHighlights(rules(["gold", "gold"], ["silver", "blue"])));
     expect(out[0].text).toBe("silver");
-    expect(out[0].bg).toBe("#5c8ce0");
+    expect(out[0].bg).toBe("#88aaff");
   });
 
   it("ignores inactive rules", () => {

@@ -57,6 +57,9 @@
       } else if (k === "m") {
         e.preventDefault();
         quickCycleMode();
+      } else if (k === "x") {
+        e.preventDefault();
+        api.setMode("disable", []).catch((err) => store.addToast("Mode error", String(err)));
       } else if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         const n = e.key === "0" ? 10 : parseInt(e.key, 10);

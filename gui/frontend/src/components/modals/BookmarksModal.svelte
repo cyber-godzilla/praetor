@@ -30,7 +30,7 @@
   }
 </script>
 
-<Modal {title} wide>
+<Modal {title} wide back>
   <input class="search" type="text" bind:value={query} placeholder="Filter…" />
   <div class="sections">
     {#each filtered as sec (sec.Name)}

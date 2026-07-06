@@ -11,6 +11,7 @@
   import RBCalcModal from "./modals/RBCalcModal.svelte";
   import PersistentDataModal from "./modals/PersistentDataModal.svelte";
   import HelpModal from "./modals/HelpModal.svelte";
+  import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -20,6 +21,8 @@
   <MenuModal />
 {:else if m === "help"}
   <HelpModal />
+{:else if m === "modeselect"}
+  <ModeSelectModal />
 {:else if m === "settings"}
   <SettingsModal />
 {:else if m === "highlights"}

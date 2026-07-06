@@ -60,7 +60,7 @@
   }
 </script>
 
-<Modal title={loginPrompt ? "Kudos — queued entries" : "Kudos"} wide>
+<Modal title={loginPrompt ? "Kudos — queued entries" : "Kudos"} wide back>
   {#if loginPrompt}
     <p class="hint dim">You have queued kudos. Send them now or manage the list.</p>
   {/if}

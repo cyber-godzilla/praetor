@@ -5,12 +5,14 @@
   let {
     title,
     wide = false,
+    back = false,
     onclose,
     children,
     footer,
   }: {
     title: string;
     wide?: boolean;
+    back?: boolean;
     onclose?: () => void;
     children: Snippet;
     footer?: Snippet;
@@ -19,6 +21,11 @@
   function close() {
     onclose?.();
     store.openModal = null;
+  }
+
+  function goBack() {
+    onclose?.();
+    store.openModal = "menu";
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -44,7 +51,12 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="modal" class:wide onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
     <div class="mhead">
-      <span class="mtitle">{title}</span>
+      <div class="mhead-left">
+        {#if back}
+          <button class="back" onclick={goBack} title="Back to menu">‹ Menu</button>
+        {/if}
+        <span class="mtitle">{title}</span>
+      </div>
       <button class="x" onclick={close} aria-label="Close">✕</button>
     </div>
     <div class="mbody">
@@ -86,6 +98,20 @@
     justify-content: space-between;
     padding: 14px 18px;
     border-bottom: 1px solid var(--border);
+  }
+  .mhead-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .back {
+    font-size: 12px;
+    padding: 4px 10px;
+    color: var(--fg-dim);
+  }
+  .back:hover {
+    color: var(--accent);
+    border-color: var(--accent);
   }
   .mtitle {
     font-size: 15px;

@@ -47,7 +47,7 @@
   }
 </script>
 
-<Modal title="Custom Tabs" wide>
+<Modal title="Custom Tabs" wide back>
   <div class="cols">
     <div class="tablist">
       {#each tabs as t, i (i)}

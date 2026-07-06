@@ -184,6 +184,7 @@ export interface UIConfig {
   SidebarWidth: number;
   MinimapScale: number;
   MinimapHeight: number;
+  CompassScale: number;
   QuickCycleModes: string[] | null;
   ColorWords: boolean;
   EchoTyped: boolean;

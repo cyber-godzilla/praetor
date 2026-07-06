@@ -81,6 +81,7 @@ export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging",
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
+export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
 
 // ---- Settings lists ----
 export const setHighlights = (h: HighlightConfig[]) => call<void>("SetHighlights", undefined, h);

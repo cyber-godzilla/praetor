@@ -79,8 +79,9 @@
     image-rendering: pixelated;
   }
   .compassbox img {
-    max-width: 140px;
-    image-rendering: pixelated;
+    max-width: 100%;
+    width: 100%;
+    image-rendering: auto;
   }
   .empty {
     font-size: 12px;

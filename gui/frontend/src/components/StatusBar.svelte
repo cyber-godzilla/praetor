@@ -4,14 +4,13 @@
   interface Bar {
     label: string;
     value: number | null;
-    color: string;
   }
 
   const bars = $derived<Bar[]>([
-    { label: "HP", value: store.health, color: "var(--green)" },
-    { label: "FAT", value: store.fatigue, color: "var(--blue)" },
-    { label: "ENC", value: store.encumbrance, color: "var(--accent)" },
-    { label: "SAT", value: store.satiation, color: "#c46cc4" },
+    { label: "HP", value: store.health },
+    { label: "FT", value: store.fatigue },
+    { label: "EN", value: store.encumbrance },
+    { label: "SAT", value: store.satiation },
   ]);
 
   function pct(v: number | null): number {
@@ -19,50 +18,57 @@
     return Math.max(0, Math.min(100, v));
   }
 
-  // Lighting label from the raw SKOOT ch9 value (approximate, per CLAUDE.md).
-  const lightingLabel = $derived.by(() => {
+  // vitalColor mirrors internal/ui/statusbar.go: >50 green, >25 orange, else red.
+  function vitalColor(v: number | null): string {
+    if (v == null) return "var(--fg-dim)";
+    if (v > 50) return "var(--green)";
+    if (v > 25) return "var(--accent)";
+    return "var(--red)";
+  }
+
+  // Lighting label + color from the raw SKOOT ch9 value (approx, per CLAUDE.md).
+  const lighting = $derived.by(() => {
     const r = store.lightingRaw;
-    if (r == null) return "";
-    if (r >= 100) return "Extremely Bright";
-    if (r >= 30) return "Very Bright";
-    if (r >= 25) return "Bright";
-    if (r >= 18) return "Fairly Lit";
-    if (r >= 12) return "Somewhat Dark";
-    if (r >= 6) return "Very Dark";
-    if (r >= 1) return "Extremely Dark";
-    return "Pitch Black";
+    if (r == null) return null;
+    if (r >= 100) return { text: "Extremely Bright", color: "var(--light-blinding)" };
+    if (r >= 30) return { text: "Very Bright", color: "var(--light-verybright)" };
+    if (r >= 25) return { text: "Bright", color: "var(--light-bright)" };
+    if (r >= 18) return { text: "Fairly Lit", color: "var(--light-fairlylit)" };
+    if (r >= 12) return { text: "Somewhat Dark", color: "var(--light-somewhatdark)" };
+    if (r >= 6) return { text: "Very Dark", color: "var(--light-verydark)" };
+    if (r >= 1) return { text: "Extremely Dark", color: "var(--light-extremedark)" };
+    return { text: "Pitch Black", color: "var(--light-pitchblack)" };
   });
 
   const connLabel = $derived.by(() => {
     switch (store.connState) {
       case "connected":
-        return { text: "connected", cls: "ok" };
+        return { text: "Connected ●", cls: "ok" };
       case "reconnecting":
-        return { text: `reconnecting (#${store.reconnectAttempt})`, cls: "warn" };
+        return { text: `Reconnecting (${store.reconnectAttempt}) ◌`, cls: "warn" };
       default:
-        return { text: store.connReason || "disconnected", cls: "bad" };
+        return { text: (store.connReason || "Disconnected") + " ○", cls: "bad" };
     }
   });
 </script>
 
 <div class="statusbar">
-  <div class="brand">praetor</div>
   <div class="bars">
     {#each bars as b (b.label)}
       <div class="bar" title={b.label}>
         <span class="lbl">{b.label}</span>
         <div class="track">
-          <div class="fill" style="width:{pct(b.value)}%;background:{b.color}"></div>
+          <div class="fill" style="width:{pct(b.value)}%;background:{vitalColor(b.value)}"></div>
         </div>
-        <span class="num">{b.value ?? "–"}</span>
+        <span class="num" style="color:{vitalColor(b.value)}">{b.value ?? "–"}</span>
       </div>
     {/each}
   </div>
-  {#if lightingLabel}
-    <div class="lighting" title="Lighting">☀ {lightingLabel}</div>
+  {#if lighting}
+    <div class="lighting" style="color:{lighting.color}" title="Lighting">☀ {lighting.text}</div>
   {/if}
   <div class="spacer"></div>
-  <div class="conn {connLabel.cls}">● {connLabel.text}</div>
+  <div class="conn {connLabel.cls}">{connLabel.text}</div>
 </div>
 
 <style>
@@ -74,11 +80,6 @@
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border);
     font-size: 12px;
-  }
-  .brand {
-    color: var(--accent);
-    font-weight: 700;
-    letter-spacing: 1px;
   }
   .bars {
     display: flex;
@@ -96,13 +97,13 @@
   .track {
     width: 80px;
     height: 8px;
-    background: var(--bg-input);
+    background: var(--bar-empty);
     border-radius: 4px;
     overflow: hidden;
   }
   .fill {
     height: 100%;
-    transition: width 0.25s ease;
+    transition: width 0.25s ease, background 0.25s ease;
   }
   .num {
     width: 26px;
@@ -110,7 +111,7 @@
     font-family: var(--mono);
   }
   .lighting {
-    color: var(--fg-dim);
+    font-family: var(--mono);
   }
   .conn.ok {
     color: var(--green);

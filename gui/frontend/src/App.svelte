@@ -5,10 +5,12 @@
   import AccountSelect from "./components/AccountSelect.svelte";
   import Login from "./components/Login.svelte";
   import GameView from "./components/GameView.svelte";
+  import Splash from "./components/Splash.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Modals from "./components/Modals.svelte";
 
   let ready = $state(false);
+  let splashDone = $state(false);
 
   onMount(() => {
     let unsub: (() => void) | undefined;
@@ -33,22 +35,22 @@
   });
 </script>
 
-{#if ready}
-  {#if store.screen === "account"}
-    <AccountSelect />
-  {:else if store.screen === "login"}
-    <Login />
-  {:else if store.screen === "connecting"}
-    <div class="center">
-      <div class="spinner-box">
-        <div class="dim">Connecting to The Eternal City…</div>
-      </div>
-    </div>
-  {:else if store.screen === "game"}
-    <GameView />
-  {/if}
-{:else}
+{#if !splashDone}
+  <Splash ondismiss={() => (splashDone = true)} />
+{:else if !ready}
   <div class="center"><div class="dim">Loading…</div></div>
+{:else if store.screen === "account"}
+  <AccountSelect />
+{:else if store.screen === "login"}
+  <Login />
+{:else if store.screen === "connecting"}
+  <div class="center">
+    <div class="spinner-box">
+      <div class="dim">Connecting to The Eternal City…</div>
+    </div>
+  </div>
+{:else if store.screen === "game"}
+  <GameView />
 {/if}
 
 <Modals />

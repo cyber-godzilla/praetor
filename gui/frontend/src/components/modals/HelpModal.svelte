@@ -24,22 +24,26 @@
   ];
 </script>
 
-<Modal title="Help" wide>
+<Modal title="Help" wide back>
   <div class="cols">
     <div class="col">
       <div class="h dim">Key bindings</div>
       <table>
-        {#each keys as [k, d] (k)}
-          <tr><td class="k">{k}</td><td>{d}</td></tr>
-        {/each}
+        <tbody>
+          {#each keys as [k, d] (k)}
+            <tr><td class="k">{k}</td><td>{d}</td></tr>
+          {/each}
+        </tbody>
       </table>
     </div>
     <div class="col">
       <div class="h dim">Commands</div>
       <table>
-        {#each cmds as [k, d] (k)}
-          <tr><td class="k">{k}</td><td>{d}</td></tr>
-        {/each}
+        <tbody>
+          {#each cmds as [k, d] (k)}
+            <tr><td class="k">{k}</td><td>{d}</td></tr>
+          {/each}
+        </tbody>
       </table>
     </div>
   </div>
