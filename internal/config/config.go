@@ -201,6 +201,7 @@ type UIConfig struct {
 	MinimapScale    float64           `yaml:"minimap_scale"`
 	MinimapHeight   int               `yaml:"minimap_height"`
 	CompassScale    float64           `yaml:"compass_scale"`
+	OutputFontSize  int               `yaml:"output_font_size"`
 	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
 	ColorWords      bool              `yaml:"color_words"`
 	EchoTyped       bool              `yaml:"echo_typed_commands"`
@@ -251,6 +252,7 @@ func Defaults() *Config {
 			MinimapScale:    1.0,
 			MinimapHeight:   12,
 			CompassScale:    1.0,
+			OutputFontSize:  14,
 			QuickCycleModes: []string{"disable"},
 			EchoTyped:       true,
 			EchoScript:      true,
@@ -436,6 +438,11 @@ func (c *Config) Validate() error {
 	}
 	if c.UI.CompassScale <= 0 {
 		c.UI.CompassScale = 1.0
+	}
+	if c.UI.OutputFontSize < 8 {
+		c.UI.OutputFontSize = 14
+	} else if c.UI.OutputFontSize > 40 {
+		c.UI.OutputFontSize = 40
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}

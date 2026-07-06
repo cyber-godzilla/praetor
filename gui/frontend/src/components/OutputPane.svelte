@@ -8,6 +8,7 @@
 
   const highlights = $derived(compileHighlights(store.config?.Highlights));
   const hideIPs = $derived(!!store.config?.UI?.HideIPs);
+  const fontSize = $derived(store.config?.UI?.OutputFontSize || 14);
 
   let viewport: HTMLDivElement;
   let atBottom = $state(true);
@@ -81,7 +82,7 @@
 
 <svelte:window onkeydown={onWindowKey} />
 
-<div class="pane" bind:this={viewport} onscroll={onScroll}>
+<div class="pane" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
   {#each tab.lines as line (line.id)}
     {#if isBlank(line)}
       <div class="line blank">&nbsp;</div>

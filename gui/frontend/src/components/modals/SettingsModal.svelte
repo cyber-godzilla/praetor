@@ -5,6 +5,13 @@
 
   const ui = $derived(store.config?.UI);
 
+  const FONT_SIZES = [11, 12, 13, 14, 16, 18, 20, 24];
+
+  function setFontSize(px: number) {
+    store.config!.UI.OutputFontSize = px;
+    api.setOutputFontSize(px);
+  }
+
   async function toggle(get: () => boolean, set: (v: boolean) => Promise<void>, apply: (v: boolean) => void) {
     const v = !get();
     apply(v);
@@ -71,6 +78,17 @@
       </div>
 
       <div class="field">
+        <span>Output text size</span>
+        <div class="sizes">
+          {#each FONT_SIZES as sz (sz)}
+            <button class="sz" class:active={(ui?.OutputFontSize || 14) === sz} onclick={() => setFontSize(sz)}>
+              {sz}
+            </button>
+          {/each}
+        </div>
+      </div>
+
+      <div class="field">
         <span>Log path (blank = default)</span>
         <input type="text" value={store.config.Logging.Session.Path}
           onchange={(e) => {
@@ -109,5 +127,21 @@
     padding: 10px 4px;
     font-size: 13px;
     color: var(--fg-dim);
+  }
+  .sizes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .sz {
+    min-width: 40px;
+    padding: 5px 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .sz.active {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--fg-bright);
   }
 </style>

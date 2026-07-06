@@ -75,6 +75,13 @@ func (a *GuiApp) SetMinimapScale(scale float64) error {
 	return nil
 }
 
+// SetOutputFontSize persists the game-output text size in pixels. Applied in
+// the frontend via CSS, so no re-render is needed here.
+func (a *GuiApp) SetOutputFontSize(px int) error {
+	a.cfg().UI.OutputFontSize = px
+	return a.save()
+}
+
 // SetCompassScale persists the compass scale. The compass is rendered at a
 // fixed size; the scale only affects on-screen display (handled in the
 // frontend via CSS), so no re-render is needed here.
