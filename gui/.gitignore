@@ -11,3 +11,7 @@ frontend/package.json.md5
 
 # Wails build output
 build/bin/
+
+# Stray dev-mode binaries from `go build .` (named after the module dir)
+/gui
+/praetor-gui
