@@ -67,11 +67,10 @@
     justify-content: center;
   }
   .card {
-    width: 360px;
+    width: 340px;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
-    border-radius: 10px;
-    padding: 32px;
+    padding: 24px;
     display: flex;
     flex-direction: column;
     gap: 14px;

@@ -10,9 +10,7 @@
   --fg: #d8d8e0;
   --fg-dim: #888888; /* TUI colorDim */
   --fg-bright: #ffffff;
-  /* Skotos orange — the primary brand accent, matching the TUI (colorOrange).
-     Used for titles, section headers, active/selected states, panel and modal
-     framing, the prompt, primary buttons, and text selection. */
+  /* Skotos orange — the primary brand accent, matching the TUI (colorOrange). */
   --skotos-orange: #e8a838;
   --accent: var(--skotos-orange);
   --accent-dim: #9c7220;
@@ -31,12 +29,22 @@
   --light-extremedark: #555588;
   --light-pitchblack: #444444;
 
-  --mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "Consolas", ui-monospace, monospace;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* The whole client is a terminal: monospace everywhere, like the TUI. */
+  --mono: "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", "Consolas",
+    ui-monospace, monospace;
+  --font: var(--mono);
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* Terminals have no rounded corners — enforce square edges everywhere so no
+   component drifts back toward a "web card" look. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
 }
 
 html,
@@ -46,11 +54,11 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--fg);
-  font-family: var(--sans);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.4;
   overflow: hidden;
   user-select: none;
-  /* Render native controls (select dropdowns, date pickers, scrollbars) in
-     dark mode instead of the OS light default. */
   color-scheme: dark;
 }
 
@@ -65,25 +73,23 @@ body {
   color: #000;
 }
 
+/* Terminal-style controls: flat, square, monospace, tight. */
 button {
   font-family: inherit;
   font-size: 13px;
   color: var(--fg);
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 6px 12px;
+  padding: 4px 10px;
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
 }
 button:hover {
-  background: var(--bg-panel);
-  border-color: var(--border-bright);
-}
-button.primary {
-  background: var(--accent-dim);
   border-color: var(--accent);
   color: var(--fg-bright);
+}
+button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 button.primary:hover {
   background: var(--accent);
@@ -97,32 +103,41 @@ button:disabled {
   opacity: 0.4;
   cursor: default;
 }
+button:disabled:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
 
 input[type="text"],
 input[type="password"],
 input[type="number"],
 select {
-  font-family: var(--sans);
+  font-family: inherit;
   font-size: 13px;
   color: var(--fg);
   background: var(--bg-input);
   border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 7px 10px;
+  padding: 5px 8px;
   outline: none;
 }
 input:focus,
 select:focus {
   border-color: var(--accent);
 }
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
 
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
 }
 ::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
   background: var(--border-bright);
-  border-radius: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;

@@ -29,28 +29,30 @@
   .tabbar {
     display: flex;
     align-items: stretch;
-    background: var(--bg-panel);
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
-    padding: 0 4px;
+    padding: 2px 2px 0;
     gap: 2px;
-    min-height: 34px;
   }
+  /* Active tab mirrors the TUI: orange background, dark bold text. */
   .tab {
     background: none;
     border: none;
-    border-bottom: 2px solid transparent;
-    border-radius: 0;
     color: var(--fg-dim);
-    padding: 6px 14px;
+    padding: 4px 12px;
     font-size: 13px;
   }
   .tab:hover {
-    color: var(--fg);
+    color: var(--fg-bright);
     background: var(--bg-elevated);
   }
   .tab.active {
-    color: var(--accent);
-    border-bottom-color: var(--accent);
+    background: var(--accent);
+    color: #000;
+    font-weight: 700;
+  }
+  .tab.active:hover {
+    color: #000;
   }
   .unread {
     color: var(--accent);
@@ -59,7 +61,7 @@
     margin-left: 5px;
   }
   .menu-btn {
-    font-size: 16px;
-    padding: 6px 12px;
+    font-size: 15px;
+    padding: 4px 12px;
   }
 </style>

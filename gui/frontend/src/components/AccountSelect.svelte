@@ -67,25 +67,20 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background:
-      radial-gradient(1200px 600px at 50% -10%, rgba(232, 168, 56, 0.08), transparent 60%),
-      var(--bg);
+    background: var(--bg);
   }
   .card {
-    width: 420px;
+    width: 400px;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
-    border-radius: 14px;
-    padding: 36px 32px 24px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    padding: 24px 24px 16px;
   }
   .brand {
     text-align: center;
-    font-size: 30px;
-    font-weight: 800;
-    letter-spacing: 6px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 8px;
     color: var(--accent);
-    text-shadow: 0 0 24px rgba(232, 168, 56, 0.25);
   }
   .sub {
     margin: 4px 0 26px;

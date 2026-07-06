@@ -24,12 +24,10 @@
   }
   .toast {
     background: var(--bg-elevated);
-    border: 1px solid var(--accent-dim);
+    border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
-    border-radius: 6px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     max-width: 320px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   }
   .title {
     font-weight: 600;

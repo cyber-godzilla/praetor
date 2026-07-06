@@ -87,8 +87,6 @@
     flex-direction: column;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
-    border-radius: 10px;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
   }
   .modal.wide {
     width: 720px;
@@ -97,7 +95,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 18px;
+    padding: 8px 12px;
     border-bottom: 1px solid var(--border);
   }
   .mhead-left {
@@ -107,16 +105,19 @@
   }
   .back {
     font-size: 12px;
-    padding: 4px 10px;
+    padding: 2px 8px;
     color: var(--fg-dim);
   }
   .back:hover {
     color: var(--accent);
     border-color: var(--accent);
   }
+  /* Title in the TUI style: uppercase, orange, letter-spaced. */
   .mtitle {
-    font-size: 15px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
     color: var(--accent);
   }
   .x {
@@ -131,11 +132,11 @@
     background: var(--bg-elevated);
   }
   .mbody {
-    padding: 18px;
+    padding: 12px;
     overflow-y: auto;
   }
   .mfoot {
-    padding: 12px 18px;
+    padding: 8px 12px;
     border-top: 1px solid var(--border);
     display: flex;
     justify-content: flex-end;
