@@ -78,7 +78,7 @@
   <div class="groups">
     {#each groups as g (g.name)}
       <div class="group">
-        <div class="gname dim">{g.name}</div>
+        <div class="gname">{g.name}</div>
         <div class="items">
           {#each g.items as it (it.label)}
             <button class="mitem" onclick={() => pick(it)}>{it.label}</button>
@@ -99,6 +99,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
+    color: var(--accent);
     margin-bottom: 6px;
   }
   .items {

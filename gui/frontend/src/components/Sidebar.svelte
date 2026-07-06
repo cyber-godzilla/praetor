@@ -93,7 +93,7 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
-    color: var(--fg-dim);
+    color: var(--accent);
     padding: 6px 10px;
     border-bottom: 1px solid var(--border);
   }

@@ -10,7 +10,11 @@
   --fg: #d8d8e0;
   --fg-dim: #888888; /* TUI colorDim */
   --fg-bright: #ffffff;
-  --accent: #e8a838; /* TUI colorOrange */
+  /* Skotos orange — the primary brand accent, matching the TUI (colorOrange).
+     Used for titles, section headers, active/selected states, panel and modal
+     framing, the prompt, primary buttons, and text selection. */
+  --skotos-orange: #e8a838;
+  --accent: var(--skotos-orange);
   --accent-dim: #9c7220;
   --green: #55cc55; /* TUI colorGreen */
   --red: #cc4444; /* TUI colorRed */
@@ -51,6 +55,11 @@ body {
   height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+::selection {
+  background: var(--accent);
+  color: #000;
 }
 
 button {

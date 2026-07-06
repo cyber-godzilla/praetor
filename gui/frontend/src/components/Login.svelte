@@ -69,7 +69,7 @@
   .card {
     width: 360px;
     background: var(--bg-panel);
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
     border-radius: 10px;
     padding: 32px;
     display: flex;

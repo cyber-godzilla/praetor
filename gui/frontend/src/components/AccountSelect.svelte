@@ -74,7 +74,7 @@
   .card {
     width: 420px;
     background: var(--bg-panel);
-    border: 1px solid var(--border);
+    border: 1px solid var(--accent);
     border-radius: 14px;
     padding: 36px 32px 24px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
