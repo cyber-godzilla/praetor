@@ -74,7 +74,11 @@ body {
    a faint phosphor bloom on text, and a very gentle brightness flicker. All
    layers are non-interactive overlays. */
 body.crt {
-  text-shadow: 0 0 1px rgba(232, 168, 56, 0.18);
+  /* Phosphor bloom: each glyph glows in its own color (currentColor resolves
+     per element), with a faint warm ambient haze on top. */
+  text-shadow:
+    0 0 3px currentColor,
+    0 0 9px rgba(232, 168, 56, 0.1);
 }
 /* Scanline mask + gentle flicker. */
 body.crt::before {
