@@ -1,9 +1,17 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import Modal from "../Modal.svelte";
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
 
   const modes = $derived(["disable", ...(store.modeNames ?? [])]);
+
+  // Pull the current mode list on open so it reflects any scripts loaded/
+  // reloaded since startup, rather than the initial snapshot.
+  onMount(async () => {
+    const names = await api.modeNames();
+    if (names && names.length) store.modeNames = names;
+  });
 
   async function pick(mode: string) {
     try {

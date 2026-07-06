@@ -27,9 +27,10 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
 
-// version defaults to the shared embedded version (internal/version) so the
-// TUI and GUI stay in sync. Overridable via ldflags: -X main.version=v1.0.0
-var version = versioninfo.Version
+// version is set at build time via ldflags (-X main.version=...). A runtime
+// initializer here would clobber the linker value, so it defaults to "" and
+// falls back to the shared embedded version (internal/version) in main().
+var version = ""
 
 // wrapper wraps the App model and intercepts messages to wire them to the Client.
 type wrapper struct {
@@ -653,6 +654,10 @@ func main() {
 	pprofFlag := flag.Bool("pprof", false, "Serve net/http/pprof on localhost:6060 and dump heap+goroutine profiles on exit")
 	pprofAddr := flag.String("pprof-addr", "localhost:6060", "Address for the pprof HTTP server (used with --pprof)")
 	flag.Parse()
+
+	if version == "" {
+		version = versioninfo.Version
+	}
 
 	if *versionFlag {
 		fmt.Printf("praetor %s\n", version)

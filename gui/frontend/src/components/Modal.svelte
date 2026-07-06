@@ -31,14 +31,6 @@
     store.openModal = "menu";
   }
 
-  function onKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    }
-  }
-
   // Move focus into the modal on open so keystrokes don't leak into the (still
   // focused) game input behind the backdrop. Prefer a text field; otherwise
   // focus the dialog container itself (tabindex=-1).
@@ -50,19 +42,11 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
-<!-- Backdrop click and Escape (global handler above) both dismiss the modal. -->
-<!-- svelte-ignore a11y_click_events_have_key_events -->
-<!-- svelte-ignore a11y_no_static_element_interactions -->
-<div
-  class="backdrop"
-  onclick={close}
-  role="presentation"
->
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal" class:wide bind:this={modalEl} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+<!-- The backdrop only dims; it does NOT close on click. Closing is explicit:
+     the ✕ button, the Back button, or Esc (handled once in GameView). This
+     prevents stray outside clicks from dismissing a submenu mid-interaction. -->
+<div class="backdrop" role="presentation">
+  <div class="modal" class:wide bind:this={modalEl} role="dialog" aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}

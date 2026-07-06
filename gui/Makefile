@@ -6,16 +6,16 @@
 # files), so it is always passed — you never have to remember it.
 
 WAILS_TAGS ?= webkit2_41
-# Leave VERSION empty to use the embedded internal/version default (keeps the
-# GUI and TUI in sync). Pass VERSION=v1.2.3 to stamp a release build.
-VERSION    ?=
-LDFLAGS    := $(if $(VERSION),-ldflags "-X main.version=$(VERSION)",)
+# Stamp the same git-describe version the TUI's root Makefile uses, so the two
+# clients always report the same version. Override with VERSION=v1.2.3.
+VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS    := -ldflags "-X main.version=$(VERSION)"
 
 .PHONY: dev build installer deps check clean
 
 ## dev: run the live-reloading Wails dev server
 dev:
-	wails dev -tags "$(WAILS_TAGS)"
+	wails dev -tags "$(WAILS_TAGS)" $(LDFLAGS)
 
 ## build: produce build/bin/praetor
 build:

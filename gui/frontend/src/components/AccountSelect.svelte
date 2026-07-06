@@ -25,9 +25,6 @@
     if (store.accounts.length === 0) store.screen = "login";
   }
 
-  function initials(name: string): string {
-    return name.slice(0, 2).toUpperCase();
-  }
 </script>
 
 <div class="wrap">
@@ -40,7 +37,6 @@
       {#each store.accounts as acct (acct)}
         <div class="acct" class:busy={!!busy}>
           <button class="acct-main" onclick={() => connect(acct)} disabled={!!busy} type="button">
-            <span class="avatar">{initials(acct)}</span>
             <span class="name">{acct}</span>
             {#if busy === acct}
               <span class="state">connecting…</span>
@@ -61,7 +57,7 @@
     <button class="add" onclick={() => (store.screen = "login")} disabled={!!busy} type="button">
       + Add another account
     </button>
-    <div class="ver">v{store.version}</div>
+    <div class="ver">{store.version}</div>
   </div>
 </div>
 
@@ -139,19 +135,6 @@
   }
   .acct-main:active:not(:disabled) {
     transform: translateY(1px);
-  }
-  .avatar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    background: var(--accent-dim);
-    color: var(--fg-bright);
-    font-weight: 700;
-    font-size: 13px;
-    flex-shrink: 0;
   }
   .name {
     flex: 1;

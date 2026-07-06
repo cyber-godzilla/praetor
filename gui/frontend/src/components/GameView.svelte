@@ -36,14 +36,17 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
-    // Let modals own the keyboard when open.
-    if (store.openModal) return;
-
+    // Esc is the single source of truth for open/close, handled in every state
+    // so it stays consistent through opening and closing menus: it closes any
+    // open modal, otherwise opens the menu.
     if (e.key === "Escape") {
       e.preventDefault();
-      store.openModal = "menu";
+      store.openModal = store.openModal ? null : "menu";
       return;
     }
+    // All other shortcuts are inert while a modal owns the keyboard.
+    if (store.openModal) return;
+
     if (e.key === "Tab") {
       e.preventDefault();
       cycleTab(e.shiftKey ? -1 : 1);

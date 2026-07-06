@@ -25,9 +25,10 @@ import (
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-// version defaults to the shared embedded version so the GUI and TUI match.
-// Overridable via ldflags: -X main.version=v1.0.0
-var version = versioninfo.Version
+// version is set at build time via ldflags (-X main.version=...). A runtime
+// initializer would clobber the linker value, so it defaults to "" and falls
+// back to the shared embedded version (internal/version) in main().
+var version = ""
 
 //go:embed all:frontend/dist
 var assets embed.FS
@@ -49,6 +50,10 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable the debug panel and debug logging")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if version == "" {
+		version = versioninfo.Version
+	}
 
 	if *showVersion {
 		fmt.Printf("praetor-gui %s\n", version)
