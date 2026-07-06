@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade } from "svelte/transition";
   import { store } from "../lib/store.svelte";
 
   let { ondismiss }: { ondismiss: () => void } = $props();
 
   let showHint = $state(false);
+  let dismissed = false;
 
   // Pad the version to 6 chars to preserve the art's alignment (as the TUI does).
   const ver = $derived.by(() => {
@@ -32,25 +34,35 @@
   );
 
   function dismiss() {
+    if (dismissed) return;
+    dismissed = true;
     ondismiss();
   }
 
   onMount(() => {
-    const t = setTimeout(() => (showHint = true), 900);
-    return () => clearTimeout(t);
+    const hint = setTimeout(() => (showHint = true), 900);
+    // Auto-advance to login after 5s if the user hasn't dismissed it.
+    const auto = setTimeout(dismiss, 5000);
+    return () => {
+      clearTimeout(hint);
+      clearTimeout(auto);
+    };
   });
 </script>
 
 <svelte:window onkeydown={dismiss} />
 
-<div class="splash" onclick={dismiss} role="presentation">
+<div class="splash" onclick={dismiss} role="presentation" transition:fade={{ duration: 500 }}>
   <pre class="art">{art}</pre>
   <div class="hint" class:visible={showHint}>Press any key to continue</div>
 </div>
 
 <style>
   .splash {
-    flex: 1;
+    /* Fixed overlay so the fade-out reveals the login screen mounting beneath. */
+    position: fixed;
+    inset: 0;
+    z-index: 1500;
     display: flex;
     flex-direction: column;
     align-items: center;

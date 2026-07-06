@@ -50,26 +50,30 @@
       return;
     }
     if (e.altKey) {
-      const k = e.key.toLowerCase();
-      if (k === "s") {
+      // Match on e.code (physical key), not e.key: on macOS, Option+<key>
+      // rewrites e.key to a composed character (Option+I -> "ˆ", Option+1 ->
+      // "¡"), which would break every Alt shortcut. e.code stays "KeyI"/"Digit1".
+      const digit = e.code.match(/^Digit(\d)$/);
+      if (e.code === "KeyS") {
         e.preventDefault();
         store.sidebarOpen = !store.sidebarOpen;
-      } else if (k === "m") {
+      } else if (e.code === "KeyM") {
         e.preventDefault();
         quickCycleMode();
-      } else if (k === "x") {
+      } else if (e.code === "KeyX") {
         e.preventDefault();
         api.setMode("disable", []).catch((err) => store.addToast("Mode error", String(err)));
-      } else if (k === "i") {
+      } else if (e.code === "KeyI") {
         e.preventDefault();
         store.expandAllSuppressed = !store.expandAllSuppressed;
         store.addToast(
           store.expandAllSuppressed ? "Suppressed lines shown" : "Suppressed lines hidden",
           "",
         );
-      } else if (/^[0-9]$/.test(e.key)) {
+      } else if (digit) {
         e.preventDefault();
-        const n = e.key === "0" ? 10 : parseInt(e.key, 10);
+        const d = parseInt(digit[1], 10);
+        const n = d === 0 ? 10 : d;
         const vis = visibleTabs();
         if (n <= vis.length) store.selectTab(store.tabs.indexOf(vis[n - 1]));
       }

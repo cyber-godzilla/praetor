@@ -1,6 +1,9 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
   import { store } from "../lib/store.svelte";
+
+  let modalEl: HTMLDivElement;
 
   let {
     title,
@@ -35,6 +38,16 @@
       close();
     }
   }
+
+  // Move focus into the modal on open so keystrokes don't leak into the (still
+  // focused) game input behind the backdrop. Prefer a text field; otherwise
+  // focus the dialog container itself (tabindex=-1).
+  onMount(() => {
+    const field = modalEl?.querySelector<HTMLElement>(
+      '.mbody input[type="text"], .mbody input[type="password"], .mbody input[type="number"], .mbody textarea',
+    );
+    (field ?? modalEl)?.focus();
+  });
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -49,7 +62,7 @@
 >
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="modal" class:wide onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="modal" class:wide bind:this={modalEl} onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}
