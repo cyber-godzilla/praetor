@@ -19,12 +19,14 @@
   }
 
   // Auto-scroll to bottom when new lines arrive and the user is already there.
+  // Runs after layout (rAF) so scrollHeight reflects the newly appended block —
+  // important for large multi-line bursts (room/status blocks).
   $effect(() => {
     // Touch length so the effect re-runs on append.
     void tab.lines.length;
     if (atBottom && viewport) {
-      queueMicrotask(() => {
-        viewport.scrollTop = viewport.scrollHeight;
+      requestAnimationFrame(() => {
+        if (viewport) viewport.scrollTop = viewport.scrollHeight;
       });
     }
   });
@@ -120,11 +122,6 @@
     white-space: pre-wrap;
     word-break: break-word;
     min-height: 1.4em;
-    /* Virtualization: the browser skips layout/paint for off-screen lines,
-       keeping long scrollback (thousands of lines) smooth without a manual
-       windowing implementation. */
-    content-visibility: auto;
-    contain-intrinsic-size: auto 1.4em;
   }
   .line.echo {
     color: var(--fg-dim);

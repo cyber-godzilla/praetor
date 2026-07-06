@@ -16,41 +16,23 @@ import (
 // minimap and compass to PNG data URIs for the frontend. All access is
 // serialized because SKOOT updates arrive from the client event goroutine
 // while the frontend may request a re-render (e.g. on resize).
-// compassBaseW is the compass render width at scale 1.0. Rendered larger than
-// it typically displays so CSS downscaling stays crisp; the scale multiplier
-// lets the user grow it further.
-const compassBaseW = 200
+// compassRenderW yields a square compass image. compass.BuildImage sets
+// imgW = width*5 and imgH = Rows*10 (= 70), so width = 14 gives a balanced
+// 70x70 render. The compass image's on-screen size is controlled entirely by
+// the frontend (CSS, from the user's compass scale) — the render size is fixed,
+// because BuildImage's width only changes horizontal spread, not overall size.
+const compassRenderW = 14
 
 type renderer struct {
-	mu           sync.Mutex
-	mini         minimap.Minimap
-	haveExits    bool
-	exits        types.Exits
-	compassScale float64
+	mu        sync.Mutex
+	mini      minimap.Minimap
+	haveExits bool
+	exits     types.Exits
 }
 
 func newRenderer() *renderer {
 	return &renderer{
-		mini:         minimap.NewMinimap(),
-		compassScale: 1.0,
-	}
-}
-
-// compassWidth returns the current compass render width in pixels.
-func (r *renderer) compassWidth() int {
-	w := int(float64(compassBaseW) * r.compassScale)
-	if w < 60 {
-		w = 60
-	}
-	return w
-}
-
-// setCompassScale adjusts the compass render scale.
-func (r *renderer) setCompassScale(s float64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if s > 0 {
-		r.compassScale = s
+		mini: minimap.NewMinimap(),
 	}
 }
 
@@ -69,7 +51,7 @@ func (r *renderer) updateExits(exits types.Exits) *ImagePayload {
 	defer r.mu.Unlock()
 	r.haveExits = true
 	r.exits = exits
-	return encodeImage(compass.BuildImage(exits, r.compassWidth()))
+	return encodeImage(compass.BuildImage(exits, compassRenderW))
 }
 
 // setScale adjusts the minimap scale (from config / UI).

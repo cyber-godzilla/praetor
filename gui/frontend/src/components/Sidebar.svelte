@@ -1,5 +1,9 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
+
+  // Compass on-screen size scales with the user's compass scale (bigger scale =
+  // bigger). Base 120px at scale 1.0; capped to the panel width by max-width.
+  const compassPx = $derived(Math.round(120 * (store.config?.UI?.CompassScale ?? 1)));
 </script>
 
 <div class="sidebar">
@@ -18,7 +22,7 @@
     <div class="phead">Exits</div>
     <div class="compassbox">
       {#if store.compass}
-        <img src={store.compass} alt="compass" />
+        <img src={store.compass} alt="compass" style="width:{compassPx}px" />
       {:else}
         <div class="empty dim">—</div>
       {/if}
@@ -80,7 +84,7 @@
   }
   .compassbox img {
     max-width: 100%;
-    width: 100%;
+    height: auto;
     image-rendering: auto;
   }
   .empty {
