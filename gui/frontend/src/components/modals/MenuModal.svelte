@@ -23,6 +23,7 @@
     {
       name: "Automation",
       items: [
+        { label: "Switch Mode", go: "modeselect" },
         { label: "Script Directories", go: "scripts" },
         { label: "Quick-Cycle Modes", go: "quickcycle" },
         { label: "High-Priority Commands", go: "priority" },

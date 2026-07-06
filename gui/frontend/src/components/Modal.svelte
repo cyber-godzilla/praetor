@@ -31,10 +31,14 @@
     store.openModal = "menu";
   }
 
-  // Move focus into the modal on open so keystrokes don't leak into the (still
-  // focused) game input behind the backdrop. Prefer a text field; otherwise
-  // focus the dialog container itself (tabindex=-1).
   onMount(() => {
+    // Tell the single Esc handler (in GameView) where Esc should go from this
+    // modal: back to the menu for submenus, or fully closed otherwise.
+    store.modalEscapeTarget = back ? "menu" : null;
+
+    // Move focus into the modal on open so keystrokes don't leak into the (still
+    // focused) game input behind the backdrop. Prefer a text field; otherwise
+    // focus the dialog container itself (tabindex=-1).
     const field = modalEl?.querySelector<HTMLElement>(
       '.mbody input[type="text"], .mbody input[type="password"], .mbody input[type="number"], .mbody textarea',
     );

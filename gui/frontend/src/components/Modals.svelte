@@ -12,6 +12,7 @@
   import PersistentDataModal from "./modals/PersistentDataModal.svelte";
   import HelpModal from "./modals/HelpModal.svelte";
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
+  import QuickCycleModal from "./modals/QuickCycleModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -58,12 +59,7 @@
     onsave={(v) => api.setHighPriority(v)}
   />
 {:else if m === "quickcycle"}
-  <StringListModal
-    title="Quick-cycle modes (Alt+M)"
-    hint="Mode names cycled by Alt+M. Available: {(store.modeNames ?? []).join(', ') || 'none loaded'}"
-    initial={store.config?.UI?.QuickCycleModes ?? []}
-    onsave={(v) => api.setQuickCycleModes(v)}
-  />
+  <QuickCycleModal />
 {:else if m === "notifications"}
   <NotificationsModal />
 {:else if m === "kudos" || m === "kudos-login"}

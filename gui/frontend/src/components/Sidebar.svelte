@@ -7,6 +7,13 @@
 </script>
 
 <div class="sidebar">
+  <button class="modebtn" onclick={() => (store.openModal = "modeselect")} title="Switch mode">
+    <span class="dim">Mode</span>
+    <span class="modeval" class:on={!!store.mode && store.mode !== "disable"}>
+      {store.mode && store.mode !== "disable" ? store.mode : "disable"}
+    </span>
+  </button>
+
   <div class="panel map">
     <div class="phead">Map</div>
     <div class="mapbox">
@@ -55,6 +62,26 @@
     gap: 10px;
     padding: 10px;
     overflow-y: auto;
+  }
+  .modebtn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .modebtn:hover {
+    border-color: var(--accent);
+  }
+  .modeval {
+    font-family: var(--mono);
+    color: var(--fg-dim);
+  }
+  .modeval.on {
+    color: var(--accent);
   }
   .panel {
     background: var(--bg);

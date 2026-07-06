@@ -41,7 +41,10 @@
     // open modal, otherwise opens the menu.
     if (e.key === "Escape") {
       e.preventDefault();
-      store.openModal = store.openModal ? null : "menu";
+      // From a submenu, Esc goes back to the menu (modalEscapeTarget = "menu");
+      // from the menu or a standalone modal it closes; with nothing open it
+      // opens the menu.
+      store.openModal = store.openModal ? store.modalEscapeTarget : "menu";
       return;
     }
     // All other shortcuts are inert while a modal owns the keyboard.

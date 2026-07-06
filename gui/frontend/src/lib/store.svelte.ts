@@ -127,6 +127,9 @@ class AppStore {
   inputPrefill = $state("");
   // Global reveal of all suppressed lines (Alt+I), complementing per-line click.
   expandAllSuppressed = $state(false);
+  // Where Esc goes from the currently-open modal: "menu" for submenus (with a
+  // Back button), null to close entirely. Set by the active Modal on mount.
+  modalEscapeTarget = $state<string | null>(null);
 
   private nextLineId = 1;
   private nextToastId = 1;
