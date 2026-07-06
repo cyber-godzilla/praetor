@@ -47,9 +47,6 @@ ui:
 	if cfg.Server.Port != 9090 {
 		t.Errorf("Server.Port = %d, want 9090", cfg.Server.Port)
 	}
-	if cfg.Reconnect.MaxDelay.String() != "30s" {
-		t.Errorf("Reconnect.MaxDelay = %v, want 30s", cfg.Reconnect.MaxDelay)
-	}
 	if cfg.Commands.DefaultDelay.String() != "800ms" {
 		t.Errorf("Commands.DefaultDelay = %v, want 800ms", cfg.Commands.DefaultDelay)
 	}
@@ -165,7 +162,6 @@ func TestValidate_ClampsValues(t *testing.T) {
 	cfg.Commands.MaxQueueSize = 0
 	cfg.Logging.App.Level = "bogus"
 	cfg.Logging.App.MaxSizeMB = 0
-	cfg.Reconnect.BackoffMultiplier = 0
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error: %v", err)
@@ -197,9 +193,6 @@ func TestValidate_ClampsValues(t *testing.T) {
 	}
 	if cfg.Logging.App.MaxSizeMB != 5 {
 		t.Errorf("MaxSizeMB = %d, want 5", cfg.Logging.App.MaxSizeMB)
-	}
-	if cfg.Reconnect.BackoffMultiplier != 2 {
-		t.Errorf("BackoffMultiplier = %d, want 2", cfg.Reconnect.BackoffMultiplier)
 	}
 }
 

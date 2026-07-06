@@ -283,9 +283,6 @@ func (a *GuiApp) RemoveAccount(username string) error {
 	return a.deps.Creds.RemoveAccount(username)
 }
 
-// Reconnect forces a fresh reconnect (equivalent to refreshing Orchil).
-func (a *GuiApp) Reconnect() { a.client().Reconnect() }
-
 // ---------------------------------------------------------------------------
 // Input & modes
 // ---------------------------------------------------------------------------

@@ -34,12 +34,6 @@ func (a *GuiApp) SetColorWords(v bool) error {
 	return a.save()
 }
 
-// SetAutoReconnect toggles automatic reconnection.
-func (a *GuiApp) SetAutoReconnect(v bool) error {
-	a.cfg().Reconnect.Enabled = v
-	return a.save()
-}
-
 // SetHideIPs toggles IP masking in game text.
 func (a *GuiApp) SetHideIPs(v bool) error {
 	a.cfg().UI.HideIPs = v

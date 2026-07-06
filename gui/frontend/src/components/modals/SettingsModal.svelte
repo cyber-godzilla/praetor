@@ -47,11 +47,6 @@
           onchange={() => toggle(() => ui!.HideIPs, api.setHideIPs, (v) => (store.config!.UI.HideIPs = v))} />
       </label>
       <label class="t">
-        <span>Auto-reconnect</span>
-        <input type="checkbox" checked={store.config.Reconnect.Enabled}
-          onchange={() => toggle(() => store.config!.Reconnect.Enabled, api.setAutoReconnect, (v) => (store.config!.Reconnect.Enabled = v))} />
-      </label>
-      <label class="t">
         <span>Session transcript logging</span>
         <input type="checkbox" checked={store.config.Logging.Session.Enabled}
           onchange={() => toggle(() => store.config!.Logging.Session.Enabled, api.setSessionLogging, (v) => (store.config!.Logging.Session.Enabled = v))} />

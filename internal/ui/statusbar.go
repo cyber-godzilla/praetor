@@ -3,22 +3,18 @@ package ui
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
 
 // StatusBar displays connection status, mode, and vitals in a single line.
 type StatusBar struct {
-	mode         string
-	health       int
-	fatigue      int
-	encumbrance  int
-	connected    bool
-	reconnecting bool
-	attempt      int
-	nextDelay    time.Duration
-	width        int
+	mode        string
+	health      int
+	fatigue     int
+	encumbrance int
+	connected   bool
+	width       int
 }
 
 // NewStatusBar creates a new StatusBar.
@@ -56,17 +52,6 @@ func (s *StatusBar) UpdateVitals(health, fatigue, encumbrance *int) {
 // SetConnected sets the connection status.
 func (s *StatusBar) SetConnected(connected bool) {
 	s.connected = connected
-	if connected {
-		s.reconnecting = false
-	}
-}
-
-// SetReconnecting marks the status bar as reconnecting.
-func (s *StatusBar) SetReconnecting(attempt int, nextDelay time.Duration) {
-	s.reconnecting = true
-	s.connected = false
-	s.attempt = attempt
-	s.nextDelay = nextDelay
 }
 
 // View renders the status bar.
@@ -85,9 +70,6 @@ func (s StatusBar) View() string {
 	switch {
 	case s.connected:
 		connStr = lipgloss.NewStyle().Foreground(colorGreen).Render("Connected ●")
-	case s.reconnecting:
-		connStr = lipgloss.NewStyle().Foreground(colorOrange).Render(
-			fmt.Sprintf("Reconnecting (%d, %s) ◌", s.attempt, s.nextDelay.Round(time.Second)))
 	default:
 		connStr = lipgloss.NewStyle().Foreground(colorRed).Render("Disconnected ○")
 	}

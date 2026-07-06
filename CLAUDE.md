@@ -23,7 +23,7 @@ praetor/
 │   ├── logging/                     # Structured logging with rotation
 │   ├── minimap/                     # Minimap renderer (Kitty graphics)
 │   ├── protocol/                    # Line buffer, SKOOT parsing, HTML parsing
-│   ├── session/                     # WebSocket, HTTP auth, keyring (multi-account), reconnection
+│   ├── session/                     # WebSocket, HTTP auth, keyring (multi-account)
 │   ├── types/                       # Shared event types
 │   └── ui/                          # Bubbletea TUI components
 ├── Makefile                         # make test, make build, make run, make vet, make fmt, make lint, make check
@@ -191,11 +191,6 @@ server:
   port: 8080
   protocol: ws
   login_url: https://login.eternalcitygame.com/login.php
-reconnect:
-  enabled: true
-  initial_delay: 1s
-  max_delay: 60s
-  backoff_multiplier: 2
 scripts:
   - ~/.config/praetor/scripts
 commands:
@@ -241,7 +236,7 @@ logging:
 Tests across the project:
 - `internal/engine/` — unit tests covering Lua VM, pattern matching, command queue, timers, metrics, persistent state
 - `internal/protocol/` — SKOOT parsing, HTML parsing
-- `internal/session/` — WebSocket, auth, keyring, reconnection
+- `internal/session/` — WebSocket, auth, keyring
 - `internal/config/` — YAML loading with defaults
 - `internal/colorwords/` — color word detection, adjectives, suffixes, plurals, rainbow
 - `internal/client/` — session logging
@@ -249,6 +244,5 @@ Tests across the project:
 
 ## Known Limitations
 
-- Reconnection UI feedback is limited to status bar text
 - Text selection requires hiding the sidebar (Alt+S) or holding Shift
 - Lighting level strings are approximate (tuning in progress)

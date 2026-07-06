@@ -152,10 +152,8 @@ type BarsPayload struct {
 
 // ConnPayload describes a connection state transition.
 type ConnPayload struct {
-	State     string `json:"state"` // "connected", "disconnected", "reconnecting"
-	Reason    string `json:"reason,omitempty"`
-	Attempt   int    `json:"attempt,omitempty"`
-	NextDelay int64  `json:"nextDelayMs,omitempty"`
+	State  string `json:"state"` // "connected" or "disconnected"
+	Reason string `json:"reason,omitempty"`
 }
 
 // NotifyPayload mirrors a desktop notification.

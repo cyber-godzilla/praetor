@@ -33,7 +33,6 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
-	Reconnect     ReconnectConfig     `yaml:"reconnect"`
 	Commands      CommandsConfig      `yaml:"commands"`
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
@@ -49,13 +48,6 @@ type ServerConfig struct {
 	Port     int    `yaml:"port"`
 	Protocol string `yaml:"protocol"`
 	LoginURL string `yaml:"login_url"`
-}
-
-type ReconnectConfig struct {
-	Enabled           bool     `yaml:"enabled"`
-	InitialDelay      Duration `yaml:"initial_delay"`
-	MaxDelay          Duration `yaml:"max_delay"`
-	BackoffMultiplier int      `yaml:"backoff_multiplier"`
 }
 
 type CommandsConfig struct {
@@ -231,12 +223,6 @@ func Defaults() *Config {
 			Protocol: "ws",
 			LoginURL: "https://login.eternalcitygame.com/login.php",
 		},
-		Reconnect: ReconnectConfig{
-			Enabled:           true,
-			InitialDelay:      Duration{1 * time.Second},
-			MaxDelay:          Duration{60 * time.Second},
-			BackoffMultiplier: 2,
-		},
 		Commands: CommandsConfig{
 			DefaultDelay: Duration{1000 * time.Millisecond},
 			MinInterval:  Duration{500 * time.Millisecond},
@@ -397,11 +383,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.LoginURL == "" {
 		return fmt.Errorf("server.login_url is required")
-	}
-
-	// Reconnect
-	if c.Reconnect.BackoffMultiplier < 1 {
-		c.Reconnect.BackoffMultiplier = 2
 	}
 
 	// Commands

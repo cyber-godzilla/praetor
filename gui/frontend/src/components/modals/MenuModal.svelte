@@ -49,9 +49,8 @@
       ],
     },
     {
-      name: "Connection",
+      name: "Session",
       items: [
-        { label: "Reconnect", action: () => { api.reconnect(); store.openModal = null; } },
         { label: "Quit", action: () => window.runtime?.Quit() },
       ],
     },

@@ -58,7 +58,6 @@ export const connectNew = (u: string, p: string, store: boolean) =>
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
 export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
-export const reconnect = () => call<void>("Reconnect", undefined);
 
 // ---- Input / modes ----
 export const send = (input: string) => call<void>("Send", undefined, input);
@@ -75,7 +74,6 @@ export const refreshGraphics = () => call<void>("RefreshGraphics", undefined);
 export const setEchoTyped = (v: boolean) => call<void>("SetEchoTyped", undefined, v);
 export const setEchoScript = (v: boolean) => call<void>("SetEchoScript", undefined, v);
 export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefined, v);
-export const setAutoReconnect = (v: boolean) => call<void>("SetAutoReconnect", undefined, v);
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);

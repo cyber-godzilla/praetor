@@ -39,7 +39,6 @@ func TestToWire_ConnStates(t *testing.T) {
 	}{
 		{types.ConnectedEvent{}, "connected"},
 		{types.DisconnectedEvent{Reason: "closed"}, "disconnected"},
-		{types.ReconnectingEvent{Attempt: 3, NextDelay: 2 * time.Second}, "reconnecting"},
 	}
 	for _, c := range cases {
 		w, ok := toWire(c.ev)

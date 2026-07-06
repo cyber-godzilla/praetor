@@ -44,8 +44,6 @@
     switch (store.connState) {
       case "connected":
         return { text: "Connected ●", cls: "ok" };
-      case "reconnecting":
-        return { text: `Reconnecting (${store.reconnectAttempt}) ◌`, cls: "warn" };
       default:
         return { text: (store.connReason || "Disconnected") + " ○", cls: "bad" };
     }

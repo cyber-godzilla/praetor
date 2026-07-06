@@ -20,7 +20,6 @@
     ["/calc, /rb", "Rank-bonus calculator"],
     ["/wiki [name]", "Open a wiki bookmark"],
     ["/maps [name]", "Open a map bookmark"],
-    ["/reconnect", "Reconnect to the server"],
   ];
 </script>
 

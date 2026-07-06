@@ -109,9 +109,8 @@ class AppStore {
   status = $state<StatusPayload | null>(null);
 
   // Connection
-  connState = $state<"connected" | "disconnected" | "reconnecting">("disconnected");
+  connState = $state<"connected" | "disconnected">("disconnected");
   connReason = $state("");
-  reconnectAttempt = $state(0);
 
   // Graphics
   minimap = $state<string>("");
@@ -252,7 +251,6 @@ class AppStore {
   private applyConn(c: ConnPayload) {
     this.connState = c.state;
     this.connReason = c.reason ?? "";
-    this.reconnectAttempt = c.attempt ?? 0;
     // The authoritative signal that we're in-game: the socket connected.
     if (c.state === "connected") this.screen = "game";
   }

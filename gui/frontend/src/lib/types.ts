@@ -84,10 +84,8 @@ export interface BarsPayload {
 }
 
 export interface ConnPayload {
-  state: "connected" | "disconnected" | "reconnecting";
+  state: "connected" | "disconnected";
   reason?: string;
-  attempt?: number;
-  nextDelayMs?: number;
 }
 
 export interface NotifyPayload {
@@ -196,7 +194,6 @@ export interface UIConfig {
 
 export interface AppConfig {
   Server: Record<string, unknown>;
-  Reconnect: { Enabled: boolean; [k: string]: unknown };
   Commands: { HighPriority: string[] | null; [k: string]: unknown };
   Scripts: string[] | null;
   UI: UIConfig;

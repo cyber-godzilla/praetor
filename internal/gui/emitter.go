@@ -86,13 +86,6 @@ func toWire(ev types.Event) (WireEvent, bool) {
 	case types.DisconnectedEvent:
 		return WireEvent{Kind: KindConn, Conn: &ConnPayload{State: "disconnected", Reason: e.Reason}}, true
 
-	case types.ReconnectingEvent:
-		return WireEvent{Kind: KindConn, Conn: &ConnPayload{
-			State:     "reconnecting",
-			Attempt:   e.Attempt,
-			NextDelay: e.NextDelay.Milliseconds(),
-		}}, true
-
 	case types.NotificationEvent:
 		return WireEvent{Kind: KindNotify, Notify: &NotifyPayload{Title: e.Title, Message: e.Message}}, true
 
