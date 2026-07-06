@@ -32,7 +32,7 @@
     <div class="brand">PRAETOR</div>
     <p class="sub">The Eternal City</p>
 
-    <div class="section-label">Choose a character</div>
+    <div class="section-label">Choose an account</div>
     <div class="accounts">
       {#each store.accounts as acct (acct)}
         <div class="acct" class:busy={!!busy}>
