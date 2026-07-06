@@ -68,6 +68,18 @@ body {
   flex-direction: column;
 }
 
+/* Subtle CRT scanlines over the whole screen — leans into the terminal look
+   without hurting legibility. Kept faint (~7%); purely decorative. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.07) 50%);
+  background-size: 100% 3px;
+}
+
 ::selection {
   background: var(--accent);
   color: #000;
@@ -119,6 +131,7 @@ select {
   border: 1px solid var(--border);
   padding: 5px 8px;
   outline: none;
+  caret-color: var(--accent); /* orange terminal caret */
 }
 input:focus,
 select:focus {

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
 
+  const WIDTH = 10; // characters per bar
+
   interface Bar {
     label: string;
     value: number | null;
@@ -10,13 +12,16 @@
     { label: "HP", value: store.health },
     { label: "FT", value: store.fatigue },
     { label: "EN", value: store.encumbrance },
-    { label: "SAT", value: store.satiation },
+    { label: "SA", value: store.satiation },
   ]);
 
-  function pct(v: number | null): number {
+  function filledCount(v: number | null): number {
     if (v == null) return 0;
-    return Math.max(0, Math.min(100, v));
+    const pct = Math.max(0, Math.min(100, v));
+    return Math.round((pct / 100) * WIDTH);
   }
+  const block = (n: number) => "█".repeat(n);
+  const dots = (n: number) => "░".repeat(n);
 
   // vitalColor mirrors internal/ui/statusbar.go: >50 green, >25 orange, else red.
   function vitalColor(v: number | null): string {
@@ -40,82 +45,68 @@
     return { text: "Pitch Black", color: "var(--light-pitchblack)" };
   });
 
-  const connLabel = $derived.by(() => {
-    switch (store.connState) {
-      case "connected":
-        return { text: "Connected ●", cls: "ok" };
-      default:
-        return { text: (store.connReason || "Disconnected") + " ○", cls: "bad" };
-    }
-  });
+  const conn = $derived(
+    store.connState === "connected"
+      ? { text: "● CONNECTED", cls: "ok" }
+      : { text: "○ " + (store.connReason || "DISCONNECTED").toUpperCase(), cls: "bad" },
+  );
 </script>
 
 <div class="statusbar">
   <div class="bars">
     {#each bars as b (b.label)}
-      <div class="bar" title={b.label}>
+      <span class="bar" title={b.label}>
         <span class="lbl">{b.label}</span>
-        <div class="track">
-          <div class="fill" style="width:{pct(b.value)}%;background:{vitalColor(b.value)}"></div>
-        </div>
-        <span class="num" style="color:{vitalColor(b.value)}">{b.value ?? "–"}</span>
-      </div>
+        <span class="bracket">[</span><span
+          style="color:{vitalColor(b.value)}">{block(filledCount(b.value))}</span><span
+          class="empty">{dots(WIDTH - filledCount(b.value))}</span><span class="bracket">]</span>
+        <span class="num" style="color:{vitalColor(b.value)}">{b.value ?? "—"}</span>
+      </span>
     {/each}
   </div>
   {#if lighting}
-    <div class="lighting" style="color:{lighting.color}" title="Lighting">☀ {lighting.text}</div>
+    <span class="lighting" style="color:{lighting.color}" title="Lighting">☀ {lighting.text}</span>
   {/if}
-  <div class="spacer"></div>
-  <div class="conn {connLabel.cls}">{connLabel.text}</div>
+  <span class="spacer"></span>
+  <span class="conn {conn.cls}">{conn.text}</span>
 </div>
 
 <style>
   .statusbar {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 6px 12px;
-    background: var(--bg-elevated);
+    gap: 18px;
+    padding: 4px 10px;
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
     font-size: 12px;
+    white-space: nowrap;
   }
   .bars {
     display: flex;
-    gap: 14px;
+    gap: 16px;
   }
   .bar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    letter-spacing: -0.5px;
   }
   .lbl {
     color: var(--fg-dim);
-    width: 26px;
+    margin-right: 4px;
   }
-  .track {
-    width: 80px;
-    height: 8px;
-    background: var(--bar-empty);
-    border-radius: 4px;
-    overflow: hidden;
+  .bracket {
+    color: var(--fg-dim);
   }
-  .fill {
-    height: 100%;
-    transition: width 0.25s ease, background 0.25s ease;
+  .empty {
+    color: var(--bar-empty);
   }
   .num {
-    width: 26px;
-    text-align: right;
-    font-family: var(--mono);
+    margin-left: 4px;
   }
   .lighting {
-    font-family: var(--mono);
+    color: var(--fg-dim);
   }
   .conn.ok {
     color: var(--green);
-  }
-  .conn.warn {
-    color: var(--accent);
   }
   .conn.bad {
     color: var(--red);
