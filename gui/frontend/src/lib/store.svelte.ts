@@ -39,6 +39,7 @@ export interface Tab {
   rules: CompiledRule[];
   echoCommands: boolean;
   lines: Line[];
+  unread: boolean;
 }
 
 export interface Toast {
@@ -124,6 +125,8 @@ class AppStore {
   loginUser = $state("");
   // Set to push text into the input line (e.g. kudos favorite prefill).
   inputPrefill = $state("");
+  // Global reveal of all suppressed lines (Alt+I), complementing per-line click.
+  expandAllSuppressed = $state(false);
 
   private nextLineId = 1;
   private nextToastId = 1;
@@ -144,6 +147,7 @@ class AppStore {
       rules: [],
       echoCommands: true,
       lines: prev.get("All") ?? [],
+      unread: false,
     });
     for (const ct of customTabs ?? []) {
       tabs.push({
@@ -157,31 +161,37 @@ class AppStore {
           active: r.Active,
         })),
         lines: prev.get(ct.Name) ?? [],
+        unread: false,
       });
     }
-    tabs.push({ name: "Metrics", kind: "metrics", visible: true, rules: [], echoCommands: false, lines: [] });
-    tabs.push({ name: "Debug", kind: "debug", visible: this.debug, rules: [], echoCommands: false, lines: [] });
+    tabs.push({ name: "Metrics", kind: "metrics", visible: true, rules: [], echoCommands: false, lines: [], unread: false });
+    tabs.push({ name: "Debug", kind: "debug", visible: this.debug, rules: [], echoCommands: false, lines: [], unread: false });
     this.tabs = tabs;
     if (this.activeTab >= tabs.length) this.activeTab = 0;
   }
 
-  private appendLine(tab: Tab, line: Line) {
+  // appendLine adds a line to a tab, caps scrollback, and marks the tab unread
+  // when it is not the active tab (only for lines that "count" — non-blank
+  // text, mirroring the TUI's unread rule).
+  private appendLine(tab: Tab, line: Line, marksUnread = false) {
     tab.lines.push(line);
     const cap = this.scrollback;
     if (cap > 0 && tab.lines.length > cap) {
       tab.lines.splice(0, tab.lines.length - cap);
     }
+    if (marksUnread && this.tabs[this.activeTab] !== tab) tab.unread = true;
   }
 
   private ingestText(p: TextPayload) {
     const line: Line = { id: this.nextLineId++, segments: p.segments ?? [], isEcho: !!p.isEcho };
+    const mark = (p.text ?? "").trim() !== "";
     for (const tab of this.tabs) {
       if (tab.kind === "all") {
-        this.appendLine(tab, line);
+        this.appendLine(tab, line, mark);
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
         if (line.isEcho && !tab.echoCommands && isExcludeOnly(tab.rules)) continue;
-        if (matchesTab(p.text, tab.rules)) this.appendLine(tab, line);
+        if (matchesTab(p.text, tab.rules)) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -193,12 +203,13 @@ class AppStore {
       isEcho: false,
       suppressed: { placeholder: p.placeholderStyled ?? [], original: p.originalStyled ?? [], revealed: false },
     };
+    const mark = (p.originalText ?? "").trim() !== "";
     for (const tab of this.tabs) {
       if (tab.kind === "all") {
-        this.appendLine(tab, line);
+        this.appendLine(tab, line, mark);
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
-        if (matchesTab(p.originalText, tab.rules)) this.appendLine(tab, line);
+        if (matchesTab(p.originalText, tab.rules)) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -214,7 +225,14 @@ class AppStore {
         { text: payload, color: "#8a8a99" },
       ],
     };
-    this.appendLine(tab, line);
+    this.appendLine(tab, line, true);
+  }
+
+  // selectTab switches the active tab and clears its unread marker.
+  selectTab(index: number) {
+    if (index < 0 || index >= this.tabs.length) return;
+    this.activeTab = index;
+    this.tabs[index].unread = false;
   }
 
   private applyBars(b: BarsPayload) {

@@ -7,6 +7,29 @@
   let history: string[] = [];
   let histIdx = $state(-1); // -1 = current (not navigating)
 
+  async function handleKudos(rest: string) {
+    if (rest === "") {
+      store.openModal = "kudos";
+      return;
+    }
+    const m = rest.match(/^(\S+)(?:\s+(.*))?$/);
+    if (!m) return;
+    const name = m[1];
+    const msg = (m[2] ?? "").trim();
+    try {
+      if (msg === "") {
+        const added = await api.addKudosFavorite(name);
+        store.addToast("Kudos", added ? `Added ${name} to favorites.` : `${name} is already a favorite.`);
+      } else {
+        await api.addKudosQueue(name, msg);
+        store.addToast("Kudos", `Queued kudos for ${name}.`);
+      }
+      if (store.config) store.config.Kudos = await api.getKudos();
+    } catch (e) {
+      store.addToast("Kudos error", String(e));
+    }
+  }
+
   function pushHistory(line: string) {
     if (line.trim() !== "") {
       history.push(line);
@@ -30,6 +53,13 @@
     if (lower === "/list") {
       const modes = store.modeNames ?? [];
       store.addToast("Available modes", modes.length ? modes.join(", ") : "no modes loaded");
+      pushHistory(line);
+      return;
+    }
+    // /kudos family (open menu / add favorite / queue) — handled here because
+    // the shared core does not interpret /kudos (it's a UI concern).
+    if (lower === "/kudos" || lower.startsWith("/kudos ") || lower.startsWith("/kudos\t")) {
+      await handleKudos(trimmed.slice("/kudos".length).trim());
       pushHistory(line);
       return;
     }

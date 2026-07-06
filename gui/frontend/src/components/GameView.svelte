@@ -19,7 +19,7 @@
     let idx = vis.indexOf(cur);
     if (idx < 0) idx = 0;
     idx = (idx + dir + vis.length) % vis.length;
-    store.activeTab = store.tabs.indexOf(vis[idx]);
+    store.selectTab(store.tabs.indexOf(vis[idx]));
   }
 
   async function quickCycleMode() {
@@ -60,11 +60,18 @@
       } else if (k === "x") {
         e.preventDefault();
         api.setMode("disable", []).catch((err) => store.addToast("Mode error", String(err)));
+      } else if (k === "i") {
+        e.preventDefault();
+        store.expandAllSuppressed = !store.expandAllSuppressed;
+        store.addToast(
+          store.expandAllSuppressed ? "Suppressed lines shown" : "Suppressed lines hidden",
+          "",
+        );
       } else if (/^[0-9]$/.test(e.key)) {
         e.preventDefault();
         const n = e.key === "0" ? 10 : parseInt(e.key, 10);
         const vis = visibleTabs();
-        if (n <= vis.length) store.activeTab = store.tabs.indexOf(vis[n - 1]);
+        if (n <= vis.length) store.selectTab(store.tabs.indexOf(vis[n - 1]));
       }
     }
   }

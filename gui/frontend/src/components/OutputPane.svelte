@@ -53,9 +53,22 @@
 
   function segsFor(line: Line): Segment[] {
     if (line.suppressed) {
-      return line.suppressed.revealed ? line.suppressed.original : line.suppressed.placeholder;
+      const showOrig = line.suppressed.revealed || store.expandAllSuppressed;
+      return showOrig ? line.suppressed.original : line.suppressed.placeholder;
     }
     return line.segments;
+  }
+
+  // PgUp/PgDn scroll the pane by ~85% of a page (mirrors the TUI). Home/End are
+  // left to the input line for cursor movement.
+  function onWindowKey(e: KeyboardEvent) {
+    if (store.openModal || !viewport) return;
+    if (e.key === "PageUp" || e.key === "PageDown") {
+      e.preventDefault();
+      const dir = e.key === "PageUp" ? -1 : 1;
+      viewport.scrollBy({ top: viewport.clientHeight * 0.85 * dir });
+      onScroll();
+    }
   }
 
   function isBlank(line: Line): boolean {
@@ -63,6 +76,8 @@
     return s.length === 0 || (s.length === 1 && s[0].text === "" && !s[0].isHR);
   }
 </script>
+
+<svelte:window onkeydown={onWindowKey} />
 
 <div class="pane" bind:this={viewport} onscroll={onScroll}>
   {#each tab.lines as line (line.id)}

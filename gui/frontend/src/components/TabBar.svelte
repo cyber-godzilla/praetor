@@ -4,7 +4,7 @@
   const tabs = $derived(store.tabs.filter((t) => t.visible));
 
   function select(name: string) {
-    store.activeTab = store.tabs.findIndex((t) => t.name === name);
+    store.selectTab(store.tabs.findIndex((t) => t.name === name));
   }
 </script>
 
@@ -16,6 +16,9 @@
       onclick={() => select(tab.name)}
     >
       {tab.name}
+      {#if tab.unread && store.tabs[store.activeTab]?.name !== tab.name}
+        <span class="unread" title="New activity">●</span>
+      {/if}
     </button>
   {/each}
   <div class="spacer"></div>
@@ -48,6 +51,12 @@
   .tab.active {
     color: var(--accent);
     border-bottom-color: var(--accent);
+  }
+  .unread {
+    color: var(--accent);
+    font-size: 8px;
+    vertical-align: middle;
+    margin-left: 5px;
   }
   .menu-btn {
     font-size: 16px;
