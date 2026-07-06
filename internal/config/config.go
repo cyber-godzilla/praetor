@@ -194,6 +194,7 @@ type UIConfig struct {
 	MinimapHeight   int               `yaml:"minimap_height"`
 	CompassScale    float64           `yaml:"compass_scale"`
 	OutputFontSize  int               `yaml:"output_font_size"`
+	RetroMode       bool              `yaml:"retro_mode"`
 	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
 	ColorWords      bool              `yaml:"color_words"`
 	EchoTyped       bool              `yaml:"echo_typed_commands"`
@@ -239,6 +240,7 @@ func Defaults() *Config {
 			MinimapHeight:   12,
 			CompassScale:    1.0,
 			OutputFontSize:  14,
+			RetroMode:       true,
 			QuickCycleModes: []string{"disable"},
 			EchoTyped:       true,
 			EchoScript:      true,

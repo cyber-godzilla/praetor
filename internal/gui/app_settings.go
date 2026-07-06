@@ -76,6 +76,12 @@ func (a *GuiApp) SetOutputFontSize(px int) error {
 	return a.save()
 }
 
+// SetRetroMode toggles the CRT/retro visual effects (frontend-applied).
+func (a *GuiApp) SetRetroMode(v bool) error {
+	a.cfg().UI.RetroMode = v
+	return a.save()
+}
+
 // SetCompassScale persists the compass scale. The compass is rendered at a
 // fixed size; the scale only affects on-screen display (handled in the
 // frontend via CSS), so no re-render is needed here.

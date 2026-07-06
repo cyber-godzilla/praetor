@@ -27,6 +27,11 @@
   {#if store.config}
     <div class="toggles">
       <label class="t">
+        <span>Retro / CRT mode</span>
+        <input type="checkbox" checked={ui?.RetroMode}
+          onchange={() => toggle(() => ui!.RetroMode, api.setRetroMode, (v) => (store.config!.UI.RetroMode = v))} />
+      </label>
+      <label class="t">
         <span>Echo typed commands</span>
         <input type="checkbox" checked={ui?.EchoTyped}
           onchange={() => toggle(() => ui!.EchoTyped, api.setEchoTyped, (v) => (store.config!.UI.EchoTyped = v))} />

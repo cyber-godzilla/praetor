@@ -12,6 +12,12 @@
   let ready = $state(false);
   let splashDone = $state(false);
 
+  // Retro/CRT mode: default on until config loads, then follow the setting.
+  const retro = $derived(store.config?.UI?.RetroMode ?? true);
+  $effect(() => {
+    document.body.classList.toggle("crt", retro);
+  });
+
   onMount(() => {
     let unsub: (() => void) | undefined;
     (async () => {
@@ -55,6 +61,10 @@
 
 <Modals />
 <Toasts />
+
+{#if retro}
+  <div class="crt-roll"></div>
+{/if}
 
 <style>
   .center {

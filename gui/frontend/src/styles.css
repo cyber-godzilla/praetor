@@ -68,16 +68,74 @@ body {
   flex-direction: column;
 }
 
-/* Subtle CRT scanlines over the whole screen — leans into the terminal look
-   without hurting legibility. Kept faint (~7%); purely decorative. */
-body::after {
+/* ---- Retro / CRT mode (toggled via Settings; body.crt) ----------------------
+   Bundles the CRT cues: static scanlines, a slow vertical "roll" band that
+   emulates a slightly out-of-sync tube, an edge vignette (screen curvature),
+   a faint phosphor bloom on text, and a very gentle brightness flicker. All
+   layers are non-interactive overlays. */
+body.crt {
+  text-shadow: 0 0 1px rgba(232, 168, 56, 0.18);
+}
+/* Scanline mask + gentle flicker. */
+body.crt::before {
   content: "";
   position: fixed;
   inset: 0;
-  z-index: 9999;
+  z-index: 9998;
   pointer-events: none;
-  background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.07) 50%);
+  background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.12) 50%);
   background-size: 100% 3px;
+  animation: crt-flicker 3s ease-in-out infinite;
+}
+/* Vignette / tube curvature. */
+body.crt::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background: radial-gradient(125% 125% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.38) 100%);
+}
+/* The rolling band — a faint bright horizontal sweep drifting down the screen,
+   the "off calibration" motion of an unsynced CRT. */
+.crt-roll {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 28%;
+  z-index: 9997;
+  pointer-events: none;
+  background: linear-gradient(
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: crt-roll 7s linear infinite;
+}
+@keyframes crt-roll {
+  0% {
+    top: -28%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.93;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.crt::before {
+    animation: none;
+  }
+  .crt-roll {
+    display: none;
+  }
 }
 
 ::selection {
