@@ -33,11 +33,14 @@
 <Modal {title} wide back>
   <input class="search" type="text" bind:value={query} placeholder="Filter…" />
   <div class="sections">
-    {#each filtered as sec (sec.Name)}
+    <!-- Not keyed: map bookmarks can share a slug (e.g. two labels -> one wiki
+         page), which would trip Svelte's each_key_duplicate and break the
+         render. The lists are static per query, so positional rendering is fine. -->
+    {#each filtered as sec}
       <div class="section">
         <div class="sname dim">{sec.Name}</div>
         <div class="marks">
-          {#each sec.Bookmarks ?? [] as bm (bm.Slug)}
+          {#each sec.Bookmarks ?? [] as bm}
             <button class="mark" onclick={() => open(bm.Slug)}>
               <span class="arrow">›</span>{bm.Key}
             </button>
