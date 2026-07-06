@@ -49,6 +49,9 @@ body {
   font-family: var(--sans);
   overflow: hidden;
   user-select: none;
+  /* Render native controls (select dropdowns, date pickers, scrollbars) in
+     dark mode instead of the OS light default. */
+  color-scheme: dark;
 }
 
 #app {

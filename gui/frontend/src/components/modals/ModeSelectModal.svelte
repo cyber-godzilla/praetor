@@ -23,7 +23,7 @@
   }
 </script>
 
-<Modal title="Switch Mode">
+<Modal title="Switch Mode" wide>
   {#if (store.modeNames ?? []).length === 0}
     <p class="dim empty">No Lua modes loaded. Add script directories in the menu, then reload scripts.</p>
   {/if}
@@ -45,8 +45,8 @@
     font-size: 13px;
   }
   .modes {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 6px;
   }
   .mode {

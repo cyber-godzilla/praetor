@@ -51,8 +51,9 @@
       return;
     }
     if (lower === "/list") {
-      const modes = store.modeNames ?? [];
-      store.addToast("Available modes", modes.length ? modes.join(", ") : "no modes loaded");
+      // Open the mode selector (a columnar, clickable list) rather than a
+      // comma-separated toast.
+      store.openModal = "modeselect";
       pushHistory(line);
       return;
     }

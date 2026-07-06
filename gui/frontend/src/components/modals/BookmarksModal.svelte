@@ -38,7 +38,9 @@
         <div class="sname dim">{sec.Name}</div>
         <div class="marks">
           {#each sec.Bookmarks ?? [] as bm (bm.Slug)}
-            <button class="mark" onclick={() => open(bm.Slug)}>{bm.Key}</button>
+            <button class="mark" onclick={() => open(bm.Slug)}>
+              <span class="arrow">›</span>{bm.Key}
+            </button>
           {/each}
         </div>
       </div>
@@ -63,14 +65,34 @@
     letter-spacing: 1px;
     margin-bottom: 6px;
   }
+  /* Columnar list: bookmarks flow top-to-bottom into responsive columns. */
   .marks {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    column-width: 200px;
+    column-gap: 14px;
   }
   .mark {
-    font-size: 12px;
-    padding: 5px 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    break-inside: avoid;
+    text-align: left;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 13px;
+    color: var(--fg);
+  }
+  .mark:hover {
+    background: var(--bg-elevated);
+    color: var(--accent);
+  }
+  .arrow {
+    color: var(--fg-dim);
+  }
+  .mark:hover .arrow {
+    color: var(--accent);
   }
   .empty {
     padding: 20px;
