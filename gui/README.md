@@ -37,9 +37,13 @@ the GUI fixes Windows).
 - Platform webview toolchain:
   - **Windows**: WebView2 runtime (preinstalled on Win10/11).
   - **macOS**: Xcode command-line tools.
-  - **Linux**: `webkit2gtk` + `gtk3` dev packages, e.g.
-    `sudo apt install libgtk-3-dev libwebkit2gtk-4.0-dev` (or `-4.1-dev`;
-    build with `-tags webkit2_41` for the 4.1 variant).
+  - **Linux**: GTK3 + WebKit2GTK dev packages. Modern distros (Ubuntu 24.04+,
+    incl. 25.10) ship **4.1**, which requires the `webkit2_41` build tag:
+    ```bash
+    sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev
+    ```
+    Older distros with 4.0 can omit the tag. The `Makefile` always passes
+    `-tags webkit2_41` (harmless on macOS/Windows), so you never have to.
 
 Run `wails doctor` to verify your environment.
 
@@ -47,7 +51,7 @@ Run `wails doctor` to verify your environment.
 
 ```bash
 cd gui
-wails dev
+make dev          # wails dev -tags webkit2_41
 ```
 
 Live-reloads both the Go backend and the Svelte frontend.
@@ -56,14 +60,12 @@ Live-reloads both the Go backend and the Svelte frontend.
 
 ```bash
 cd gui
-wails build            # -> build/bin/praetor(.exe/.app)
-wails build -nsis      # Windows: also produce an NSIS installer
-```
+make build              # -> build/bin/praetor(.exe/.app)
+make installer          # Windows: build + NSIS installer
+make build VERSION=v0.1.0   # stamp a version
 
-Pass the version via ldflags:
-
-```bash
-wails build -ldflags "-X main.version=v0.1.0"
+# Or invoke wails directly (remember the tag on webkit-4.1 systems):
+wails build -tags webkit2_41 -ldflags "-X main.version=v0.1.0"
 ```
 
 ## Working on the frontend alone
@@ -86,6 +88,6 @@ When run outside Wails, `window.go`/`window.runtime` are absent; the bridge
 |-------|------------------------------|
 | Core (`internal/*`) | ✅ `make test` in parent |
 | Facade (`internal/gui`) | ✅ `go test ./internal/gui` |
-| Wails glue (`gui/main.go`) | ✅ compiles with plain `go build`; ❌ `wails build` needs the webview toolchain |
+| Wails glue (`gui/main.go`) | ✅ compiles with plain `go build`; full `wails build` needs the webview toolchain (WebView2 / WebKitGTK-4.1) |
 | Frontend | ✅ `npm run build` |
-| Running the app | ❌ needs the platform webview (WebView2 / WebKitGTK) |
+| Full `wails build` | ✅ on any machine with the platform webview + (on Linux) `-tags webkit2_41` |
