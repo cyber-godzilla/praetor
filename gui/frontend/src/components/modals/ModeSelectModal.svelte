@@ -48,8 +48,8 @@
     font-size: 13px;
   }
   .modes {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 6px;
   }
   .mode {
