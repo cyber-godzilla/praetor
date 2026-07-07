@@ -1,7 +1,17 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
+  import * as api from "../lib/bridge";
 
   const WIDTH = 10; // characters per bar
+
+  // Clicking any vital bar checks condition; clicking the lighting readout
+  // checks the ambient light level.
+  function checkCond() {
+    api.send("cond");
+  }
+  function checkLighting() {
+    api.send("lighting");
+  }
 
   interface Bar {
     label: string;
@@ -56,17 +66,17 @@
 <div class="statusbar">
   <div class="bars">
     {#each bars as b (b.label)}
-      <span class="bar" title={b.tip}>
+      <button class="bar" title="{b.tip} — click to check condition" onclick={checkCond}>
         <span class="lbl">{b.label}</span>
         <span class="bracket">[</span><span
           style="color:{vitalColor(b.value)}">{block(filledCount(b.value))}</span><span
           class="empty">{dots(WIDTH - filledCount(b.value))}</span><span class="bracket">]</span>
         <span class="num" style="color:{vitalColor(b.value)}">{b.value ?? "—"}</span>
-      </span>
+      </button>
     {/each}
   </div>
   {#if lighting}
-    <span class="lighting" style="color:{lighting.color}" title="Lighting">☀ {lighting.text}</span>
+    <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting}>☀ {lighting.text}</button>
   {/if}
   <span class="spacer"></span>
   <span class="conn {conn.cls}">{conn.text}</span>
@@ -89,6 +99,20 @@
   }
   .bar {
     letter-spacing: -0.5px;
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  /* Neutralise the global button:hover (border/bright color); use a subtle
+     label tint to signal the bar is clickable. */
+  .bar:hover {
+    color: inherit;
+  }
+  .bar:hover .lbl {
+    color: var(--accent);
   }
   .lbl {
     color: var(--fg-dim);
@@ -105,6 +129,14 @@
   }
   .lighting {
     color: var(--fg-dim);
+    font: inherit;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+  }
+  .lighting:hover {
+    filter: brightness(1.3);
   }
   .conn.ok {
     color: var(--green);

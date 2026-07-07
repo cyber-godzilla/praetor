@@ -12,6 +12,11 @@
   function go(dir: string) {
     api.send(dir);
   }
+
+  // Clicking the minimap sizes up the current area.
+  function sizeup() {
+    api.send("sizeup here");
+  }
 </script>
 
 <div class="sidebar">
@@ -23,7 +28,9 @@
   <Frame title="Map">
     <div class="mapbox">
       {#if store.minimap}
-        <img src={store.minimap} alt="minimap" />
+        <button class="mapbtn" title="Size up the area" onclick={sizeup}>
+          <img src={store.minimap} alt="minimap" />
+        </button>
       {:else}
         <div class="empty dim">no map data</div>
       {/if}
@@ -108,6 +115,15 @@
     align-items: center;
     justify-content: center;
     min-height: 56px;
+  }
+  .mapbtn {
+    display: block;
+    max-width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    line-height: 0;
   }
   .mapbox img {
     max-width: 100%;
