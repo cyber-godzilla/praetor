@@ -2,28 +2,32 @@
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
+# The TUI ships as `praetor-tui`; the GUI (built under gui/) owns the plain
+# `praetor` name. Keep these in sync with packaging/ and the release pipeline.
+TUI_BIN ?= praetor-tui
+
 test:
 	go test ./... -count=1 -timeout=60s
 
 build:
-	go build -ldflags "-X main.version=$(VERSION)" -o praetor ./cmd/praetor/
+	go build -ldflags "-X main.version=$(VERSION)" -o $(TUI_BIN) ./cmd/praetor/
 
 run: build
-	./praetor
+	./$(TUI_BIN)
 
 run-sixel: build
-	PRAETOR_GRAPHICS=sixel ./praetor
+	PRAETOR_GRAPHICS=sixel ./$(TUI_BIN)
 
 run-kitty: build
-	PRAETOR_GRAPHICS=kitty ./praetor
+	PRAETOR_GRAPHICS=kitty ./$(TUI_BIN)
 
 run-none: build
-	PRAETOR_GRAPHICS=none ./praetor
+	PRAETOR_GRAPHICS=none ./$(TUI_BIN)
 
 # Run with pprof: live HTTP at localhost:6060/debug/pprof/ and
 # heap+goroutine dumps written to ~/.local/state/praetor/pprof/ on exit.
 run-pprof: build
-	./praetor --pprof
+	./$(TUI_BIN) --pprof
 
 # Launch xterm in VT340-emulation mode with enough color registers to
 # render sixel graphics, drop into a shell. From that shell you can
@@ -50,4 +54,4 @@ lint:
 check: vet fmt test
 
 clean:
-	rm -f praetor
+	rm -f $(TUI_BIN) praetor

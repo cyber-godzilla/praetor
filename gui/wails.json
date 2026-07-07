@@ -11,7 +11,7 @@
   },
   "info": {
     "productName": "Praetor",
-    "productVersion": "0.1.0",
-    "comments": "Terminal-free desktop client for The Eternal City"
+    "productVersion": "0.1.5",
+    "comments": "Desktop client for The Eternal City"
   }
 }

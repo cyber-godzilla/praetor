@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>praetor</id>
+    <version>@VERSION@</version>
+    <title>Praetor</title>
+    <authors>CyberGodzilla 2099</authors>
+    <owners>CyberGodzilla 2099</owners>
+    <projectUrl>https://github.com/cyber-godzilla/praetor</projectUrl>
+    <projectSourceUrl>https://github.com/cyber-godzilla/praetor</projectSourceUrl>
+    <packageSourceUrl>https://github.com/cyber-godzilla/praetor</packageSourceUrl>
+    <docsUrl>https://github.com/cyber-godzilla/praetor/blob/main/README.md</docsUrl>
+    <bugTrackerUrl>https://github.com/cyber-godzilla/praetor/issues</bugTrackerUrl>
+    <licenseUrl>https://github.com/cyber-godzilla/praetor/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <copyright>© CyberGodzilla</copyright>
+    <tags>game eternal-city skotos praetor mud gui tui</tags>
+    <summary>Desktop and terminal client for The Eternal City</summary>
+    <description>
+Praetor is a client for The Eternal City (TEC). This package installs both the
+desktop GUI (`praetor`, added to the Start Menu) and the terminal client
+(`praetor-tui`), with authentication, Lua scripting automation, and a minimap
+renderer.
+    </description>
+    <releaseNotes>https://github.com/cyber-godzilla/praetor/releases/tag/v@VERSION@
+
+Upgrade note: the `praetor` command is now the desktop GUI. The terminal client
+is available as `praetor-tui`.</releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
