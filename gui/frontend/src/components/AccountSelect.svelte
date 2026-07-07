@@ -133,6 +133,7 @@
   }
   .name {
     flex: 1;
+    font-family: var(--mono);
     font-size: 16px;
     font-weight: 600;
   }

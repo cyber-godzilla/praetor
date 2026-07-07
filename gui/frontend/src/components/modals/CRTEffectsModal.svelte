@@ -25,17 +25,13 @@
   }
 </script>
 
-<Modal title="Retro CRT Effects" back>
+<Modal title="Retro CRT Effects" back onsave={save}>
   <p class="hint dim">Toggle each effect on or off.</p>
   <div class="toggles">
     <label class="t"><span>Scanlines &amp; vignette</span><input type="checkbox" bind:checked={scanlines} /></label>
     <label class="t"><span>Rolling band (motion)</span><input type="checkbox" bind:checked={roll} /></label>
     <label class="t"><span>Phosphor bloom</span><input type="checkbox" bind:checked={bloom} /></label>
   </div>
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

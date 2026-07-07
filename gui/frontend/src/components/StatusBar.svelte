@@ -5,14 +5,15 @@
 
   interface Bar {
     label: string;
+    tip: string;
     value: number | null;
   }
 
   const bars = $derived<Bar[]>([
-    { label: "HP", value: store.health },
-    { label: "FT", value: store.fatigue },
-    { label: "EN", value: store.encumbrance },
-    { label: "SA", value: store.satiation },
+    { label: "HP", tip: "Health", value: store.health },
+    { label: "FT", tip: "Fatigue", value: store.fatigue },
+    { label: "EN", tip: "Encumbrance", value: store.encumbrance },
+    { label: "SA", tip: "Satiation", value: store.satiation },
   ]);
 
   function filledCount(v: number | null): number {
@@ -55,7 +56,7 @@
 <div class="statusbar">
   <div class="bars">
     {#each bars as b (b.label)}
-      <span class="bar" title={b.label}>
+      <span class="bar" title={b.tip}>
         <span class="lbl">{b.label}</span>
         <span class="bracket">[</span><span
           style="color:{vitalColor(b.value)}">{block(filledCount(b.value))}</span><span

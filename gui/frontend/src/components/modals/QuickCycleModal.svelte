@@ -6,13 +6,16 @@
 
   // Options are "disable" plus every loaded mode. Seed from the current
   // snapshot, then refresh from the backend on open.
-  let available = $state<string[]>(["disable", ...(store.modeNames ?? [])]);
+  // Dedupe so a script-defined "disable" mode can't collide with the built-in
+  // "disable" entry and crash the keyed {#each} (each_key_duplicate).
+  const modeList = () => [...new Set(["disable", ...(store.modeNames ?? [])])];
+  let available = $state<string[]>(modeList());
   let selected = $state<Set<string>>(new Set(store.config?.UI?.QuickCycleModes ?? []));
 
   onMount(async () => {
     const names = await api.modeNames();
     if (names && names.length) store.modeNames = names;
-    available = ["disable", ...(store.modeNames ?? [])];
+    available = modeList();
   });
 
   function toggle(mode: string) {
@@ -38,7 +41,7 @@
   }
 </script>
 
-<Modal title="Quick-Cycle Modes (Alt+M)" back>
+<Modal title="Quick-Cycle Modes (Alt+M)" back onsave={save}>
   <p class="hint dim">Check the modes to include in the Alt+M rotation.</p>
   <div class="list">
     {#each available as mode (mode)}
@@ -51,10 +54,6 @@
       <div class="dim empty">No Lua modes loaded. Add script directories, then reload scripts.</div>
     {/if}
   </div>
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

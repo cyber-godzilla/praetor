@@ -18,7 +18,6 @@
         { label: "Highlights", go: "highlights" },
         { label: "Custom Tabs", go: "tabs" },
         { label: "Notifications", go: "notifications" },
-        { label: "Toggle Sidebar (Alt+S)", action: () => (store.sidebarOpen = !store.sidebarOpen) },
       ],
     },
     {
@@ -57,6 +56,7 @@
   ];
 
   async function reloadScripts() {
+    // Stay in the menu after reloading so the user can keep working.
     try {
       await api.reloadScripts();
       store.modeNames = await api.modeNames();
@@ -64,7 +64,6 @@
     } catch (e) {
       store.addToast("Reload failed", String(e));
     }
-    store.openModal = null;
   }
 
   function pick(it: Item) {

@@ -128,9 +128,22 @@
   function onWindowFocus() {
     if (!store.openModal) inputEl?.focus();
   }
+
+  // Webview window-focus events are unreliable, so also treat a click anywhere
+  // in the app as a signal to return the cursor to the input — unless it landed
+  // on an interactive control or a modal, or the user is selecting text (so
+  // copying from the output still works).
+  function refocusFromClick(e: MouseEvent) {
+    if (store.openModal) return;
+    const t = e.target as HTMLElement | null;
+    if (t?.closest("input, textarea, select, button, a, [contenteditable], .backdrop")) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    inputEl?.focus();
+  }
 </script>
 
-<svelte:window onfocus={onWindowFocus} />
+<svelte:window onfocus={onWindowFocus} onclick={refocusFromClick} />
 
 <div class="inputbar">
   <span class="prompt">›</span>

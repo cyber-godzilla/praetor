@@ -29,7 +29,7 @@
 
 <div class="wrap">
   <form class="card" onsubmit={submit}>
-    <h1>Praetor</h1>
+    <h1>PRAETOR</h1>
     <p class="dim sub">Sign in to The Eternal City</p>
 
     <label>Username
@@ -78,9 +78,10 @@
   h1 {
     margin: 0;
     text-align: center;
-    font-size: 32px;
+    font-size: 26px;
+    font-weight: 700;
     color: var(--accent);
-    letter-spacing: 2px;
+    letter-spacing: 8px;
   }
   .sub {
     margin: 0 0 8px;

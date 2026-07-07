@@ -529,3 +529,39 @@ func TestKudosConfig_QueueAddRemove(t *testing.T) {
 		t.Errorf("oob queue remove changed slice")
 	}
 }
+
+// TestSaveLoadListsRoundTrip guards cross-session persistence of the
+// StringList-backed settings edited from the GUI/TUI menus: the ignore lists,
+// high-priority commands, and script directories must survive Save -> Load
+// (i.e. an app restart). Regression test for the GUI ignore lists not sticking.
+func TestSaveLoadListsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	c := Defaults()
+	c.Ignorelist.OOC = []string{"alice", "bob"}
+	c.Ignorelist.Think = []string{"carol"}
+	c.Commands.HighPriority = []string{"flee", "quaff"}
+	c.Scripts = []string{"~/one/scripts", "~/two/scripts"}
+
+	if err := Save(c, path); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(loaded.Ignorelist.OOC, c.Ignorelist.OOC) {
+		t.Errorf("Ignorelist.OOC not persisted: got %v want %v", loaded.Ignorelist.OOC, c.Ignorelist.OOC)
+	}
+	if !reflect.DeepEqual(loaded.Ignorelist.Think, c.Ignorelist.Think) {
+		t.Errorf("Ignorelist.Think not persisted: got %v want %v", loaded.Ignorelist.Think, c.Ignorelist.Think)
+	}
+	if !reflect.DeepEqual(loaded.Commands.HighPriority, c.Commands.HighPriority) {
+		t.Errorf("Commands.HighPriority not persisted: got %v want %v", loaded.Commands.HighPriority, c.Commands.HighPriority)
+	}
+	if !reflect.DeepEqual(loaded.Scripts, c.Scripts) {
+		t.Errorf("Scripts not persisted: got %v want %v", loaded.Scripts, c.Scripts)
+	}
+}

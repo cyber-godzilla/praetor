@@ -39,7 +39,7 @@
   }
 </script>
 
-<Modal {title} back>
+<Modal {title} back onsave={save}>
   {#if hint}<p class="hint dim">{hint}</p>{/if}
   <div class="list">
     {#each items as item, i (item)}
@@ -55,10 +55,6 @@
       onkeydown={(e) => e.key === "Enter" && add()} />
     <button onclick={add}>Add</button>
   </div>
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

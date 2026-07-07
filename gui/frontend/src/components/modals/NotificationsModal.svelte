@@ -31,7 +31,7 @@
   }
 </script>
 
-<Modal title="Desktop Notifications" wide back>
+<Modal title="Desktop Notifications" wide back onsave={save}>
   <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.HealthBelow.Enabled} /> Notify when health below</label>
     <input class="num" type="number" min="0" max="100" bind:value={cfg.HealthBelow.Threshold} />
@@ -52,10 +52,6 @@
   {/each}
   <button class="sm" onclick={addPattern}>+ Add pattern</button>
 
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

@@ -17,6 +17,27 @@
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
+
+  // StringListModal seeds its editor from store.config on mount, so after a save
+  // we must update store.config too — otherwise reopening the modal shows the
+  // stale list (the backend persists correctly, but the frontend snapshot
+  // wouldn't reflect it until the next launch).
+  function saveIgnoreOOC(v: string[]) {
+    if (store.config?.Ignorelist) store.config.Ignorelist.OOC = v;
+    return api.setIgnoreOOC(v);
+  }
+  function saveIgnoreThink(v: string[]) {
+    if (store.config?.Ignorelist) store.config.Ignorelist.Think = v;
+    return api.setIgnoreThink(v);
+  }
+  function saveScriptDirs(v: string[]) {
+    if (store.config) store.config.Scripts = v;
+    return api.setScriptDirs(v);
+  }
+  function saveHighPriority(v: string[]) {
+    if (store.config?.Commands) store.config.Commands.HighPriority = v;
+    return api.setHighPriority(v);
+  }
 </script>
 
 {#if m === "menu"}
@@ -36,30 +57,30 @@
 {:else if m === "ignore-ooc"}
   <StringListModal
     title="Ignore — OOC accounts"
-    hint="Lines from these OOC account names are suppressed."
+    hint="Lines from these OOC account names are suppressed. Press Alt+I in the game view to reveal suppressed lines."
     initial={store.config?.Ignorelist?.OOC ?? []}
-    onsave={(v) => api.setIgnoreOOC(v)}
+    onsave={saveIgnoreOOC}
   />
 {:else if m === "ignore-think"}
   <StringListModal
     title="Ignore — Think characters"
-    hint="Think-channel lines from these character names are suppressed."
+    hint="Think-channel lines from these character names are suppressed. Press Alt+I in the game view to reveal suppressed lines."
     initial={store.config?.Ignorelist?.Think ?? []}
-    onsave={(v) => api.setIgnoreThink(v)}
+    onsave={saveIgnoreThink}
   />
 {:else if m === "scripts"}
   <StringListModal
     title="Script directories"
     hint="Directories scanned for Lua modes. Reloads on save."
     initial={store.config?.Scripts ?? []}
-    onsave={(v) => api.setScriptDirs(v)}
+    onsave={saveScriptDirs}
   />
 {:else if m === "priority"}
   <StringListModal
     title="High-priority commands"
-    hint="Commands that jump the queue."
+    hint="Commands with an immediate precedence during script events, which will bypass other queued commands."
     initial={store.config?.Commands?.HighPriority ?? []}
-    onsave={(v) => api.setHighPriority(v)}
+    onsave={saveHighPriority}
   />
 {:else if m === "quickcycle"}
   <QuickCycleModal />

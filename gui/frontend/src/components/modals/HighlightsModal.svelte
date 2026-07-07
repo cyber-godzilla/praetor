@@ -16,31 +16,13 @@
   );
   let draft = $state("");
 
-  // Drag-and-drop reordering.
-  let dragIndex = $state<number | null>(null);
-  let overIndex = $state<number | null>(null);
-
-  function onDragStart(i: number) {
-    dragIndex = i;
-  }
-  function onDragOver(i: number, e: DragEvent) {
-    e.preventDefault();
-    overIndex = i;
-  }
-  function onDrop(i: number, e: DragEvent) {
-    e.preventDefault();
-    if (dragIndex === null || dragIndex === i) {
-      dragIndex = overIndex = null;
-      return;
-    }
+  // Reordering via up/down arrows (order sets highlight precedence).
+  function move(i: number, dir: -1 | 1) {
+    const j = i + dir;
+    if (j < 0 || j >= items.length) return;
     const next = [...items];
-    const [moved] = next.splice(dragIndex, 1);
-    next.splice(i, 0, moved);
+    [next[i], next[j]] = [next[j], next[i]];
     items = next;
-    dragIndex = overIndex = null;
-  }
-  function onDragEnd() {
-    dragIndex = overIndex = null;
   }
 
   function add() {
@@ -72,28 +54,17 @@
   }
 </script>
 
-<Modal title="Highlights" wide back>
+<Modal title="Highlights" wide back onsave={save}>
   <p class="hint dim">Case-insensitive substring matches, highlighted in the chosen color.</p>
   <div class="list">
     {#each items as item, i (i)}
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="hl"
-        class:off={!item.Active}
-        class:dragging={dragIndex === i}
-        class:over={overIndex === i && dragIndex !== i}
-        ondragover={(e) => onDragOver(i, e)}
-        ondrop={(e) => onDrop(i, e)}
-      >
-        <span
-          class="handle"
-          draggable="true"
-          ondragstart={() => onDragStart(i)}
-          ondragend={onDragEnd}
-          title="Drag to reorder"
-          role="button"
-          tabindex="-1"
-          aria-label="Drag to reorder">⠿</span>
+      <div class="hl" class:off={!item.Active}>
+        <span class="reorder">
+          <button class="arrow" onclick={() => move(i, -1)} disabled={i === 0}
+            title="Move up" aria-label="Move up">▲</button>
+          <button class="arrow" onclick={() => move(i, 1)} disabled={i === items.length - 1}
+            title="Move down" aria-label="Move down">▼</button>
+        </span>
         <input type="checkbox" checked={item.Active} onchange={() => toggle(i)} title="Active" />
         <span class="pat" style={preview(item.Style)}>{item.Pattern}</span>
         <button class="sm" onclick={() => cycleStyle(i)}>{item.Style}</button>
@@ -107,10 +78,6 @@
       onkeydown={(e) => e.key === "Enter" && add()} />
     <button onclick={add}>Add</button>
   </div>
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>
@@ -135,22 +102,17 @@
   .hl.off {
     opacity: 0.5;
   }
-  .hl.dragging {
-    opacity: 0.4;
+  .reorder {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
   }
-  .hl.over {
-    border-color: var(--accent);
-    background: rgba(232, 168, 56, 0.08);
-  }
-  .handle {
-    cursor: grab;
+  .arrow {
+    min-width: 0;
+    padding: 0 5px;
+    font-size: 9px;
+    line-height: 1.2;
     color: var(--fg-dim);
-    font-size: 15px;
-    padding: 0 2px;
-    user-select: none;
-  }
-  .handle:active {
-    cursor: grabbing;
   }
   .pat {
     flex: 1;

@@ -10,6 +10,7 @@
     wide = false,
     back = false,
     onclose,
+    onsave,
     children,
     footer,
   }: {
@@ -17,13 +18,33 @@
     wide?: boolean;
     back?: boolean;
     onclose?: () => void;
+    // When provided, the shell renders a "Save" button that calls onsave().
+    onsave?: () => void | Promise<void>;
     children: Snippet;
     footer?: Snippet;
   } = $props();
 
+  // Every submenu (anything with a Back button, a Save action, or custom footer
+  // actions) gets the same footer control set: [custom actions] · Close · Save.
+  // Close discards — submenus buffer their edits, so closing without saving
+  // restores the state from before the submenu was opened. Save commits.
+  const hasFooter = $derived(back || !!onsave || !!footer);
+
+  // The header ✕ exits the overlay entirely.
   function close() {
     onclose?.();
     store.openModal = null;
+  }
+
+  // The footer "Close" discards edits and returns to the parent menu for a
+  // submenu (rather than exiting the overlay); standalone modals just close.
+  function closeToParent() {
+    onclose?.();
+    store.openModal = back ? "menu" : null;
+  }
+
+  async function doSave() {
+    await onsave?.();
   }
 
   function goBack() {
@@ -63,8 +84,13 @@
     <div class="mbody">
       {@render children()}
     </div>
-    {#if footer}
-      <div class="mfoot">{@render footer()}</div>
+    {#if hasFooter}
+      <div class="mfoot">
+        {#if footer}{@render footer()}{/if}
+        <span class="spacer"></span>
+        <button onclick={closeToParent}>Close</button>
+        {#if onsave}<button class="primary" onclick={doSave}>Save</button>{/if}
+      </div>
     {/if}
   </div>
 </div>

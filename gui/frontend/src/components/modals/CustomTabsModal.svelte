@@ -47,7 +47,7 @@
   }
 </script>
 
-<Modal title="Custom Tabs" wide back>
+<Modal title="Custom Tabs" wide back onsave={save}>
   <div class="cols">
     <div class="tablist">
       {#each tabs as t, i (i)}
@@ -58,7 +58,12 @@
       {/each}
       <div class="row addtab">
         <input type="text" bind:value={newTabName} placeholder="New tab…"
-          onkeydown={(e) => e.key === "Enter" && addTab()} />
+          onkeydown={(e) => {
+            if ((e.key === "Enter" || e.key === "Tab") && newTabName.trim()) {
+              e.preventDefault();
+              addTab();
+            }
+          }} />
         <button onclick={addTab}>+</button>
       </div>
     </div>
@@ -84,10 +89,6 @@
       {/if}
     </div>
   </div>
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

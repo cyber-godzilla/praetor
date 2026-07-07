@@ -53,7 +53,7 @@
   }
 </script>
 
-<Modal title="Settings" back>
+<Modal title="Settings" back onsave={save}>
   <div class="toggles">
     <label class="t"><span>Echo typed commands</span><input type="checkbox" bind:checked={echoTyped} /></label>
     <label class="t"><span>Echo script commands</span><input type="checkbox" bind:checked={echoScript} /></label>
@@ -83,10 +83,6 @@
     </div>
   </div>
 
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Cancel</button>
-    <button class="primary" onclick={save}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

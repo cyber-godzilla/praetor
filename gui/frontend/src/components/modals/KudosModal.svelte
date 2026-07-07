@@ -60,7 +60,7 @@
   }
 </script>
 
-<Modal title={loginPrompt ? "Kudos — queued entries" : "Kudos"} wide back>
+<Modal title={loginPrompt ? "Kudos — queued entries" : "Kudos"} wide back onsave={persistThenClose}>
   {#if loginPrompt}
     <p class="hint dim">You have queued kudos. Send them now or manage the list.</p>
   {/if}
@@ -99,10 +99,6 @@
     <button onclick={addQueue}>Queue</button>
   </div>
 
-  {#snippet footer()}
-    <button onclick={() => (store.openModal = null)}>Close</button>
-    <button class="primary" onclick={persistThenClose}>Save</button>
-  {/snippet}
 </Modal>
 
 <style>

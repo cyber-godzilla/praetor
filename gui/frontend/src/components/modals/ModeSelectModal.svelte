@@ -4,7 +4,10 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
 
-  const modes = $derived(["disable", ...(store.modeNames ?? [])]);
+  // Dedupe: "disable" is always offered first, but a loaded script may also
+  // define a mode literally named "disable" — a duplicate key would crash the
+  // keyed {#each} below (each_key_duplicate) and the modal would never render.
+  const modes = $derived([...new Set(["disable", ...(store.modeNames ?? [])])]);
 
   // Pull the current mode list on open so it reflects any scripts loaded/
   // reloaded since startup, rather than the initial snapshot.

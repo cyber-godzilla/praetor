@@ -72,13 +72,13 @@ body {
    Each layer is a non-interactive overlay gated by its own body class. */
 
 /* Phosphor bloom: each glyph glows in its own color (currentColor resolves per
-   element), plus a faint warm ambient haze. Form controls (button/input/select)
-   don't inherit text-shadow, so they're targeted explicitly. */
+   element), plus a faint warm ambient haze. Applied to EVERY element — not just
+   via inheritance — because form controls (button/input/select/textarea) reset
+   text-shadow in the UA stylesheet, so relying on inheritance alone would leave
+   their text un-bloomed. The universal selector guarantees no text is missed;
+   on elements with no text it's a harmless no-op. */
 body.crt-bloom,
-body.crt-bloom button,
-body.crt-bloom input,
-body.crt-bloom select,
-body.crt-bloom textarea {
+body.crt-bloom * {
   text-shadow:
     0 0 3px currentColor,
     0 0 9px rgba(232, 168, 56, 0.1);
@@ -151,7 +151,18 @@ body.crt-scanlines::after {
   color: #000;
 }
 
-/* Terminal-style controls: flat, square, monospace, tight. */
+/* Terminal-style controls: flat, square, monospace, tight. Form controls have
+   their own UA font, so force them all onto the inherited --mono stack — one
+   rule guarantees every control (incl. textarea) shares the app font-face. */
+button,
+input,
+select,
+textarea,
+optgroup,
+option {
+  font-family: inherit;
+}
+
 button {
   font-family: inherit;
   font-size: 13px;
