@@ -46,11 +46,14 @@ contents:
       mode: 0644
 
 # GUI runtime dependencies. Wails links libgtk-3 + libwebkit2gtk at runtime.
+# Debian 13+/Ubuntu 24.04+ renamed these libs to the 64-bit-time_t ABI
+# (t64 suffix); list the t64 name first with the pre-t64 name as an
+# alternative so the package installs on both old and new releases.
 overrides:
   deb:
     depends:
-      - libgtk-3-0
-      - libwebkit2gtk-4.1-0
+      - libgtk-3-0t64 | libgtk-3-0
+      - libwebkit2gtk-4.1-0t64 | libwebkit2gtk-4.1-0
   rpm:
     depends:
       - gtk3

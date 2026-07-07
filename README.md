@@ -26,8 +26,9 @@ Praetor ships **two clients** that share the same core:
 
 ## Requirements
 
-- Go 1.25+ and the [Wails](https://wails.io) toolchain (for building the GUI from source)
 - Linux, macOS, or Windows
+- **Terminal client (`praetor-tui`):** Go 1.25+ to build; a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass
+- **Desktop GUI (`praetor`):** Go 1.25+ and the [Wails](https://wails.io) toolchain to build from source
 
 ## Quick Start
 

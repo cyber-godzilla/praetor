@@ -32,6 +32,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+      - name: Test gate (block the release if tests fail)
+        run: go test ./... -count=1
       - name: Compute version (strip leading v)
         id: v
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -66,21 +71,22 @@ jobs:
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
           go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build TUI (praetor-tui)
         run: go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui ./cmd/praetor
 
       - name: Build GUI (praetor)
         working-directory: gui
-        run: "$(go env GOPATH)/bin/wails build -tags webkit2_41 -ldflags \"-X main.version=${GITHUB_REF_NAME}\""
+        run: wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
 
       - name: Package deb + rpm
         env:
           PKG_ARCH: amd64
         run: |
           mkdir -p dist
-          "$(go env GOPATH)/bin/nfpm" pkg --config packaging/linux/nfpm.yaml --packager deb --target dist/
-          "$(go env GOPATH)/bin/nfpm" pkg --config packaging/linux/nfpm.yaml --packager rpm --target dist/
+          nfpm pkg --config packaging/linux/nfpm.yaml --packager deb --target dist/
+          nfpm pkg --config packaging/linux/nfpm.yaml --packager rpm --target dist/
           # A plain tarball of the GUI binary for non-packaged installs.
           tar -C gui/build/bin -czf "dist/praetor_${VERSION}_linux_amd64.tar.gz" praetor
           tar -czf "dist/praetor-tui_${VERSION}_linux_amd64.tar.gz" praetor-tui
@@ -125,11 +131,13 @@ jobs:
           node-version: "22"
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build GUI (universal .app)
         working-directory: gui
-        run: "$(go env GOPATH)/bin/wails build -platform darwin/universal -ldflags \"-X main.version=${GITHUB_REF_NAME}\""
+        run: wails build -platform darwin/universal -ldflags "-X main.version=${GITHUB_REF_NAME}"
 
       - name: Build TUI (amd64 + arm64)
         run: |
@@ -140,6 +148,10 @@ jobs:
 
       - name: Zip GUI .app
         run: |
+          # Wails names the bundle from wails.json "name" (praetor-gui), not
+          # productName — so the build emits praetor-gui.app. Rename to the
+          # public Praetor.app the cask expects before zipping.
+          mv "gui/build/bin/praetor-gui.app" "gui/build/bin/Praetor.app"
           # Signing hook: an unsigned .app trips Gatekeeper (users right-click →
           # Open once). Add codesign/notarize here when a Developer ID is set.
           ditto -c -k --keepParent "gui/build/bin/Praetor.app" \
@@ -181,11 +193,13 @@ jobs:
           node-version: "22"
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build GUI + NSIS installer
         working-directory: gui
-        run: "$(go env GOPATH)/bin/wails build -nsis -ldflags \"-X main.version=${GITHUB_REF_NAME}\""
+        run: wails build -nsis -ldflags "-X main.version=${GITHUB_REF_NAME}"
 
       - name: Build TUI (praetor-tui.exe)
         run: go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui.exe ./cmd/praetor
@@ -193,10 +207,13 @@ jobs:
       - name: Stage release assets
         run: |
           mkdir -p dist
-          # Wails names the installer Praetor-<arch>-installer.exe; normalise it.
+          # Wails names the installer from wails.json "name": the file is
+          # praetor-gui-amd64-installer.exe; the glob normalises it.
           cp gui/build/bin/*installer.exe "dist/Praetor_${VERSION}_windows_amd64_installer.exe"
           cp gui/build/bin/praetor.exe "dist/praetor_${VERSION}_windows_amd64.exe"
-          7z a "dist/praetor-tui_${VERSION}_windows_amd64.zip" praetor-tui.exe
+          # Compress-Archive is always present on windows-latest; 7z may not be
+          # on the Git-bash PATH.
+          powershell -NoProfile -Command "Compress-Archive -Path praetor-tui.exe -DestinationPath dist/praetor-tui_${VERSION}_windows_amd64.zip -Force"
 
       - name: Upload release assets
         env:

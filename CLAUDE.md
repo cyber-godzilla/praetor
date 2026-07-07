@@ -33,7 +33,7 @@ praetor/
 ## Development Commands
 
 - `make test` — runs all tests (`go test ./... -count=1 -timeout=60s`)
-- `make build` — builds `./praetor` binary
+- `make build` — builds the `./praetor-tui` binary (the terminal client; the GUI builds under `gui/`)
 - `make run` — builds and launches the TUI
 - `make vet` — runs `go vet ./...`
 - `make fmt` — runs `gofmt -l .` (lists unformatted files)
