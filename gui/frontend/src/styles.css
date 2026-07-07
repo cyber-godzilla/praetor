@@ -199,8 +199,51 @@ input:focus,
 select:focus {
   border-color: var(--accent);
 }
+
+/* Selects: drop the native chrome, use a flat ▾ marker. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 24px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'%3E%3Cpath d='M0 0l4.5 6L9 0z' fill='%23e8a838'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+select:hover {
+  border-color: var(--accent);
+}
+
+/* Checkboxes as an ASCII-style box: an empty square that fills orange when
+   checked, instead of the OS control. */
 input[type="checkbox"] {
-  accent-color: var(--accent);
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  cursor: pointer;
+}
+input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+input[type="checkbox"]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  transform: scale(0);
+}
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
 }
 
 ::-webkit-scrollbar {
