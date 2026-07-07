@@ -124,7 +124,9 @@ func (e *Engine) Close() {
 	if e.persistStore != nil {
 		e.persistStore.Flush()
 	}
-	e.timers.ClearAll()
+	// Shutdown (not ClearAll): the VM is closing, so mark the manager dead so
+	// no in-flight timer goroutine calls into the closed Lua state.
+	e.timers.Shutdown()
 	if e.modeChangeCh != nil {
 		close(e.modeChangeCh)
 		e.modeChangeCh = nil
@@ -353,6 +355,10 @@ func (e *Engine) ReloadAllModes() error {
 // Must be called with e.mu held.
 func (e *Engine) rebuildVM(dirs []string) error {
 	prevMode := e.currentMode
+
+	// Retire the old manager before its VM is closed below: mark it dead and
+	// cancel its timers so no old goroutine fires against the closed state.
+	e.timers.Shutdown()
 
 	newVM := NewLuaVM(dirs)
 	L := newVM.State()
