@@ -13,6 +13,7 @@
   import HelpModal from "./modals/HelpModal.svelte";
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
+  import CRTEffectsModal from "./modals/CRTEffectsModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -26,6 +27,8 @@
   <ModeSelectModal />
 {:else if m === "settings"}
   <SettingsModal />
+{:else if m === "crt"}
+  <CRTEffectsModal />
 {:else if m === "highlights"}
   <HighlightsModal />
 {:else if m === "tabs"}

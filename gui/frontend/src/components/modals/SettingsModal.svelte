@@ -1,104 +1,92 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import Modal from "../Modal.svelte";
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
 
-  const ui = $derived(store.config?.UI);
-
   const FONT_SIZES = [11, 12, 13, 14, 16, 18, 20, 24];
 
-  function setFontSize(px: number) {
-    store.config!.UI.OutputFontSize = px;
-    api.setOutputFontSize(px);
-  }
+  // Buffered draft: edit locally, apply on Save, discard on Cancel (like the
+  // Highlights editor).
+  const seed = untrack(() => store.config);
+  let echoTyped = $state(seed?.UI?.EchoTyped ?? true);
+  let echoScript = $state(seed?.UI?.EchoScript ?? true);
+  let colorWords = $state(seed?.UI?.ColorWords ?? false);
+  let hideIPs = $state(seed?.UI?.HideIPs ?? false);
+  let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
+  let logPath = $state(seed?.Logging?.Session?.Path ?? "");
+  let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
+  let compassScale = $state(seed?.UI?.CompassScale ?? 1);
+  let fontSize = $state(seed?.UI?.OutputFontSize || 14);
 
-  async function toggle(get: () => boolean, set: (v: boolean) => Promise<void>, apply: (v: boolean) => void) {
-    const v = !get();
-    apply(v);
+  async function save() {
     try {
-      await set(v);
+      // Sequential: each setter persists the whole config, so avoid concurrent
+      // file writes.
+      await api.setEchoTyped(echoTyped);
+      await api.setEchoScript(echoScript);
+      await api.setColorWords(colorWords);
+      await api.setHideIPs(hideIPs);
+      await api.setSessionLogging(sessionLogging);
+      await api.setLogPath(logPath);
+      await api.setMinimapScale(minimapScale);
+      await api.setCompassScale(compassScale);
+      await api.setOutputFontSize(fontSize);
+      if (store.config) {
+        Object.assign(store.config.UI, {
+          EchoTyped: echoTyped,
+          EchoScript: echoScript,
+          ColorWords: colorWords,
+          HideIPs: hideIPs,
+          MinimapScale: minimapScale,
+          CompassScale: compassScale,
+          OutputFontSize: fontSize,
+        });
+        store.config.Logging.Session.Enabled = sessionLogging;
+        store.config.Logging.Session.Path = logPath;
+      }
+      store.addToast("Settings", "Saved");
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
+    store.openModal = null;
   }
 </script>
 
 <Modal title="Settings" back>
-  {#if store.config}
-    <div class="toggles">
-      <label class="t">
-        <span>Retro / CRT mode</span>
-        <input type="checkbox" checked={ui?.RetroMode}
-          onchange={() => toggle(() => ui!.RetroMode, api.setRetroMode, (v) => (store.config!.UI.RetroMode = v))} />
-      </label>
-      <label class="t">
-        <span>Echo typed commands</span>
-        <input type="checkbox" checked={ui?.EchoTyped}
-          onchange={() => toggle(() => ui!.EchoTyped, api.setEchoTyped, (v) => (store.config!.UI.EchoTyped = v))} />
-      </label>
-      <label class="t">
-        <span>Echo script commands</span>
-        <input type="checkbox" checked={ui?.EchoScript}
-          onchange={() => toggle(() => ui!.EchoScript, api.setEchoScript, (v) => (store.config!.UI.EchoScript = v))} />
-      </label>
-      <label class="t">
-        <span>Color words</span>
-        <input type="checkbox" checked={ui?.ColorWords}
-          onchange={() => toggle(() => ui!.ColorWords, api.setColorWords, (v) => (store.config!.UI.ColorWords = v))} />
-      </label>
-      <label class="t">
-        <span>Hide IP addresses</span>
-        <input type="checkbox" checked={ui?.HideIPs}
-          onchange={() => toggle(() => ui!.HideIPs, api.setHideIPs, (v) => (store.config!.UI.HideIPs = v))} />
-      </label>
-      <label class="t">
-        <span>Session transcript logging</span>
-        <input type="checkbox" checked={store.config.Logging.Session.Enabled}
-          onchange={() => toggle(() => store.config!.Logging.Session.Enabled, api.setSessionLogging, (v) => (store.config!.Logging.Session.Enabled = v))} />
-      </label>
+  <div class="toggles">
+    <label class="t"><span>Echo typed commands</span><input type="checkbox" bind:checked={echoTyped} /></label>
+    <label class="t"><span>Echo script commands</span><input type="checkbox" bind:checked={echoScript} /></label>
+    <label class="t"><span>Color words</span><input type="checkbox" bind:checked={colorWords} /></label>
+    <label class="t"><span>Hide IP addresses</span><input type="checkbox" bind:checked={hideIPs} /></label>
+    <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
 
-      <div class="field">
-        <span>Minimap scale</span>
-        <input type="number" min="0.2" max="3" step="0.1" value={ui?.MinimapScale}
-          onchange={(e) => {
-            const v = parseFloat((e.target as HTMLInputElement).value);
-            store.config!.UI.MinimapScale = v;
-            api.setMinimapScale(v);
-          }} />
-      </div>
-
-      <div class="field">
-        <span>Compass scale</span>
-        <input type="number" min="0.5" max="3" step="0.1" value={ui?.CompassScale}
-          onchange={(e) => {
-            const v = parseFloat((e.target as HTMLInputElement).value);
-            store.config!.UI.CompassScale = v;
-            api.setCompassScale(v);
-          }} />
-      </div>
-
-      <div class="field">
-        <span>Output text size</span>
-        <div class="sizes">
-          {#each FONT_SIZES as sz (sz)}
-            <button class="sz" class:active={(ui?.OutputFontSize || 14) === sz} onclick={() => setFontSize(sz)}>
-              {sz}
-            </button>
-          {/each}
-        </div>
-      </div>
-
-      <div class="field">
-        <span>Log path (blank = default)</span>
-        <input type="text" value={store.config.Logging.Session.Path}
-          onchange={(e) => {
-            const v = (e.target as HTMLInputElement).value;
-            store.config!.Logging.Session.Path = v;
-            api.setLogPath(v);
-          }} />
+    <div class="field">
+      <span>Minimap scale</span>
+      <input type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />
+    </div>
+    <div class="field">
+      <span>Compass scale</span>
+      <input type="number" min="0.5" max="3" step="0.1" bind:value={compassScale} />
+    </div>
+    <div class="field">
+      <span>Output text size</span>
+      <div class="sizes">
+        {#each FONT_SIZES as sz (sz)}
+          <button class="sz" class:active={fontSize === sz} onclick={() => (fontSize = sz)}>{sz}</button>
+        {/each}
       </div>
     </div>
-  {/if}
+    <div class="field">
+      <span>Log path (blank = default)</span>
+      <input type="text" bind:value={logPath} />
+    </div>
+  </div>
+
+  {#snippet footer()}
+    <button onclick={() => (store.openModal = null)}>Cancel</button>
+    <button class="primary" onclick={save}>Save</button>
+  {/snippet}
 </Modal>
 
 <style>
@@ -116,10 +104,6 @@
     border-bottom: 1px solid var(--border);
     cursor: pointer;
   }
-  .t input {
-    width: 16px;
-    height: 16px;
-  }
   .field {
     display: flex;
     flex-direction: column;
@@ -136,7 +120,6 @@
   .sz {
     min-width: 40px;
     padding: 5px 8px;
-    font-family: var(--mono);
     font-size: 12px;
   }
   .sz.active {

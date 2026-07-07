@@ -184,7 +184,9 @@ export interface UIConfig {
   MinimapHeight: number;
   CompassScale: number;
   OutputFontSize: number;
-  RetroMode: boolean;
+  CRTScanlines: boolean;
+  CRTRoll: boolean;
+  CRTBloom: boolean;
   QuickCycleModes: string[] | null;
   ColorWords: boolean;
   EchoTyped: boolean;

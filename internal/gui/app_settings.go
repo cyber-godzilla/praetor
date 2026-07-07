@@ -76,9 +76,12 @@ func (a *GuiApp) SetOutputFontSize(px int) error {
 	return a.save()
 }
 
-// SetRetroMode toggles the CRT/retro visual effects (frontend-applied).
-func (a *GuiApp) SetRetroMode(v bool) error {
-	a.cfg().UI.RetroMode = v
+// SetCRTEffects persists the three retro CRT effect toggles (scanlines, the
+// rolling band, and the phosphor bloom). Applied in the frontend via CSS.
+func (a *GuiApp) SetCRTEffects(scanlines, roll, bloom bool) error {
+	a.cfg().UI.CRTScanlines = scanlines
+	a.cfg().UI.CRTRoll = roll
+	a.cfg().UI.CRTBloom = bloom
 	return a.save()
 }
 

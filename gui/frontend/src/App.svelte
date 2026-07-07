@@ -12,10 +12,14 @@
   let ready = $state(false);
   let splashDone = $state(false);
 
-  // Retro/CRT mode: default on until config loads, then follow the setting.
-  const retro = $derived(store.config?.UI?.RetroMode ?? true);
+  // Retro CRT effects — three independent toggles (default on until config
+  // loads). Scanlines + bloom are body classes; the roll is a rendered overlay.
+  const crtScanlines = $derived(store.config?.UI?.CRTScanlines ?? true);
+  const crtRoll = $derived(store.config?.UI?.CRTRoll ?? true);
+  const crtBloom = $derived(store.config?.UI?.CRTBloom ?? true);
   $effect(() => {
-    document.body.classList.toggle("crt", retro);
+    document.body.classList.toggle("crt-scanlines", crtScanlines);
+    document.body.classList.toggle("crt-bloom", crtBloom);
   });
 
   onMount(() => {
@@ -62,7 +66,7 @@
 <Modals />
 <Toasts />
 
-{#if retro}
+{#if crtRoll}
   <div class="crt-roll"></div>
 {/if}
 

@@ -68,20 +68,24 @@ body {
   flex-direction: column;
 }
 
-/* ---- Retro / CRT mode (toggled via Settings; body.crt) ----------------------
-   Bundles the CRT cues: static scanlines, a slow vertical "roll" band that
-   emulates a slightly out-of-sync tube, an edge vignette (screen curvature),
-   a faint phosphor bloom on text, and a very gentle brightness flicker. All
-   layers are non-interactive overlays. */
-body.crt {
-  /* Phosphor bloom: each glyph glows in its own color (currentColor resolves
-     per element), with a faint warm ambient haze on top. */
+/* ---- Retro CRT effects — three independent toggles (Menu → Retro CRT Effects)
+   Each layer is a non-interactive overlay gated by its own body class. */
+
+/* Phosphor bloom: each glyph glows in its own color (currentColor resolves per
+   element), plus a faint warm ambient haze. Form controls (button/input/select)
+   don't inherit text-shadow, so they're targeted explicitly. */
+body.crt-bloom,
+body.crt-bloom button,
+body.crt-bloom input,
+body.crt-bloom select,
+body.crt-bloom textarea {
   text-shadow:
     0 0 3px currentColor,
     0 0 9px rgba(232, 168, 56, 0.1);
 }
+
 /* Scanline mask + gentle flicker. */
-body.crt::before {
+body.crt-scanlines::before {
   content: "";
   position: fixed;
   inset: 0;
@@ -91,8 +95,8 @@ body.crt::before {
   background-size: 100% 3px;
   animation: crt-flicker 3s ease-in-out infinite;
 }
-/* Vignette / tube curvature. */
-body.crt::after {
+/* Vignette / tube curvature (rides with the scanline layer). */
+body.crt-scanlines::after {
   content: "";
   position: fixed;
   inset: 0;
@@ -134,7 +138,7 @@ body.crt::after {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  body.crt::before {
+  body.crt-scanlines::before {
     animation: none;
   }
   .crt-roll {

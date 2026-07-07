@@ -14,6 +14,7 @@
       name: "Display & Behavior",
       items: [
         { label: "Settings", go: "settings" },
+        { label: "Retro CRT Effects", go: "crt" },
         { label: "Highlights", go: "highlights" },
         { label: "Custom Tabs", go: "tabs" },
         { label: "Notifications", go: "notifications" },
@@ -23,7 +24,6 @@
     {
       name: "Automation",
       items: [
-        { label: "Switch Mode", go: "modeselect" },
         { label: "Script Directories", go: "scripts" },
         { label: "Quick-Cycle Modes", go: "quickcycle" },
         { label: "High-Priority Commands", go: "priority" },

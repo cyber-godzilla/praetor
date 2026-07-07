@@ -81,7 +81,8 @@ export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefi
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
 export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
 export const setOutputFontSize = (px: number) => call<void>("SetOutputFontSize", undefined, px);
-export const setRetroMode = (v: boolean) => call<void>("SetRetroMode", undefined, v);
+export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean) =>
+  call<void>("SetCRTEffects", undefined, scanlines, roll, bloom);
 
 // ---- Settings lists ----
 export const setHighlights = (h: HighlightConfig[]) => call<void>("SetHighlights", undefined, h);
