@@ -35,9 +35,10 @@ type Client struct {
 	Creds    session.CredentialStore
 	Settings Settings
 
-	events    chan types.Event
-	cancelRun chan struct{} // cancels the ModeChanges listener goroutine
-	cancelMu  sync.Mutex
+	events         chan types.Event
+	cancelRun      chan struct{} // cancels the ModeChanges listener goroutine
+	userDisconnect bool          // set by Disconnect so Run reports a user logout
+	cancelMu       sync.Mutex    // guards cancelRun and userDisconnect
 
 	// htmlIndent tracks <ul> nesting across protocol lines for indentation.
 	htmlIndent int
@@ -142,8 +143,12 @@ func (c *Client) ConnectWithAuth(username, password string) error {
 func (c *Client) Run() {
 	c.emit(types.ConnectedEvent{})
 
-	// Cancel any previous ModeChanges listener goroutine from a prior Run().
+	// Fresh connection: reset the HTML indent tracker (owned solely by this
+	// goroutine via processLine) and clear any stale user-disconnect flag.
+	c.htmlIndent = 0
+
 	c.cancelMu.Lock()
+	c.userDisconnect = false
 	if c.cancelRun != nil {
 		close(c.cancelRun)
 	}
@@ -172,7 +177,39 @@ func (c *Client) Run() {
 		c.processLine(line)
 	}
 
-	c.emit(types.DisconnectedEvent{Reason: "connection closed"})
+	c.cancelMu.Lock()
+	userInitiated := c.userDisconnect
+	c.cancelMu.Unlock()
+
+	reason := "connection closed"
+	if userInitiated {
+		reason = "" // user-initiated logout — no banner on the bootup screen
+	}
+	c.emit(types.DisconnectedEvent{Reason: reason})
+}
+
+// Disconnect performs a user-initiated logout: it flags the disconnect as
+// user-initiated (so Run emits an empty reason), cancels the ModeChanges
+// listener, closes the WebSocket, and resets engine state so a subsequent
+// connection starts fresh. Safe to call when already disconnected.
+func (c *Client) Disconnect() {
+	c.cancelMu.Lock()
+	c.userDisconnect = true
+	if c.cancelRun != nil {
+		close(c.cancelRun)
+		c.cancelRun = nil
+	}
+	c.cancelMu.Unlock()
+
+	// Close the socket; this unblocks Run()'s read loop, which emits the
+	// DisconnectedEvent with the empty (logout) reason.
+	c.Session.Close()
+
+	// Reset the engine to a clean slate for the next session: switching to the
+	// default mode cancels timers, clears per-mode state, ends the metric
+	// session, and drains the command queue; then wipe metrics history.
+	c.Engine.SetMode("disable", nil)
+	c.Engine.Metrics().Reset()
 }
 
 // SendCommand handles user input. Strings starting with "/" are interpreted
