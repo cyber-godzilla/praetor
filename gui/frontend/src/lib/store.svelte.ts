@@ -306,6 +306,18 @@ class AppStore {
   // apply processes one batch of wire events in order.
   apply(batch: WireEvent[]) {
     for (const ev of batch) {
+      // Once disconnected, ignore trailing in-game updates (text, status bars,
+      // mode/metrics, graphics, debug) that raced the disconnect event — they
+      // must not repopulate the session state resetSession() just cleared.
+      // Connection, notification, and error events still apply.
+      if (
+        this.connState === "disconnected" &&
+        ev.kind !== Kind.Conn &&
+        ev.kind !== Kind.Notify &&
+        ev.kind !== Kind.Error
+      ) {
+        continue;
+      }
       switch (ev.kind) {
         case Kind.Text:
           if (ev.text) this.ingestText(ev.text);
