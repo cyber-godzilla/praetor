@@ -66,7 +66,7 @@
 <div class="statusbar">
   <div class="bars">
     {#each bars as b (b.label)}
-      <button class="bar" title="{b.tip} — click to check condition" onclick={checkCond}>
+      <button class="bar" title="{b.tip} — click to check condition" onclick={checkCond} tabindex="-1">
         <span class="lbl">{b.label}</span>
         <span class="bracket">[</span><span
           style="color:{vitalColor(b.value)}">{block(filledCount(b.value))}</span><span
@@ -76,7 +76,7 @@
     {/each}
   </div>
   {#if lighting}
-    <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting}>☀ {lighting.text}</button>
+    <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting} tabindex="-1">☀ {lighting.text}</button>
   {/if}
   <span class="spacer"></span>
   <span class="conn {conn.cls}">{conn.text}</span>

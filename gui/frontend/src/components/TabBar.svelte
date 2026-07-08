@@ -14,6 +14,7 @@
       class="tab"
       class:active={store.tabs[store.activeTab]?.name === tab.name}
       onclick={() => select(tab.name)}
+      tabindex="-1"
     >
       {tab.name}
       {#if tab.unread && store.tabs[store.activeTab]?.name !== tab.name}
@@ -22,7 +23,7 @@
     </button>
   {/each}
   <div class="spacer"></div>
-  <button class="tab menu-btn" title="Menu (Esc)" onclick={() => (store.openModal = "menu")}>☰</button>
+  <button class="tab menu-btn" title="Menu (Esc)" onclick={() => (store.openModal = "menu")} tabindex="-1">☰</button>
 </div>
 
 <style>

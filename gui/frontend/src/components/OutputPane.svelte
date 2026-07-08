@@ -11,25 +11,51 @@
   const fontSize = $derived(store.config?.UI?.OutputFontSize || 14);
 
   let viewport: HTMLDivElement;
-  let atBottom = $state(true);
+  // Follow the tail until the user scrolls up. Crucially we do NOT disengage on
+  // "gap from bottom" — under a burst, appended lines grow scrollHeight before
+  // the auto-scroll catches up, which would spuriously flip following off and
+  // make the view fall progressively behind. Only an actual upward scroll (or
+  // the user returning to the bottom) changes the follow state.
+  let autoFollow = true;
+  let lastTop = 0;
 
   function onScroll() {
     if (!viewport) return;
-    const gap = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
-    atBottom = gap < 40;
+    const top = viewport.scrollTop;
+    const gap = viewport.scrollHeight - top - viewport.clientHeight;
+    if (gap <= 4) {
+      autoFollow = true; // at the bottom → follow
+    } else if (top < lastTop - 2) {
+      autoFollow = false; // user scrolled up → stop following
+    }
+    lastTop = top;
   }
 
-  // Auto-scroll to bottom when new lines arrive and the user is already there.
-  // Runs after layout (rAF) so scrollHeight reflects the newly appended block —
-  // important for large multi-line bursts (room/status blocks).
+  // Coalesce all appends within a frame into a single scroll-to-bottom.
+  let scrollQueued = false;
+  function followTail() {
+    if (scrollQueued) return;
+    scrollQueued = true;
+    requestAnimationFrame(() => {
+      scrollQueued = false;
+      if (viewport && autoFollow) {
+        viewport.scrollTop = viewport.scrollHeight;
+        lastTop = viewport.scrollTop;
+      }
+    });
+  }
+
   $effect(() => {
     // Touch length so the effect re-runs on append.
     void tab.lines.length;
-    if (atBottom && viewport) {
-      requestAnimationFrame(() => {
-        if (viewport) viewport.scrollTop = viewport.scrollHeight;
-      });
-    }
+    if (autoFollow) followTail();
+  });
+
+  // Snap to the bottom and resume following when switching to another tab.
+  $effect(() => {
+    void tab.name;
+    autoFollow = true;
+    followTail();
   });
 
   function segStyle(s: Segment): string {
@@ -97,7 +123,7 @@
         class:suppressed={!!line.suppressed}
         onclick={() => line.suppressed && reveal(line)}
         role={line.suppressed ? "button" : undefined}
-        tabindex={line.suppressed ? 0 : undefined}
+        tabindex={line.suppressed ? -1 : undefined}
       >
         {#each displaySegs(line) as seg}
           {#if seg.isHR}

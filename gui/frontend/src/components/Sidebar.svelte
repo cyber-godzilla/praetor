@@ -20,7 +20,7 @@
 </script>
 
 <div class="sidebar">
-  <button class="modebtn" onclick={() => (store.openModal = "modeselect")} title="Switch mode">
+  <button class="modebtn" onclick={() => (store.openModal = "modeselect")} title="Switch mode" tabindex="-1">
     <span class="dim">MODE</span>
     <span class="modeval" class:on={modeName !== "disable"}>{modeName}</span>
   </button>
@@ -28,7 +28,7 @@
   <Frame title="Map">
     <div class="mapbox">
       {#if store.minimap}
-        <button class="mapbtn" title="Size up the area" onclick={sizeup}>
+        <button class="mapbtn" title="Size up the area" onclick={sizeup} tabindex="-1">
           <img src={store.minimap} alt="minimap" />
         </button>
       {:else}
@@ -45,18 +45,18 @@
           <!-- Transparent 3×3 hotspot grid over the rose; center splits into
                up (top) / down (bottom). Click sends the movement command. -->
           <div class="hotspots">
-            <button style="grid-area:nw" title="Northwest" aria-label="Go northwest" onclick={() => go("nw")}></button>
-            <button style="grid-area:n" title="North" aria-label="Go north" onclick={() => go("n")}></button>
-            <button style="grid-area:ne" title="Northeast" aria-label="Go northeast" onclick={() => go("ne")}></button>
-            <button style="grid-area:w" title="West" aria-label="Go west" onclick={() => go("w")}></button>
+            <button style="grid-area:nw" title="Northwest" aria-label="Go northwest" onclick={() => go("nw")} tabindex="-1"></button>
+            <button style="grid-area:n" title="North" aria-label="Go north" onclick={() => go("n")} tabindex="-1"></button>
+            <button style="grid-area:ne" title="Northeast" aria-label="Go northeast" onclick={() => go("ne")} tabindex="-1"></button>
+            <button style="grid-area:w" title="West" aria-label="Go west" onclick={() => go("w")} tabindex="-1"></button>
             <div class="ud" style="grid-area:c">
-              <button title="Up" aria-label="Go up" onclick={() => go("up")}></button>
-              <button title="Down" aria-label="Go down" onclick={() => go("down")}></button>
+              <button title="Up" aria-label="Go up" onclick={() => go("up")} tabindex="-1"></button>
+              <button title="Down" aria-label="Go down" onclick={() => go("down")} tabindex="-1"></button>
             </div>
-            <button style="grid-area:e" title="East" aria-label="Go east" onclick={() => go("e")}></button>
-            <button style="grid-area:sw" title="Southwest" aria-label="Go southwest" onclick={() => go("sw")}></button>
-            <button style="grid-area:s" title="South" aria-label="Go south" onclick={() => go("s")}></button>
-            <button style="grid-area:se" title="Southeast" aria-label="Go southeast" onclick={() => go("se")}></button>
+            <button style="grid-area:e" title="East" aria-label="Go east" onclick={() => go("e")} tabindex="-1"></button>
+            <button style="grid-area:sw" title="Southwest" aria-label="Go southwest" onclick={() => go("sw")} tabindex="-1"></button>
+            <button style="grid-area:s" title="South" aria-label="Go south" onclick={() => go("s")} tabindex="-1"></button>
+            <button style="grid-area:se" title="Southeast" aria-label="Go southeast" onclick={() => go("se")} tabindex="-1"></button>
           </div>
         </div>
       {:else}

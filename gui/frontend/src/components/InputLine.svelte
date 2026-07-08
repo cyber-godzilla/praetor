@@ -141,6 +141,19 @@
     if (sel && !sel.isCollapsed) return;
     inputEl?.focus();
   }
+
+  // Sticky focus: WebKitGTK moves focus on Tab/Shift+Tab (and clicks on
+  // controls) at the GTK level, which DOM preventDefault/tabindex can't fully
+  // stop — so whenever the input loses focus in the game view, snap it right
+  // back. Modals are exempt so their fields keep focus. This is why Tab and
+  // Shift+Tab cycle tabs (handled in GameView) rather than moving the focus
+  // ring through the UI.
+  function onBlur() {
+    if (store.openModal) return;
+    requestAnimationFrame(() => {
+      if (!store.openModal && document.activeElement !== inputEl) inputEl?.focus();
+    });
+  }
 </script>
 
 <svelte:window onfocus={onWindowFocus} onclick={refocusFromClick} />
@@ -152,6 +165,7 @@
     bind:this={inputEl}
     bind:value
     onkeydown={onKeydown}
+    onblur={onBlur}
     spellcheck="false"
     autocomplete="off"
     placeholder={store.connState === "connected" ? "" : "(disconnected)"}
@@ -161,6 +175,7 @@
     class:active={!!store.mode && store.mode !== "disable"}
     title="Switch mode"
     onclick={() => (store.openModal = "modeselect")}
+    tabindex="-1"
   >
     {store.mode && store.mode !== "disable" ? store.mode : "disable"}
   </button>

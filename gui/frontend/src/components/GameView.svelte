@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import StatusBar from "./StatusBar.svelte";
@@ -50,7 +51,11 @@
     // All other shortcuts are inert while a modal owns the keyboard.
     if (store.openModal) return;
 
-    if (e.key === "Tab") {
+    // Match on e.code (physical key), not e.key: on X11/WebKitGTK, Shift+Tab
+    // emits the ISO_Left_Tab keysym, so e.key is NOT "Tab" for the reverse case
+    // — an e.key check catches forward Tab but silently misses Shift+Tab.
+    // e.code stays "Tab" regardless of the Shift modifier.
+    if (e.code === "Tab") {
       e.preventDefault();
       cycleTab(e.shiftKey ? -1 : 1);
       return;
@@ -87,9 +92,16 @@
   }
 
   const activeTab = $derived(store.tabs[store.activeTab]);
-</script>
 
-<svelte:window onkeydown={onKeydown} />
+  // Register keydown in the CAPTURE phase. A bubble-phase handler's
+  // preventDefault runs too late in WebKitGTK to stop native Tab focus
+  // traversal, so Shift+Tab moved focus through the UI's many buttons instead
+  // of cycling tabs. Capturing lets preventDefault win before traversal.
+  onMount(() => {
+    window.addEventListener("keydown", onKeydown, true);
+    return () => window.removeEventListener("keydown", onKeydown, true);
+  });
+</script>
 
 <div class="game">
   <StatusBar />
