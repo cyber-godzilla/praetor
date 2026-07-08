@@ -273,6 +273,13 @@ func (a *GuiApp) connectAndRun() error {
 	return nil
 }
 
+// Disconnect performs a user-initiated logout, tearing down the current game
+// session. The resulting disconnected event (empty reason) drives the frontend
+// back to the bootup screen. Safe to call when not connected.
+func (a *GuiApp) Disconnect() {
+	a.client().Disconnect()
+}
+
 // SaveAccount stores credentials for later ConnectStored use.
 func (a *GuiApp) SaveAccount(username, password string) error {
 	return a.deps.Creds.SetAccount(username, password)

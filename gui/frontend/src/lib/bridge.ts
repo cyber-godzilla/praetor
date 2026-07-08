@@ -58,6 +58,7 @@ export const connectNew = (u: string, p: string, store: boolean) =>
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
 export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
+export const disconnect = () => call<void>("Disconnect", undefined);
 
 // ---- Input / modes ----
 export const send = (input: string) => call<void>("Send", undefined, input);
