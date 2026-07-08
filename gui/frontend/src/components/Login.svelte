@@ -13,6 +13,7 @@
     if (!username || !password) return;
     busy = true;
     error = "";
+    store.disconnectNotice = "";
     try {
       await api.connectNew(username, password, storeCredentials);
       store.loginUser = username;
@@ -31,6 +32,14 @@
   <form class="card" onsubmit={submit}>
     <h1>PRAETOR</h1>
     <p class="dim sub">Sign in to The Eternal City</p>
+
+    {#if store.disconnectNotice}
+      <div class="notice">
+        <span>Connection lost: {store.disconnectNotice}.</span>
+        <button class="notice-x" onclick={() => (store.disconnectNotice = "")}
+          aria-label="Dismiss" type="button">✕</button>
+      </div>
+    {/if}
 
     <label>Username
       <!-- svelte-ignore a11y_autofocus -->
@@ -87,6 +96,30 @@
     margin: 0 0 8px;
     text-align: center;
     font-size: 13px;
+  }
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    background: rgba(204, 68, 68, 0.12);
+    color: var(--fg);
+    font-size: 12px;
+  }
+  .notice span {
+    flex: 1;
+  }
+  .notice-x {
+    border: none;
+    background: transparent;
+    color: var(--fg-dim);
+    padding: 0 4px;
+  }
+  .notice-x:hover {
+    color: var(--red);
+    background: transparent;
   }
   label {
     display: flex;

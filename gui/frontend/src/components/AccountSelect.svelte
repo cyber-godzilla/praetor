@@ -9,6 +9,7 @@
     if (busy) return;
     busy = username;
     error = "";
+    store.disconnectNotice = "";
     try {
       await api.connectStored(username);
       store.screen = "connecting";
@@ -31,6 +32,14 @@
   <div class="card">
     <div class="brand">PRAETOR</div>
     <p class="sub">The Eternal City</p>
+
+    {#if store.disconnectNotice}
+      <div class="notice">
+        <span>Connection lost: {store.disconnectNotice}.</span>
+        <button class="notice-x" onclick={() => (store.disconnectNotice = "")}
+          aria-label="Dismiss" type="button">✕</button>
+      </div>
+    {/if}
 
     <div class="section-label">Choose an account</div>
     <div class="accounts">
@@ -88,6 +97,31 @@
     font-size: 13px;
     color: var(--fg-dim);
     letter-spacing: 1px;
+  }
+  .notice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    padding: 8px 10px;
+    border: 1px solid var(--red);
+    border-radius: 8px;
+    background: rgba(204, 68, 68, 0.12);
+    color: var(--fg);
+    font-size: 12px;
+  }
+  .notice span {
+    flex: 1;
+  }
+  .notice-x {
+    border: none;
+    background: transparent;
+    color: var(--fg-dim);
+    padding: 0 4px;
+  }
+  .notice-x:hover {
+    color: var(--red);
+    background: transparent;
   }
   .section-label {
     font-size: 11px;
