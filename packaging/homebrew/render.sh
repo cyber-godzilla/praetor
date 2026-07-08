@@ -53,6 +53,23 @@ render "$here/praetor-tui.rb.tmpl" "$work/Formula/praetor-tui.rb"
 # ambiguous.
 rm -f "$work/Formula/praetor.rb"
 
+# Auto-migrate existing installs of the old `praetor` FORMULA (the TUI) to the
+# new `praetor` CASK (the GUI). Without this, `brew upgrade` would find the
+# removed formula orphaned and NOT install the cask. Homebrew reads
+# tap_migrations.json at the tap root; when the migration target resolves to a
+# cask, `brew upgrade` uninstalls the formula and installs the cask. The tap is
+# referenced as owner/<repo without the "homebrew-" prefix>.
+tap_owner="${TAP_REPO%%/*}"
+tap_reponame="${TAP_REPO##*/}"
+brew_tap="${tap_owner}/${tap_reponame#homebrew-}"   # e.g. cyber-godzilla/tap
+mig="$work/tap_migrations.json"
+if command -v jq >/dev/null 2>&1; then
+  existing='{}'; [ -f "$mig" ] && existing="$(cat "$mig")"
+  printf '%s' "$existing" | jq --arg t "${brew_tap}/praetor" '. + {praetor: $t}' > "$mig"
+else
+  printf '{\n  "praetor": "%s/praetor"\n}\n' "$brew_tap" > "$mig"
+fi
+
 cd "$work"
 git config user.name "cyber-godzilla-bot"
 git config user.email "cg@cybergodzilla.com"
@@ -61,6 +78,6 @@ if git diff --cached --quiet; then
   echo "Tap already up to date for ${VERSION}; nothing to push."
   exit 0
 fi
-git commit -m "praetor ${VERSION}: cask (GUI) + praetor-tui formula"
+git commit -m "praetor ${VERSION}: cask (GUI) + praetor-tui formula + formula→cask migration"
 git push origin HEAD
 echo "Pushed tap update for ${VERSION}."

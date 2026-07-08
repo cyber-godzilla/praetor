@@ -27,6 +27,10 @@ vendor: CyberGodzilla
 homepage: https://github.com/cyber-godzilla/praetor
 license: GPL-3.0
 
+# Best-effort desktop-menu refresh on install/upgrade (never fails the install).
+scripts:
+  postinstall: ./packaging/linux/postinstall.sh
+
 contents:
   - src: ./gui/build/bin/praetor
     dst: /usr/bin/praetor

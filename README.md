@@ -60,9 +60,12 @@ brew install --cask cyber-godzilla/tap/praetor      # desktop GUI (→ /Applicat
 brew install cyber-godzilla/tap/praetor-tui         # terminal client
 ```
 
-Upgrading from the old terminal `praetor` formula? Remove it first, since the GUI now claims that name as a cask:
+Upgrading from the old terminal `praetor` formula? `brew upgrade` migrates it to the GUI cask automatically (the tap ships a formula→cask migration). If for any reason it doesn't, do it manually:
 
 ```bash
+brew update
+brew upgrade                 # auto-migrates praetor (formula) → praetor (cask)
+# fallback if the auto-migration doesn't trigger:
 brew uninstall praetor && brew install --cask cyber-godzilla/tap/praetor
 ```
 
@@ -81,7 +84,7 @@ echo "deb [signed-by=/etc/apt/keyrings/praetor-archive-keyring.gpg] https://pack
 sudo apt update && sudo apt install praetor
 ```
 
-The GUI appears in your desktop applications menu after install.
+The GUI appears in your desktop applications menu after install. **Existing users** who had the old terminal `praetor` upgrade in place with `sudo apt update && sudo apt upgrade` — the `praetor` command becomes the GUI and `praetor-tui` is added alongside it (amd64 only for now).
 
 ### Yum (Fedora / RHEL / CentOS)
 
