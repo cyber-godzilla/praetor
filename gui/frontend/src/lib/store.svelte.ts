@@ -111,6 +111,9 @@ class AppStore {
   // Connection
   connState = $state<"connected" | "disconnected">("disconnected");
   connReason = $state("");
+  // Set when a disconnect was NOT user-initiated (a drop). Rendered as a banner
+  // on the bootup screen; cleared on user logout and on the next connect.
+  disconnectNotice = $state("");
 
   // Graphics
   minimap = $state<string>("");
@@ -248,11 +251,48 @@ class AppStore {
     }
   }
 
+  // resetSession clears all game-session state (output, status, mode, graphics)
+  // back to initial values, leaving config, accounts, and version intact.
+  // Called when the connection ends (logout or drop) before returning to the
+  // bootup screen.
+  resetSession() {
+    for (const tab of this.tabs) {
+      tab.lines = [];
+      tab.unread = false;
+    }
+    this.activeTab = 0;
+    this.health = null;
+    this.fatigue = null;
+    this.encumbrance = null;
+    this.satiation = null;
+    this.lighting = null;
+    this.lightingRaw = null;
+    this.mode = "";
+    this.displayState = [];
+    this.status = null;
+    this.minimap = "";
+    this.compass = "";
+    this.connReason = "";
+    this.expandAllSuppressed = false;
+    this.openModal = null;
+  }
+
   private applyConn(c: ConnPayload) {
     this.connState = c.state;
-    this.connReason = c.reason ?? "";
-    // The authoritative signal that we're in-game: the socket connected.
-    if (c.state === "connected") this.screen = "game";
+    if (c.state === "connected") {
+      // The authoritative signal that we're in-game.
+      this.connReason = "";
+      this.disconnectNotice = "";
+      this.screen = "game";
+      return;
+    }
+    // Disconnected: wipe session state and return to the bootup screen. A
+    // non-empty reason means the socket dropped (not a user logout) — surface
+    // it as a banner; an empty reason is a clean user-initiated logout.
+    const reason = c.reason ?? "";
+    this.resetSession();
+    this.disconnectNotice = reason;
+    this.screen = this.accounts.length > 0 ? "account" : "login";
   }
 
   addToast(title: string, message: string) {
