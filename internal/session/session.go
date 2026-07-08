@@ -1,30 +1,42 @@
 package session
 
 import (
+	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/protocol"
 	"github.com/gorilla/websocket"
 )
 
+const (
+	defaultPongWait   = 60 * time.Second // read deadline window; connection considered dead if no frame arrives within this
+	defaultPingPeriod = 20 * time.Second // how often we send a ping; must be < pongWait
+	writeWait         = 10 * time.Second // deadline for a single control-frame write
+)
+
 // Session manages a WebSocket connection to the game server, providing
 // line-oriented communication through a protocol.LineBuffer.
 type Session struct {
-	mu     sync.Mutex
-	conn   *websocket.Conn
-	lines  chan string
-	done   chan struct{}
-	closed bool
-	buf    *protocol.LineBuffer
+	mu         sync.Mutex
+	conn       *websocket.Conn
+	lines      chan string
+	done       chan struct{}
+	closed     bool
+	buf        *protocol.LineBuffer
+	pongWait   time.Duration
+	pingPeriod time.Duration
 }
 
 // New creates a new Session with initialized channels and line buffer.
 func New() *Session {
 	return &Session{
-		lines: make(chan string, 256),
-		done:  make(chan struct{}),
-		buf:   protocol.NewLineBuffer(),
+		lines:      make(chan string, 256),
+		done:       make(chan struct{}),
+		buf:        protocol.NewLineBuffer(),
+		pongWait:   defaultPongWait,
+		pingPeriod: defaultPingPeriod,
 	}
 }
 
@@ -63,7 +75,23 @@ func (s *Session) Connect(url string, cookies []*http.Cookie) error {
 		return err
 	}
 
+	// Enable OS-level TCP keepalive as a backstop for hard drops (best-effort;
+	// a wss connection's UnderlyingConn is not a *net.TCPConn, so skip quietly).
+	if tcp, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
+		_ = tcp.SetKeepAlive(true)
+		_ = tcp.SetKeepAlivePeriod(s.pingPeriod)
+	}
+
+	// Read deadline + pong handler: any incoming frame (data or pong) resets the
+	// deadline; if none arrives within pongWait, ReadMessage errors and we detect
+	// the dead connection.
+	_ = conn.SetReadDeadline(time.Now().Add(s.pongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(s.pongWait))
+	})
+
 	go s.readLoop()
+	go s.pingLoop()
 	return nil
 }
 
@@ -133,6 +161,7 @@ func (s *Session) readLoop() {
 		if err != nil {
 			return
 		}
+		_ = s.conn.SetReadDeadline(time.Now().Add(s.pongWait))
 		lines := s.buf.Write(msg)
 		for _, line := range lines {
 			select {
@@ -140,6 +169,31 @@ func (s *Session) readLoop() {
 			case <-s.done:
 				return
 			}
+		}
+	}
+}
+
+// pingLoop sends periodic WebSocket ping frames so a dead-but-open connection is
+// detected via the read deadline (and to keep the path warm). It exits when the
+// session is closed.
+func (s *Session) pingLoop() {
+	ticker := time.NewTicker(s.pingPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			s.mu.Lock()
+			if s.closed || s.conn == nil {
+				s.mu.Unlock()
+				return
+			}
+			err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait))
+			s.mu.Unlock()
+			if err != nil {
+				return // write failed; readLoop will also error out and close the session
+			}
+		case <-s.done:
+			return
 		}
 	}
 }

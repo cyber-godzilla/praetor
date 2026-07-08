@@ -292,6 +292,138 @@ func TestSession_PartialLineBuffering(t *testing.T) {
 	}
 }
 
+func TestSession_SilentPeerTriggersDisconnect(t *testing.T) {
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		// Read the ident, then go silent: no reads (no auto-pong), no writes.
+		conn.ReadMessage()
+		time.Sleep(2 * time.Second)
+	})
+	defer srv.Close()
+
+	s := New()
+	s.pongWait = 150 * time.Millisecond
+	s.pingPeriod = 40 * time.Millisecond
+	defer s.Close()
+
+	err := s.Connect(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	select {
+	case <-s.Done():
+		// expected: silent peer detected via read deadline expiry
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Done signal after silent peer")
+	}
+}
+
+func TestSession_DataResetsDeadline(t *testing.T) {
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		conn.ReadMessage()
+		for i := 0; i < 10; i++ {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte("tick\r\n")); err != nil {
+				return
+			}
+			time.Sleep(40 * time.Millisecond)
+		}
+	})
+
+	s := New()
+	s.pongWait = 150 * time.Millisecond
+	s.pingPeriod = 40 * time.Millisecond
+	defer s.Close()
+
+	err := s.Connect(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	received := 0
+	deadline := time.After(1 * time.Second)
+loop:
+	for received < 10 {
+		select {
+		case _, ok := <-s.Lines():
+			if !ok {
+				t.Fatalf("lines channel closed prematurely after %d lines", received)
+			}
+			received++
+		case <-s.Done():
+			t.Fatalf("session closed prematurely after %d lines", received)
+		case <-deadline:
+			break loop
+		}
+	}
+
+	if received == 0 {
+		t.Fatal("expected to receive at least one line")
+	}
+
+	srv.Close()
+
+	select {
+	case <-s.Done():
+		// expected once server goes away
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Done signal after server close")
+	}
+}
+
+func TestSession_PongResetsDeadline(t *testing.T) {
+	connCh := make(chan *websocket.Conn, 1)
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		defer conn.Close()
+		connCh <- conn
+		conn.ReadMessage()
+		// Keep reading so gorilla's default ping handler auto-responds with
+		// pongs; send no data of our own.
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	})
+	defer srv.Close()
+
+	s := New()
+	s.pongWait = 150 * time.Millisecond
+	s.pingPeriod = 40 * time.Millisecond
+	defer s.Close()
+
+	err := s.Connect(wsURL, nil)
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	select {
+	case <-s.Done():
+		t.Fatal("session closed prematurely; pong should have reset deadline")
+	case <-time.After(500 * time.Millisecond):
+		// expected: still alive thanks to pong-driven deadline resets
+	}
+
+	// Directly close the server-side conn: httptest.Server.Close() does not
+	// terminate hijacked (upgraded) connections, so we close it explicitly to
+	// simulate the server going away.
+	var serverConn *websocket.Conn
+	select {
+	case serverConn = <-connCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout capturing server-side conn")
+	}
+	serverConn.Close()
+
+	select {
+	case <-s.Done():
+		// expected once server goes away
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Done signal after server close")
+	}
+}
+
 func TestSession_CloseIdempotent(t *testing.T) {
 	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()
