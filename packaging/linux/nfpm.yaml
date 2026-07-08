@@ -1,0 +1,60 @@
+# nfpm config for the Linux deb/rpm packages. Bundles BOTH clients:
+#   /usr/bin/praetor       -> the Wails desktop GUI (built by `wails build`)
+#   /usr/bin/praetor-tui   -> the terminal client (built by `go build`)
+# plus a .desktop entry + icon so the GUI shows up in the applications menu.
+#
+# Rendered/consumed by `nfpm pkg` on the Linux release runner. VERSION and the
+# ARCH are supplied via environment variables. Paths are relative to the repo
+# root (nfpm's working directory in the pipeline).
+#
+# Upgrade note (requirement 8): the previous release shipped a single `praetor`
+# package whose /usr/bin/praetor WAS the TUI. This is the same package name, so
+# dpkg/rpm transparently overwrite /usr/bin/praetor (now the GUI) on upgrade and
+# add /usr/bin/praetor-tui. No Conflicts/Replaces metadata is required for a
+# same-name upgrade; users just gain the second binary.
+name: praetor
+arch: ${PKG_ARCH}
+platform: linux
+version: ${VERSION}
+section: games
+priority: optional
+maintainer: CyberGodzilla 2099 <cg@cybergodzilla.com>
+description: |
+  Desktop and terminal client for The Eternal City (TEC).
+  Ships the Praetor GUI (praetor) and the terminal client (praetor-tui),
+  with authentication, Lua scripting automation, and a minimap renderer.
+vendor: CyberGodzilla
+homepage: https://github.com/cyber-godzilla/praetor
+license: GPL-3.0
+
+contents:
+  - src: ./gui/build/bin/praetor
+    dst: /usr/bin/praetor
+    file_info:
+      mode: 0755
+  - src: ./praetor-tui
+    dst: /usr/bin/praetor-tui
+    file_info:
+      mode: 0755
+  - src: ./packaging/linux/praetor.desktop
+    dst: /usr/share/applications/praetor.desktop
+    file_info:
+      mode: 0644
+  - src: ./gui/build/appicon.png
+    dst: /usr/share/pixmaps/praetor.png
+    file_info:
+      mode: 0644
+
+# GUI runtime dependencies. Wails links libgtk-3 + libwebkit2gtk at runtime.
+# Debian 13+/Ubuntu 24.04+ renamed these libs to the 64-bit-time_t ABI
+# (t64 suffix); list the t64 name first with the pre-t64 name as an
+# alternative so the package installs on both old and new releases.
+overrides:
+  deb:
+    depends:
+      - libgtk-3-0t64 | libgtk-3-0
+      - libwebkit2gtk-4.1-0t64 | libwebkit2gtk-4.1-0
+  rpm:
+    depends:
+      - gtk3
+      - webkit2gtk4.1

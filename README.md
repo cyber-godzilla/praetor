@@ -1,10 +1,12 @@
 # Praetor
 
-A terminal-based game client for [The Eternal City](https://www.eternalcitygame.com/), built with Go. Replaces the browser-based Orchil client with a native terminal experience.
+A cross-platform desktop client for [The Eternal City](https://www.eternalcitygame.com/), built with Go. Replaces the browser-based Orchil client.
+
+Praetor's primary application is a **native desktop GUI** (the `praetor` app, built with [Wails](https://wails.io)). It also ships a **secondary terminal client** (`praetor-tui`) for players who prefer a terminal or run headless/over SSH. Both are driven by the same engine, so features and behaviour stay identical.
 
 ## Features
 
-- **Kitty Graphics** — pixel-accurate minimap and compass rendered inline via Kitty graphics protocol
+- **Minimap & Compass** — pixel-accurate minimap and compass, rendered natively in the desktop GUI and via the Kitty graphics protocol in the terminal client
 - **Lua Scripting** — automation engine with pattern matching, command queuing, timers, and persistent state
 - **Multiple Script Directories** — load modes and libraries from any number of directories
 - **Custom Tabs** — user-defined output tabs with include/exclude pattern filters
@@ -17,32 +19,51 @@ A terminal-based game client for [The Eternal City](https://www.eternalcitygame.
 - **Responsive Sidebar** — auto-hides or compacts when terminal is too small
 - **IP Masking** — optional scrambling of IP addresses in game text
 
+The two binaries:
+
+- **`praetor`** — the desktop **GUI** (Wails); the packages install this into your applications menu.
+- **`praetor-tui`** — the **terminal** client (Bubbletea), fully supported; needs a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass.
+
+> **Upgrading from an older release?** The `praetor` command used to be the terminal client. It is now the GUI, and the terminal client moved to `praetor-tui`. See the per-manager notes below.
+
 ## Requirements
 
-- Go 1.25+ (for building from source)
-- A terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for minimap/compass rendering
 - Linux, macOS, or Windows
+- **Terminal client (`praetor-tui`):** Go 1.25+ to build; a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass
+- **Desktop GUI (`praetor`):** Go 1.25+ and the [Wails](https://wails.io) toolchain to build from source
 
 ## Quick Start
 
 ```bash
-# Clone and build
+# Clone
 git clone https://github.com/cyber-godzilla/praetor.git
 cd praetor
-make build
 
-# Run
-./praetor
+# Terminal client
+make build      # produces ./praetor-tui
+./praetor-tui
+
+# Desktop GUI
+cd gui && make deps && make build   # produces gui/build/bin/praetor
 ```
 
 On first launch, Praetor creates a default config at `~/.config/praetor/config.yaml` and a scripts directory at `~/.config/praetor/scripts/`.
 
 ## Installation
 
-### Homebrew (macOS / Linux)
+Packages install **both** binaries: `praetor` (GUI) and `praetor-tui` (terminal).
+
+### Homebrew (macOS)
 
 ```bash
-brew install cyber-godzilla/tap/praetor
+brew install --cask cyber-godzilla/tap/praetor      # desktop GUI (→ /Applications)
+brew install cyber-godzilla/tap/praetor-tui         # terminal client
+```
+
+Upgrading from the old terminal `praetor` formula? Remove it first, since the GUI now claims that name as a cask:
+
+```bash
+brew uninstall praetor && brew install --cask cyber-godzilla/tap/praetor
 ```
 
 ### Apt (Debian / Ubuntu)
@@ -56,9 +77,11 @@ curl -fsSL "https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/gpg
 echo "deb [signed-by=/etc/apt/keyrings/praetor-archive-keyring.gpg] https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/any/ any main" | \
   sudo tee /etc/apt/sources.list.d/praetor.list
 
-# Install
+# Install (provides both `praetor` GUI and `praetor-tui`)
 sudo apt update && sudo apt install praetor
 ```
+
+The GUI appears in your desktop applications menu after install.
 
 ### Yum (Fedora / RHEL / CentOS)
 
@@ -84,9 +107,11 @@ sudo yum install praetor
 # Add the repository (one-time)
 choco source add -n=praetor -s="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/index.json"
 
-# Install
+# Install (provides both `praetor` GUI and `praetor-tui`)
 choco install praetor
 ```
+
+The GUI is added to the Start Menu after install.
 
 ### GitHub Releases
 
@@ -97,18 +122,20 @@ Download pre-built binaries from the [releases page](https://github.com/cyber-go
 ```bash
 git clone https://github.com/cyber-godzilla/praetor.git
 cd praetor
-make build
-sudo mv praetor /usr/local/bin/
+make build                       # produces ./praetor-tui
+sudo mv praetor-tui /usr/local/bin/
 ```
+
+For the GUI, see [`gui/`](gui/) (`cd gui && make deps && make build`).
 
 ### Build Options
 
 ```bash
-make build    # Build binary
-make run      # Build and run
+make build    # Build the terminal client (./praetor-tui)
+make run      # Build and run the terminal client
 make test     # Run all tests
 make check    # Run vet + fmt + tests
-make clean    # Remove binary
+make clean    # Remove built binaries
 ```
 
 ## Usage

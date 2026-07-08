@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Praetor
+GenericName=Game Client
+Comment=Desktop client for The Eternal City
+Exec=praetor
+Icon=praetor
+Terminal=false
+Categories=Game;RolePlaying;
+Keywords=MUD;TEC;EternalCity;Skotos;
+StartupNotify=true
+StartupWMClass=praetor

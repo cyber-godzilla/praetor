@@ -23,11 +23,14 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	"github.com/cyber-godzilla/praetor/internal/ui"
+	versioninfo "github.com/cyber-godzilla/praetor/internal/version"
 	"github.com/cyber-godzilla/praetor/internal/wiki"
 )
 
-// Set via ldflags: go build -ldflags "-X main.version=v1.0.0"
-var version = "dev"
+// version is set at build time via ldflags (-X main.version=...). A runtime
+// initializer here would clobber the linker value, so it defaults to "" and
+// falls back to the shared embedded version (internal/version) in main().
+var version = ""
 
 // wrapper wraps the App model and intercepts messages to wire them to the Client.
 type wrapper struct {
@@ -282,18 +285,6 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
 			w.cfg.UI.ColorWords = !w.cfg.UI.ColorWords
-			if err := config.Save(w.cfg, w.cfgPath); err != nil {
-				log.Printf("saving config: %v", err)
-			}
-		}
-		return w, cmd
-
-	case ui.MenuAutoReconnectMsg:
-		// Toggle auto reconnect and save to config.
-		newApp, cmd := w.app.Update(msg)
-		w.app = newApp.(ui.App)
-		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.Reconnect.Enabled = !w.cfg.Reconnect.Enabled
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -652,6 +643,10 @@ func main() {
 	pprofAddr := flag.String("pprof-addr", "localhost:6060", "Address for the pprof HTTP server (used with --pprof)")
 	flag.Parse()
 
+	if version == "" {
+		version = versioninfo.Version
+	}
+
 	if *versionFlag {
 		fmt.Printf("praetor %s\n", version)
 		os.Exit(0)
@@ -759,7 +754,7 @@ func main() {
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
-	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.Reconnect.Enabled, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
+	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

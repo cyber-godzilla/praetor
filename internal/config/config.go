@@ -33,7 +33,6 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
-	Reconnect     ReconnectConfig     `yaml:"reconnect"`
 	Commands      CommandsConfig      `yaml:"commands"`
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
@@ -49,13 +48,6 @@ type ServerConfig struct {
 	Port     int    `yaml:"port"`
 	Protocol string `yaml:"protocol"`
 	LoginURL string `yaml:"login_url"`
-}
-
-type ReconnectConfig struct {
-	Enabled           bool     `yaml:"enabled"`
-	InitialDelay      Duration `yaml:"initial_delay"`
-	MaxDelay          Duration `yaml:"max_delay"`
-	BackoffMultiplier int      `yaml:"backoff_multiplier"`
 }
 
 type CommandsConfig struct {
@@ -200,6 +192,11 @@ type UIConfig struct {
 	SidebarWidth    int               `yaml:"sidebar_width"`
 	MinimapScale    float64           `yaml:"minimap_scale"`
 	MinimapHeight   int               `yaml:"minimap_height"`
+	CompassScale    float64           `yaml:"compass_scale"`
+	OutputFontSize  int               `yaml:"output_font_size"`
+	CRTScanlines    bool              `yaml:"crt_scanlines"`
+	CRTRoll         bool              `yaml:"crt_roll"`
+	CRTBloom        bool              `yaml:"crt_bloom"`
 	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
 	ColorWords      bool              `yaml:"color_words"`
 	EchoTyped       bool              `yaml:"echo_typed_commands"`
@@ -229,12 +226,6 @@ func Defaults() *Config {
 			Protocol: "ws",
 			LoginURL: "https://login.eternalcitygame.com/login.php",
 		},
-		Reconnect: ReconnectConfig{
-			Enabled:           true,
-			InitialDelay:      Duration{1 * time.Second},
-			MaxDelay:          Duration{60 * time.Second},
-			BackoffMultiplier: 2,
-		},
 		Commands: CommandsConfig{
 			DefaultDelay: Duration{1000 * time.Millisecond},
 			MinInterval:  Duration{500 * time.Millisecond},
@@ -247,8 +238,13 @@ func Defaults() *Config {
 			DefaultTab:      "all",
 			Scrollback:      5000,
 			SidebarWidth:    40,
-			MinimapScale:    0.8,
+			MinimapScale:    1.0,
 			MinimapHeight:   12,
+			CompassScale:    1.0,
+			OutputFontSize:  14,
+			CRTScanlines:    true,
+			CRTRoll:         true,
+			CRTBloom:        true,
 			QuickCycleModes: []string{"disable"},
 			EchoTyped:       true,
 			EchoScript:      true,
@@ -395,11 +391,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("server.login_url is required")
 	}
 
-	// Reconnect
-	if c.Reconnect.BackoffMultiplier < 1 {
-		c.Reconnect.BackoffMultiplier = 2
-	}
-
 	// Commands
 	if c.Commands.DefaultDelay.Duration < 100*time.Millisecond {
 		c.Commands.DefaultDelay = Duration{900 * time.Millisecond}
@@ -427,10 +418,18 @@ func (c *Config) Validate() error {
 		c.UI.SidebarWidth = 40
 	}
 	if c.UI.MinimapScale <= 0 {
-		c.UI.MinimapScale = 0.8
+		c.UI.MinimapScale = 1.0
 	}
 	if c.UI.MinimapHeight < 4 {
 		c.UI.MinimapHeight = 12
+	}
+	if c.UI.CompassScale <= 0 {
+		c.UI.CompassScale = 1.0
+	}
+	if c.UI.OutputFontSize < 8 {
+		c.UI.OutputFontSize = 14
+	} else if c.UI.OutputFontSize > 40 {
+		c.UI.OutputFontSize = 40
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}

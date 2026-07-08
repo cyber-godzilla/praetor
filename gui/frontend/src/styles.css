@@ -1,0 +1,289 @@
+:root {
+  /* Palette anchored on the TUI (internal/ui/styles.go) so both clients match. */
+  --bg: #0a0a14; /* TUI colorBG */
+  --bg-panel: #12121e;
+  --bg-elevated: #1a1a28;
+  --bg-hover: #20202e;
+  --bg-input: #08080f;
+  --border: #444444; /* TUI colorBorder */
+  --border-bright: #5a5a6a;
+  --fg: #d8d8e0;
+  --fg-dim: #888888; /* TUI colorDim */
+  --fg-bright: #ffffff;
+  /* Skotos orange — the primary brand accent, matching the TUI (colorOrange). */
+  --skotos-orange: #e8a838;
+  --accent: var(--skotos-orange);
+  --accent-dim: #9c7220;
+  --green: #55cc55; /* TUI colorGreen */
+  --red: #cc4444; /* TUI colorRed */
+  --blue: #88aaff; /* TUI colorBlue */
+  --bar-empty: #333333; /* TUI colorBarEmpty */
+
+  /* Lighting label colors (TUI lightingStyle*) */
+  --light-blinding: #ffffff;
+  --light-verybright: #ffee66;
+  --light-bright: #ffcc00;
+  --light-fairlylit: #aa8800;
+  --light-somewhatdark: #887744;
+  --light-verydark: #6666aa;
+  --light-extremedark: #555588;
+  --light-pitchblack: #444444;
+
+  /* The whole client is a terminal: monospace everywhere, like the TUI. */
+  --mono: "Cascadia Mono", "JetBrains Mono", "DejaVu Sans Mono", "Consolas",
+    ui-monospace, monospace;
+  --font: var(--mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Terminals have no rounded corners — enforce square edges everywhere so no
+   component drifts back toward a "web card" look. */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow: hidden;
+  user-select: none;
+  color-scheme: dark;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- Retro CRT effects — three independent toggles (Menu → Retro CRT Effects)
+   Each layer is a non-interactive overlay gated by its own body class. */
+
+/* Phosphor bloom: each glyph glows in its own color (currentColor resolves per
+   element), plus a faint warm ambient haze. Applied to EVERY element — not just
+   via inheritance — because form controls (button/input/select/textarea) reset
+   text-shadow in the UA stylesheet, so relying on inheritance alone would leave
+   their text un-bloomed. The universal selector guarantees no text is missed;
+   on elements with no text it's a harmless no-op. */
+body.crt-bloom,
+body.crt-bloom * {
+  text-shadow:
+    0 0 3px currentColor,
+    0 0 9px rgba(232, 168, 56, 0.1);
+}
+
+/* Scanline mask + gentle flicker. */
+body.crt-scanlines::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.12) 50%);
+  background-size: 100% 3px;
+  animation: crt-flicker 3s ease-in-out infinite;
+}
+/* Vignette / tube curvature (rides with the scanline layer). */
+body.crt-scanlines::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  background: radial-gradient(125% 125% at 50% 50%, transparent 58%, rgba(0, 0, 0, 0.38) 100%);
+}
+/* The rolling band — a faint bright horizontal sweep drifting down the screen,
+   the "off calibration" motion of an unsynced CRT. */
+.crt-roll {
+  position: fixed;
+  left: 0;
+  right: 0;
+  height: 12%;
+  z-index: 9997;
+  pointer-events: none;
+  background: linear-gradient(
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.035) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: crt-roll 7s linear infinite;
+}
+@keyframes crt-roll {
+  0% {
+    top: -12%;
+  }
+  100% {
+    top: 100%;
+  }
+}
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.93;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.crt-scanlines::before {
+    animation: none;
+  }
+  .crt-roll {
+    display: none;
+  }
+}
+
+::selection {
+  background: var(--accent);
+  color: #000;
+}
+
+/* Terminal-style controls: flat, square, monospace, tight. Form controls have
+   their own UA font, so force them all onto the inherited --mono stack — one
+   rule guarantees every control (incl. textarea) shares the app font-face. */
+button,
+input,
+select,
+textarea,
+optgroup,
+option {
+  font-family: inherit;
+}
+
+button {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+button:hover {
+  border-color: var(--accent);
+  color: var(--fg-bright);
+}
+button.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+button.primary:hover {
+  background: var(--accent);
+  color: #000;
+}
+button.danger:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+button:disabled:hover {
+  border-color: var(--border);
+  color: var(--fg);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="number"],
+select {
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  outline: none;
+  caret-color: var(--accent); /* orange terminal caret */
+}
+input:focus,
+select:focus {
+  border-color: var(--accent);
+}
+
+/* Selects: drop the native chrome, use a flat ▾ marker. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 24px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='6' viewBox='0 0 9 6'%3E%3Cpath d='M0 0l4.5 6L9 0z' fill='%23e8a838'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+select:hover {
+  border-color: var(--accent);
+}
+
+/* Checkboxes as an ASCII-style box: an empty square that fills orange when
+   checked, instead of the OS control. */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  cursor: pointer;
+}
+input[type="checkbox"]:hover {
+  border-color: var(--accent);
+}
+input[type="checkbox"]::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  background: var(--accent);
+  transform: scale(0);
+}
+input[type="checkbox"]:checked {
+  border-color: var(--accent);
+}
+input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border: 3px solid var(--bg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-bright);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spacer {
+  flex: 1;
+}
+.dim {
+  color: var(--fg-dim);
+}

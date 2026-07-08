@@ -35,11 +35,9 @@ type Client struct {
 	Creds    session.CredentialStore
 	Settings Settings
 
-	events          chan types.Event
-	reconnector     *session.Reconnector
-	cancelReconnect chan struct{}
-	cancelRun       chan struct{} // cancels the ModeChanges listener goroutine
-	cancelMu        sync.Mutex
+	events    chan types.Event
+	cancelRun chan struct{} // cancels the ModeChanges listener goroutine
+	cancelMu  sync.Mutex
 
 	// htmlIndent tracks <ul> nesting across protocol lines for indentation.
 	htmlIndent int
@@ -61,21 +59,14 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		return nil, fmt.Errorf("creating engine: %w", err)
 	}
 
-	recon := session.NewReconnector(
-		cfg.Reconnect.InitialDelay.Duration,
-		cfg.Reconnect.MaxDelay.Duration,
-		cfg.Reconnect.BackoffMultiplier,
-	)
-
 	return &Client{
-		Config:      cfg,
-		Session:     session.New(),
-		Engine:      eng,
-		Creds:       creds,
-		Settings:    Settings{EchoTyped: true, EchoScript: true},
-		events:      make(chan types.Event, 256),
-		reconnector: recon,
-		ignore:      NewIgnoreFilter(),
+		Config:   cfg,
+		Session:  session.New(),
+		Engine:   eng,
+		Creds:    creds,
+		Settings: Settings{EchoTyped: true, EchoScript: true},
+		events:   make(chan types.Event, 256),
+		ignore:   NewIgnoreFilter(),
 	}, nil
 }
 
@@ -150,7 +141,6 @@ func (c *Client) ConnectWithAuth(username, password string) error {
 // and emits events. It blocks until the session's Lines channel closes.
 func (c *Client) Run() {
 	c.emit(types.ConnectedEvent{})
-	c.reconnector.Reset()
 
 	// Cancel any previous ModeChanges listener goroutine from a prior Run().
 	c.cancelMu.Lock()
@@ -183,9 +173,6 @@ func (c *Client) Run() {
 	}
 
 	c.emit(types.DisconnectedEvent{Reason: "connection closed"})
-	if c.Config.Reconnect.Enabled {
-		go c.reconnectLoop()
-	}
 }
 
 // SendCommand handles user input. Strings starting with "/" are interpreted
@@ -211,20 +198,6 @@ func (c *Client) SendCommand(input string) {
 			Timestamp: time.Now(),
 			IsEcho:    true,
 		})
-	}
-}
-
-// CancelReconnect signals the reconnect loop to stop.
-func (c *Client) CancelReconnect() {
-	c.cancelMu.Lock()
-	defer c.cancelMu.Unlock()
-	if c.cancelReconnect != nil {
-		select {
-		case <-c.cancelReconnect:
-			// already closed
-		default:
-			close(c.cancelReconnect)
-		}
 	}
 }
 
@@ -631,91 +604,11 @@ func (c *Client) handleLocalCommand(input string) {
 			IsEcho:    true,
 		})
 
-	case "/reconnect":
-		c.Reconnect()
-
 	case "/calc", "/rb":
 		c.emit(types.CalcOpenMenuEvent{})
 
 	default:
 		log.Printf("[CLIENT] unknown command: %s", cmd)
-	}
-}
-
-// Reconnect terminates the current session and starts a fresh connection,
-// equivalent to refreshing the Orchil browser window.
-func (c *Client) Reconnect() {
-	log.Printf("[CLIENT] manual reconnect requested")
-	if c.Session != nil {
-		c.Session.Close()
-	}
-	c.emit(types.DisconnectedEvent{Reason: "manual reconnect"})
-	go c.reconnectLoop()
-}
-
-// reconnectLoop attempts to reconnect with exponential backoff. It can be
-// cancelled via CancelReconnect().
-func (c *Client) reconnectLoop() {
-	c.cancelMu.Lock()
-	c.cancelReconnect = make(chan struct{})
-	c.cancelMu.Unlock()
-
-	for {
-		delay := c.reconnector.NextDelay()
-		attempt := c.reconnector.Attempt()
-
-		c.emit(types.ReconnectingEvent{
-			Attempt:   attempt,
-			NextDelay: delay,
-		})
-
-		// Wait for delay or cancellation.
-		select {
-		case <-time.After(delay):
-		case <-c.cancelReconnect:
-			log.Printf("[CLIENT] reconnect cancelled")
-			return
-		}
-
-		// Re-login to get fresh session cookies using the stored authUser.
-		pass, err := c.Creds.GetAccount(c.authUser)
-		if err != nil {
-			log.Printf("[CLIENT] reconnect: no credentials for %q: %v", c.authUser, err)
-			c.emit(types.ErrorEvent{Context: "reconnect", Err: err})
-			continue
-		}
-
-		if err := c.Login(c.authUser, pass); err != nil {
-			log.Printf("[CLIENT] reconnect attempt %d login failed: %v", attempt, err)
-			c.emit(types.ErrorEvent{Context: "reconnect", Err: err})
-			continue
-		}
-
-		// Build WebSocket URL.
-		wsURL := fmt.Sprintf("%s://%s:%d/tec",
-			c.Config.Server.Protocol,
-			c.Config.Server.Host,
-			c.Config.Server.Port,
-		)
-
-		cookies := []*http.Cookie{
-			{Name: "user", Value: c.authUser},
-			{Name: "pass", Value: c.authPassCookie},
-		}
-
-		// Create a fresh session.
-		c.Session = session.New()
-
-		if err := c.Session.Connect(wsURL, cookies); err != nil {
-			log.Printf("[CLIENT] reconnect attempt %d failed: %v", attempt, err)
-			c.emit(types.ErrorEvent{Context: "reconnect", Err: err})
-			continue
-		}
-
-		// Connection succeeded — Run() will emit ConnectedEvent and reset the
-		// reconnector.
-		c.Run()
-		return
 	}
 }
 

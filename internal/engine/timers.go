@@ -25,6 +25,11 @@ type TimerManager struct {
 	nextID   int
 	luaState *lua.LState
 	luaMu    *sync.Mutex
+	// closed marks the manager's Lua state as torn down. It is written under
+	// luaMu (via Shutdown) and read under luaMu by each timer goroutine before
+	// it calls into the state, so a fired timer can never dereference a closed
+	// LState (which panics with a nil pointer inside gopher-lua).
+	closed bool
 }
 
 // NewTimerManager creates a TimerManager bound to the given Lua state.
@@ -67,8 +72,13 @@ func (tm *TimerManager) SetTimeout(callback *lua.LFunction, delayMs int) int {
 			delete(tm.timers, id)
 			tm.mu.Unlock()
 
-			// Acquire Lua mutex and execute callback
+			// Acquire Lua mutex and execute callback. Bail if the state was
+			// torn down (Shutdown) while we were waiting for the lock.
 			tm.luaMu.Lock()
+			if tm.closed {
+				tm.luaMu.Unlock()
+				return
+			}
 			if err := tm.luaState.CallByParam(lua.P{
 				Fn:      callback,
 				NRet:    0,
@@ -115,8 +125,13 @@ func (tm *TimerManager) SetInterval(callback *lua.LFunction, intervalMs int) int
 					return
 				}
 
-				// Acquire Lua mutex and execute callback
+				// Acquire Lua mutex and execute callback. Bail if the state was
+				// torn down (Shutdown) while we were waiting for the lock.
 				tm.luaMu.Lock()
+				if tm.closed {
+					tm.luaMu.Unlock()
+					return
+				}
 				if err := tm.luaState.CallByParam(lua.P{
 					Fn:      callback,
 					NRet:    0,
@@ -147,12 +162,28 @@ func (tm *TimerManager) ClearTimer(id int) {
 	delete(tm.timers, id)
 }
 
-// ClearAll cancels all active timers. This should be called on mode switch
-// and before closing the Lua VM.
+// ClearAll cancels all active timers. Used on mode switch, where the Lua state
+// itself stays alive (only the current mode's timers are dropped).
 func (tm *TimerManager) ClearAll() {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
+	for id, entry := range tm.timers {
+		close(entry.cancel)
+		delete(tm.timers, id)
+	}
+}
+
+// Shutdown permanently retires the manager because its Lua state is being
+// closed or replaced. It marks the manager closed and cancels every timer so
+// no goroutine calls into the (soon-to-be) dead state. MUST be called with
+// luaMu held (i.e. the engine mutex), so it is ordered against the closed-check
+// each timer goroutine performs under luaMu before invoking its callback.
+func (tm *TimerManager) Shutdown() {
+	tm.mu.Lock()
+	defer tm.mu.Unlock()
+
+	tm.closed = true
 	for id, entry := range tm.timers {
 		close(entry.cancel)
 		delete(tm.timers, id)

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "praetor-gui",
+  "outputfilename": "praetor",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "cyber-godzilla"
+  },
+  "info": {
+    "productName": "Praetor",
+    "productVersion": "0.1.5",
+    "comments": "Desktop client for The Eternal City"
+  }
+}

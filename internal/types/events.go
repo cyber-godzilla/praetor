@@ -181,13 +181,6 @@ type DisconnectedEvent struct {
 
 func (DisconnectedEvent) eventMarker() {}
 
-type ReconnectingEvent struct {
-	Attempt   int
-	NextDelay time.Duration
-}
-
-func (ReconnectingEvent) eventMarker() {}
-
 type NotificationEvent struct {
 	Title   string
 	Message string

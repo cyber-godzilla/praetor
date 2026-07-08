@@ -13,7 +13,6 @@ type MenuQuickCycleMsg struct{}           // open the quick-cycle mode picker
 type MenuColorWordsMsg struct{}           // toggle color words
 type MenuEchoTypedMsg struct{}            // toggle echo of user-typed commands
 type MenuEchoScriptMsg struct{}           // toggle echo of script-sent commands
-type MenuAutoReconnectMsg struct{}        // toggle auto reconnect
 type MenuHideIPsMsg struct{}              // toggle IP address masking
 type MenuGameLogsMsg struct{}             // toggle session logging
 type MenuNotificationSettingsMsg struct{} // open notification settings
@@ -46,7 +45,7 @@ type Menu struct {
 	message     string // transient status message, cleared on next keypress
 }
 
-func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs bool, logPath string, modesAvailable bool) Menu {
+func NewMenu(colorWords, echoTyped, echoScript, hideIPs, gameLogs bool, logPath string, modesAvailable bool) Menu {
 	cwLabel := "Colorwords: OFF"
 	if colorWords {
 		cwLabel = "Colorwords: ON"
@@ -58,10 +57,6 @@ func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs
 	echoScriptLabel := "Echo Script Commands: OFF"
 	if echoScript {
 		echoScriptLabel = "Echo Script Commands: ON"
-	}
-	reconLabel := "Auto Reconnect: OFF"
-	if autoReconnect {
-		reconLabel = "Auto Reconnect: ON"
 	}
 	ipLabel := "Hide IP Addresses: OFF"
 	if hideIPs {
@@ -97,10 +92,6 @@ func NewMenu(colorWords, echoTyped, echoScript, autoReconnect, hideIPs, gameLogs
 		menuItem{label: echoTypedLabel, action: func() tea.Msg { return MenuEchoTypedMsg{} }},
 		menuItem{label: echoScriptLabel, action: func() tea.Msg { return MenuEchoScriptMsg{} }},
 		menuItem{label: ipLabel, action: func() tea.Msg { return MenuHideIPsMsg{} }},
-		menuItem{label: "", isHeader: true},
-
-		menuItem{label: "Connection", isHeader: true},
-		menuItem{label: reconLabel, action: func() tea.Msg { return MenuAutoReconnectMsg{} }},
 		menuItem{label: "", isHeader: true},
 
 		menuItem{label: "Notifications", isHeader: true},

@@ -47,9 +47,6 @@ ui:
 	if cfg.Server.Port != 9090 {
 		t.Errorf("Server.Port = %d, want 9090", cfg.Server.Port)
 	}
-	if cfg.Reconnect.MaxDelay.String() != "30s" {
-		t.Errorf("Reconnect.MaxDelay = %v, want 30s", cfg.Reconnect.MaxDelay)
-	}
 	if cfg.Commands.DefaultDelay.String() != "800ms" {
 		t.Errorf("Commands.DefaultDelay = %v, want 800ms", cfg.Commands.DefaultDelay)
 	}
@@ -165,7 +162,6 @@ func TestValidate_ClampsValues(t *testing.T) {
 	cfg.Commands.MaxQueueSize = 0
 	cfg.Logging.App.Level = "bogus"
 	cfg.Logging.App.MaxSizeMB = 0
-	cfg.Reconnect.BackoffMultiplier = 0
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error: %v", err)
@@ -177,8 +173,8 @@ func TestValidate_ClampsValues(t *testing.T) {
 	if cfg.UI.SidebarWidth != 40 {
 		t.Errorf("SidebarWidth = %d, want 40", cfg.UI.SidebarWidth)
 	}
-	if cfg.UI.MinimapScale != 0.8 {
-		t.Errorf("MinimapScale = %f, want 0.8", cfg.UI.MinimapScale)
+	if cfg.UI.MinimapScale != 1.0 {
+		t.Errorf("MinimapScale = %f, want 1.0", cfg.UI.MinimapScale)
 	}
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)
@@ -197,9 +193,6 @@ func TestValidate_ClampsValues(t *testing.T) {
 	}
 	if cfg.Logging.App.MaxSizeMB != 5 {
 		t.Errorf("MaxSizeMB = %d, want 5", cfg.Logging.App.MaxSizeMB)
-	}
-	if cfg.Reconnect.BackoffMultiplier != 2 {
-		t.Errorf("BackoffMultiplier = %d, want 2", cfg.Reconnect.BackoffMultiplier)
 	}
 }
 
@@ -258,8 +251,8 @@ server:
 	if cfg.UI.SidebarWidth != 40 {
 		t.Errorf("default SidebarWidth = %d, want 40", cfg.UI.SidebarWidth)
 	}
-	if cfg.UI.MinimapScale != 0.8 {
-		t.Errorf("default MinimapScale = %f, want 0.8", cfg.UI.MinimapScale)
+	if cfg.UI.MinimapScale != 1.0 {
+		t.Errorf("default MinimapScale = %f, want 1.0", cfg.UI.MinimapScale)
 	}
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("default MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)
@@ -534,5 +527,41 @@ func TestKudosConfig_QueueAddRemove(t *testing.T) {
 	k.RemoveQueueAt(99)
 	if len(k.Queue) != 1 {
 		t.Errorf("oob queue remove changed slice")
+	}
+}
+
+// TestSaveLoadListsRoundTrip guards cross-session persistence of the
+// StringList-backed settings edited from the GUI/TUI menus: the ignore lists,
+// high-priority commands, and script directories must survive Save -> Load
+// (i.e. an app restart). Regression test for the GUI ignore lists not sticking.
+func TestSaveLoadListsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	c := Defaults()
+	c.Ignorelist.OOC = []string{"alice", "bob"}
+	c.Ignorelist.Think = []string{"carol"}
+	c.Commands.HighPriority = []string{"flee", "quaff"}
+	c.Scripts = []string{"~/one/scripts", "~/two/scripts"}
+
+	if err := Save(c, path); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(loaded.Ignorelist.OOC, c.Ignorelist.OOC) {
+		t.Errorf("Ignorelist.OOC not persisted: got %v want %v", loaded.Ignorelist.OOC, c.Ignorelist.OOC)
+	}
+	if !reflect.DeepEqual(loaded.Ignorelist.Think, c.Ignorelist.Think) {
+		t.Errorf("Ignorelist.Think not persisted: got %v want %v", loaded.Ignorelist.Think, c.Ignorelist.Think)
+	}
+	if !reflect.DeepEqual(loaded.Commands.HighPriority, c.Commands.HighPriority) {
+		t.Errorf("Commands.HighPriority not persisted: got %v want %v", loaded.Commands.HighPriority, c.Commands.HighPriority)
+	}
+	if !reflect.DeepEqual(loaded.Scripts, c.Scripts) {
+		t.Errorf("Scripts not persisted: got %v want %v", loaded.Scripts, c.Scripts)
 	}
 }

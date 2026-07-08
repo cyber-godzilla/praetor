@@ -1,5 +1,16 @@
 name: Release
 
+# Tag-triggered release. Because Wails links a native webview per OS and CANNOT
+# cross-compile, each platform builds on its own native runner and does the FULL
+# process for that OS: build both binaries (GUI `praetor` + TUI `praetor-tui`),
+# package, and publish. A tiny coordinator job creates the GitHub release first
+# so every platform job can attach assets to it.
+#
+# Asset naming is load-bearing — packaging/homebrew/render.sh references these
+# exact names:
+#   Praetor_<ver>_darwin_universal.zip
+#   praetor-tui_<ver>_darwin_amd64.tar.gz / _arm64.tar.gz
+
 on:
   push:
     tags:
@@ -8,33 +19,88 @@ on:
 permissions:
   contents: write
 
+env:
+  WAILS_VERSION: v2.13.0
+
 jobs:
-  # Linux/macOS artifacts + GitHub release + homebrew tap + deb/rpm push.
-  build-unix:
+  # ── Coordinator ──────────────────────────────────────────────────────────
+  create-release:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
-
-      - name: Run GoReleaser (skip chocolatey)
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: "~> v2"
-          args: release --clean --skip=chocolatey
+      - name: Test gate (block the release if tests fail)
+        run: go test ./... -count=1
+      - name: Compute version (strip leading v)
+        id: v
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Create GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes
+          fi
+
+  # ── Linux: deb + rpm (GUI + TUI + .desktop + icon) ───────────────────────
+  linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.create-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install webview + packaging deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build TUI (praetor-tui)
+        run: go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui ./cmd/praetor
+
+      - name: Build GUI (praetor)
+        working-directory: gui
+        run: wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
+
+      - name: Package deb + rpm
+        env:
+          PKG_ARCH: amd64
+        run: |
+          mkdir -p dist
+          nfpm pkg --config packaging/linux/nfpm.yaml --packager deb --target dist/
+          nfpm pkg --config packaging/linux/nfpm.yaml --packager rpm --target dist/
+          # A plain tarball of the GUI binary for non-packaged installs.
+          tar -C gui/build/bin -czf "dist/praetor_${VERSION}_linux_amd64.tar.gz" praetor
+          tar -czf "dist/praetor-tui_${VERSION}_linux_amd64.tar.gz" praetor-tui
+          ls -la dist
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.rpm dist/*.tar.gz --clobber
 
       - name: Push .deb to Buildkite
         run: |
           for f in dist/*.deb; do
-            echo "Uploading $f to Buildkite Debian registry..."
-            curl -X POST \
+            curl -f -X POST \
               "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-debian/packages" \
               -H "Authorization: Bearer ${{ secrets.BUILDKITE_DEB_TOKEN }}" \
               -F "file=@$f"
@@ -43,47 +109,127 @@ jobs:
       - name: Push .rpm to Buildkite
         run: |
           for f in dist/*.rpm; do
-            echo "Uploading $f to Buildkite RPM registry..."
-            curl -X POST \
+            curl -f -X POST \
               "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-rpm/packages" \
               -H "Authorization: Bearer ${{ secrets.BUILDKITE_RPM_TOKEN }}" \
               -F "file=@$f"
           done
 
-  # Chocolatey .nupkg built with native choco on Windows. Runs after
-  # build-unix so the GitHub release already exists; this job only
-  # produces and pushes the .nupkg.
-  build-choco:
-    runs-on: windows-latest
-    needs: build-unix
-    defaults:
-      run:
-        shell: bash
+  # ── macOS: GUI cask (.app) + TUI formula (universal + per-arch) ──────────
+  macos:
+    needs: create-release
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.create-release.outputs.version }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-go@v6
         with:
           go-version: "1.25"
-
-      - name: Run GoReleaser (chocolatey only, skip publish)
-        uses: goreleaser/goreleaser-action@v7
+      - uses: actions/setup-node@v4
         with:
-          version: "~> v2"
-          args: release --clean --skip=nfpm,homebrew,publish,announce,sbom,sign
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Present for .goreleaser.yaml template rendering only; push
-          # below does the actual upload.
-          BUILDKITE_NUGET_TOKEN: ${{ secrets.BUILDKITE_NUGET_TOKEN }}
+          node-version: "22"
 
-      - name: Push .nupkg to Buildkite NuGet registry
+      - name: Install Wails
         run: |
-          shopt -s nullglob
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build GUI (universal .app)
+        working-directory: gui
+        run: wails build -platform darwin/universal -ldflags "-X main.version=${GITHUB_REF_NAME}"
+
+      - name: Build TUI (amd64 + arm64)
+        run: |
+          GOARCH=amd64 go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui ./cmd/praetor
+          tar -czf "praetor-tui_${VERSION}_darwin_amd64.tar.gz" praetor-tui
+          GOARCH=arm64 go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui ./cmd/praetor
+          tar -czf "praetor-tui_${VERSION}_darwin_arm64.tar.gz" praetor-tui
+
+      - name: Zip GUI .app
+        run: |
+          # Wails names the bundle from wails.json "name" (praetor-gui), not
+          # productName — so the build emits praetor-gui.app. Rename to the
+          # public Praetor.app the cask expects before zipping.
+          mv "gui/build/bin/praetor-gui.app" "gui/build/bin/Praetor.app"
+          # Signing hook: an unsigned .app trips Gatekeeper (users right-click →
+          # Open once). Add codesign/notarize here when a Developer ID is set.
+          ditto -c -k --keepParent "gui/build/bin/Praetor.app" \
+            "Praetor_${VERSION}_darwin_universal.zip"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "Praetor_${VERSION}_darwin_universal.zip" \
+            "praetor-tui_${VERSION}_darwin_amd64.tar.gz" \
+            "praetor-tui_${VERSION}_darwin_arm64.tar.gz" --clobber
+
+      - name: Update Homebrew tap (cask + formula)
+        env:
+          GUI_ZIP: Praetor_${{ needs.create-release.outputs.version }}_darwin_universal.zip
+          TUI_AMD64_TGZ: praetor-tui_${{ needs.create-release.outputs.version }}_darwin_amd64.tar.gz
+          TUI_ARM64_TGZ: praetor-tui_${{ needs.create-release.outputs.version }}_darwin_arm64.tar.gz
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: bash packaging/homebrew/render.sh
+
+  # ── Windows: NSIS installer (GUI, Start Menu) + Chocolatey (both) ────────
+  windows:
+    needs: create-release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.create-release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Wails
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Build GUI + NSIS installer
+        working-directory: gui
+        run: wails build -nsis -ldflags "-X main.version=${GITHUB_REF_NAME}"
+
+      - name: Build TUI (praetor-tui.exe)
+        run: go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui.exe ./cmd/praetor
+
+      - name: Stage release assets
+        run: |
+          mkdir -p dist
+          # Wails names the installer from wails.json "name": the file is
+          # praetor-gui-amd64-installer.exe; the glob normalises it.
+          cp gui/build/bin/*installer.exe "dist/Praetor_${VERSION}_windows_amd64_installer.exe"
+          cp gui/build/bin/praetor.exe "dist/praetor_${VERSION}_windows_amd64.exe"
+          # Compress-Archive is always present on windows-latest; 7z may not be
+          # on the Git-bash PATH.
+          powershell -NoProfile -Command "Compress-Archive -Path praetor-tui.exe -DestinationPath dist/praetor-tui_${VERSION}_windows_amd64.zip -Force"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.exe dist/*.zip --clobber
+
+      - name: Build Chocolatey package (GUI + TUI)
+        run: |
+          cp gui/build/bin/praetor.exe packaging/choco/tools/praetor.exe
+          cp praetor-tui.exe packaging/choco/tools/praetor-tui.exe
+          sed "s/@VERSION@/${VERSION}/g" packaging/choco/praetor.nuspec > packaging/choco/praetor.rendered.nuspec
+          ( cd packaging/choco && choco pack praetor.rendered.nuspec --outputdirectory ../../dist )
+
+      - name: Push .nupkg to Buildkite NuGet
+        run: |
           for f in dist/*.nupkg; do
-            echo "Pushing $f..."
             choco push "$f" \
               --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
               --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}"
