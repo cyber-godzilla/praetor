@@ -1,10 +1,12 @@
 # Praetor
 
-A terminal-based game client for [The Eternal City](https://www.eternalcitygame.com/), built with Go. Replaces the browser-based Orchil client with a native terminal experience.
+A cross-platform desktop client for [The Eternal City](https://www.eternalcitygame.com/), built with Go. Replaces the browser-based Orchil client.
+
+Praetor's primary application is a **native desktop GUI** (the `praetor` app, built with [Wails](https://wails.io)). It also ships a **secondary terminal client** (`praetor-tui`) for players who prefer a terminal or run headless/over SSH. Both are driven by the same engine, so features and behaviour stay identical.
 
 ## Features
 
-- **Kitty Graphics** — pixel-accurate minimap and compass rendered inline via Kitty graphics protocol
+- **Minimap & Compass** — pixel-accurate minimap and compass, rendered natively in the desktop GUI and via the Kitty graphics protocol in the terminal client
 - **Lua Scripting** — automation engine with pattern matching, command queuing, timers, and persistent state
 - **Multiple Script Directories** — load modes and libraries from any number of directories
 - **Custom Tabs** — user-defined output tabs with include/exclude pattern filters
@@ -17,10 +19,10 @@ A terminal-based game client for [The Eternal City](https://www.eternalcitygame.
 - **Responsive Sidebar** — auto-hides or compacts when terminal is too small
 - **IP Masking** — optional scrambling of IP addresses in game text
 
-Praetor ships **two clients** that share the same core:
+The two binaries:
 
-- **`praetor`** — the desktop **GUI** (Wails). This is the primary client and what the packages install into your applications menu.
-- **`praetor-tui`** — the original **terminal** client (Bubbletea). Still fully supported; needs a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass.
+- **`praetor`** — the desktop **GUI** (Wails); the packages install this into your applications menu.
+- **`praetor-tui`** — the **terminal** client (Bubbletea), fully supported; needs a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass.
 
 > **Upgrading from an older release?** The `praetor` command used to be the terminal client. It is now the GUI, and the terminal client moved to `praetor-tui`. See the per-manager notes below.
 

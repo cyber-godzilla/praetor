@@ -2,43 +2,66 @@
 
 ## Project Overview
 
-This is **praetor**, a Go terminal-based game client for The Eternal City (TEC), built with Bubbletea/Lipgloss. It replaces the browser-based Orchil client entirely, including authentication, game interaction, automation via Lua scripting, and a minimap renderer using Kitty graphics protocol.
+**praetor** is a cross-platform desktop client for The Eternal City (TEC), replacing the browser-based Orchil client. It ships two front-ends over one shared Go core:
+
+- **Desktop GUI (primary)** — a [Wails](https://wails.io) application (Go backend + Svelte frontend) shipped as the `praetor` binary. This is the main application most users run.
+- **Terminal client (secondary)** — a Bubbletea/Lipgloss TUI shipped as the `praetor-tui` binary, for users who prefer a terminal or run headless/over SSH.
+
+Both shells are thin: all game logic — authentication, game interaction, automation via Lua scripting, minimap/compass rendering, config, and protocol handling — lives in the UI-agnostic core under `internal/`, so the two clients stay in lockstep.
 
 **Repository:** `github.com/cyber-godzilla/praetor`
 
 ## Architecture
 
-### Core Library + TUI Shell (all under `internal/`)
+One shared core drives two shells: the desktop GUI (`gui/`) and the terminal client (`cmd/praetor` + `internal/ui`). The core (everything else under `internal/`) never imports either shell.
 
 ```
 praetor/
-├── cmd/praetor/main.go              # Entry point with wrapper pattern for Bubbletea
+├── gui/                             # Desktop GUI (primary) — Wails app, nested Go module
+│   ├── main.go                      #   thin Wails wiring; boots the shared core
+│   ├── frontend/                    #   Svelte 5 frontend (see gui/frontend/src)
+│   └── Makefile, wails.json         #   make dev / build / installer
+├── cmd/praetor/main.go              # Terminal client (secondary) — Bubbletea wrapper entry
 ├── internal/
+│   ├── gui/                         # UI-agnostic GUI facade: Emitter interface, wire events,
+│   │                                #   bootstrap — testable without a webview
 │   ├── client/                      # Client orchestrator: session, engine, protocol, notifications
 │   ├── colorwords/                  # Color word detection and data for game text
-│   ├── compass/                     # Compass rose renderer (Kitty graphics)
+│   ├── compass/                     # Compass rose renderer (image + Kitty graphics)
 │   ├── config/                      # YAML config loading + saving, validation
 │   ├── engine/                      # Lua VM, mode loading, pattern matching, command queue, timers, metrics, persistent state
-│   ├── kitty/                       # Kitty graphics protocol encoding
+│   ├── graphics/ kitty/ sixel/      # Terminal graphics encoders (TUI)
 │   ├── logging/                     # Structured logging with rotation
-│   ├── minimap/                     # Minimap renderer (Kitty graphics)
+│   ├── minimap/                     # Minimap renderer (image + Kitty graphics)
 │   ├── protocol/                    # Line buffer, SKOOT parsing, HTML parsing
 │   ├── session/                     # WebSocket, HTTP auth, keyring (multi-account)
 │   ├── types/                       # Shared event types
-│   └── ui/                          # Bubbletea TUI components
-├── Makefile                         # make test, make build, make run, make vet, make fmt, make lint, make check
+│   └── ui/                          # Bubbletea TUI components (secondary shell)
+├── packaging/                       # Release assets (deb/rpm, homebrew, chocolatey, .desktop)
+├── Makefile                         # TUI: make test, build, run, vet, fmt, lint, check
 └── .gitignore
 ```
 
+The GUI lives in a **nested Go module** (`gui/go.mod` with a `replace` directive back to the parent) so the webview-linked Wails code stays isolated — the parent module's `make check` never needs a webview toolchain. The `internal/gui` facade is Wails-free (an `Emitter` interface converts core events to a JSON wire format), so GUI logic is unit-tested in the parent module without a browser.
+
 ## Development Commands
 
+**Core + terminal client** (run from the repo root — no webview toolchain needed):
+
 - `make test` — runs all tests (`go test ./... -count=1 -timeout=60s`)
-- `make build` — builds the `./praetor-tui` binary (the terminal client; the GUI builds under `gui/`)
+- `make build` — builds the `./praetor-tui` binary (the terminal client)
 - `make run` — builds and launches the TUI
-- `make vet` — runs `go vet ./...`
-- `make fmt` — runs `gofmt -l .` (lists unformatted files)
-- `make lint` — runs `staticcheck ./...` (if installed)
-- `make check` — runs vet + fmt + lint + test
+- `make vet` / `make fmt` / `make lint` — `go vet`, `gofmt`, `staticcheck`
+- `make check` — runs vet + fmt + lint + test (the gate for core changes)
+
+**Desktop GUI** (run from `gui/` — needs the Wails toolchain; Ubuntu 25.10+/Debian 13+ use `WAILS_TAGS=webkit2_41`, the default):
+
+- `make -C gui dev` — live-reloading Wails dev server (Vite HMR for the frontend; the Go backend is rebuilt only on restart)
+- `make -C gui build` — builds `gui/build/bin/praetor`
+- `make -C gui installer` — Windows NSIS installer
+- `make -C gui check` — frontend build + facade tests + dev-mode compile (no webview)
+
+When changing shared core behavior, verify **both** clients: `make check` at the root and the relevant `gui/` build/tests.
 
 ## Git Workflow
 
@@ -68,9 +91,16 @@ Two-step HTTP login + WebSocket + SKOOT handshake:
 
 Wall types: `hor` (horizontal), `ver` (vertical), `ne` (diagonal NE-SW), `nw` (diagonal NW-SE). Prefix `no` means blocked: `none` = blocked NE, `nonw` = blocked NW.
 
-## Minimap Rendering (V2 — Kitty Graphics)
+## Minimap Rendering
 
-The minimap renders rooms and walls to a pixel image (`image.RGBA`) and displays it inline using the **Kitty graphics protocol**. This gives full-color pixel-accurate rendering matching Orchil's visual style.
+The minimap/compass renderers produce a pixel image (`image.RGBA`) in the shared core (`minimap.BuildImage()` / `compass.BuildImage()`). Each shell displays that same image its own way:
+
+- **Desktop GUI** — encodes the image to a base64 PNG data URI and renders it as an `<img>` (works everywhere, including Windows/WebView2).
+- **Terminal client** — displays it inline via the **Kitty graphics protocol** (see below).
+
+The rest of this section describes the terminal client's Kitty path; the underlying room/wall geometry is identical for both.
+
+The minimap renders rooms and walls to a pixel image and displays it inline using the **Kitty graphics protocol**. This gives full-color pixel-accurate rendering matching Orchil's visual style.
 
 **Room rendering:**
 - SKOOT x,y used as direct pixel positions (top-left corner)
@@ -126,6 +156,8 @@ set_timeout(fn, ms) / set_interval(fn, ms) / clear_timer(id)
 ```
 
 ## Key Bindings (Game View)
+
+These are the **terminal client** bindings. The desktop GUI mirrors the same keys with its own handlers (in `gui/frontend/src`), so document/behaviour changes here should be reflected there too. The "Reserved Alt Keys" note below is a terminal (VT100/readline) constraint and does not apply to the GUI.
 
 | Key | Action |
 |-----|--------|
@@ -244,5 +276,5 @@ Tests across the project:
 
 ## Known Limitations
 
-- Text selection requires hiding the sidebar (Alt+S) or holding Shift
-- Lighting level strings are approximate (tuning in progress)
+- Text selection in the **terminal client** requires hiding the sidebar (Alt+S) or holding Shift (the GUI selects text normally)
+- Lighting level strings are approximate (tuning in progress; shared by both clients)
