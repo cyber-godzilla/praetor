@@ -87,6 +87,16 @@ func (m *Metrics) EndSession() {
 	m.current = nil
 }
 
+// Reset clears the current session and all accumulated history, returning the
+// metrics store to its initial empty state. Used on logout/disconnect so the
+// next session starts fresh.
+func (m *Metrics) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.current = nil
+	m.history = nil
+}
+
 // Track declares a metric for the current session. If no session is
 // active, one is started automatically. If the metric already exists,
 // the label is updated. Initial value is 0.

@@ -214,3 +214,22 @@ func TestMetrics_GetUntracked(t *testing.T) {
 		t.Error("Get untracked should return 0")
 	}
 }
+
+func TestMetrics_Reset(t *testing.T) {
+	m := NewMetrics()
+	m.StartSession("hunt")
+	m.Track("kills", "Kills")
+	m.Inc("kills")
+	m.EndSession() // moves the session into history
+	m.StartSession("rest")
+	m.Track("naps", "Naps")
+
+	m.Reset()
+
+	if cur := m.Current(); cur != nil {
+		t.Errorf("Current() = %+v, want nil after Reset", cur)
+	}
+	if h := m.History(); len(h) != 0 {
+		t.Errorf("History() len = %d, want 0 after Reset", len(h))
+	}
+}
