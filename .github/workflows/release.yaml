@@ -80,7 +80,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
           go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+          # GOTOOLCHAIN=auto lets `go install` fetch the newer Go toolchain nfpm
+          # may require to build (setup-go pins GOTOOLCHAIN=local otherwise).
+          GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build TUI (praetor-tui)
@@ -206,6 +208,11 @@ jobs:
         run: |
           go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Install NSIS (for the -nsis installer)
+        run: |
+          choco install nsis -y --no-progress
+          echo "C:\Program Files (x86)\NSIS" >> "$GITHUB_PATH"
 
       - name: Build GUI + NSIS installer
         working-directory: gui
