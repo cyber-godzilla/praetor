@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -117,6 +118,60 @@ func TestWithColorWords(t *testing.T) {
 func TestEncodeImage_Nil(t *testing.T) {
 	if encodeImage(nil) != nil {
 		t.Error("nil image should encode to nil payload")
+	}
+}
+
+func TestRenderer_Reset(t *testing.T) {
+	r := newRenderer()
+	r.haveExits = true
+	r.exits = types.Exits{}
+	r.mini.Update([]types.MinimapRoom{{X: 1, Y: 1, Size: 5}}, nil)
+
+	r.reset()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.haveExits {
+		t.Error("haveExits should be false after reset")
+	}
+}
+
+func TestProcessBatch_DisconnectResetsGuiState(t *testing.T) {
+	deps := &Deps{Config: config.Defaults()}
+	em := &captureEmitter{}
+	a := NewGuiApp(deps, em)
+
+	// Seed the state a disconnect must clear.
+	a.kudosPromptShown = true
+	a.render.haveExits = true
+
+	a.processBatch([]types.Event{types.DisconnectedEvent{Reason: "connection closed"}})
+
+	if a.kudosPromptShown {
+		t.Error("kudosPromptShown should be reset on disconnect")
+	}
+	a.render.mu.Lock()
+	he := a.render.haveExits
+	a.render.mu.Unlock()
+	if he {
+		t.Error("renderer haveExits should be cleared on disconnect")
+	}
+
+	// The disconnected event must still reach the frontend as a Conn wire event.
+	found := false
+	for _, emitted := range em.snapshot() {
+		batch, ok := emitted.data.([]WireEvent)
+		if !ok {
+			continue
+		}
+		for _, w := range batch {
+			if w.Kind == KindConn && w.Conn != nil && w.Conn.State == "disconnected" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Error("expected a Conn wire event with State == \"disconnected\" to be emitted")
 	}
 }
 

@@ -61,6 +61,17 @@ func (r *renderer) setScale(s float64) {
 	r.mini.SetScale(s)
 }
 
+// reset clears the minimap and compass state so a new session starts with a
+// blank map. Scale and size are preserved — Update replaces only the room/wall
+// set. Called when a session ends (logout, server close, or dropped link).
+func (r *renderer) reset() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.mini.Update(nil, nil)
+	r.haveExits = false
+	r.exits = types.Exits{}
+}
+
 // encodeImage PNG-encodes an RGBA image into a base64 data URI payload.
 // Returns nil for a nil image (nothing to render).
 func encodeImage(img *image.RGBA) *ImagePayload {

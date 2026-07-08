@@ -145,6 +145,16 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 
 		case types.ModeChangeEvent:
 			a.deps.DesktopNotify.Prune()
+
+		case types.DisconnectedEvent:
+			// Session ended (user logout, server close, or a dropped link). Clear
+			// the GUI's cached graphics and the one-time kudos prompt so a reconnect
+			// starts fresh. This lives here (not in GuiApp.Disconnect) so it covers
+			// every disconnect cause — Disconnect() only runs on user logout.
+			a.render.reset()
+			a.mu.Lock()
+			a.kudosPromptShown = false
+			a.mu.Unlock()
 		}
 
 		// Apply color-word coloring (if enabled) before conversion, mirroring
