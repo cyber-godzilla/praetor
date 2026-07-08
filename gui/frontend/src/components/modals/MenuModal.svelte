@@ -50,7 +50,8 @@
     {
       name: "Session",
       items: [
-        { label: "Quit", action: () => window.runtime?.Quit() },
+        { label: "Logout", action: logout },
+        { label: "Exit", action: () => window.runtime?.Quit() },
       ],
     },
   ];
@@ -64,6 +65,13 @@
     } catch (e) {
       store.addToast("Reload failed", String(e));
     }
+  }
+
+  function logout() {
+    // Close the menu immediately; the resulting disconnected event drives the
+    // screen back to the bootup screen.
+    store.openModal = null;
+    api.disconnect();
   }
 
   function pick(it: Item) {
