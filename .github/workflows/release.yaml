@@ -50,10 +50,20 @@ jobs:
               --generate-notes
           fi
 
-  # ── Linux: deb + rpm (GUI + TUI + .desktop + icon) ───────────────────────
+  # ── Linux: deb + rpm (GUI + TUI + .desktop + icon), amd64 + arm64 ─────────
+  # Native per-arch runners (Wails can't cross-compile). arm64 uses GitHub's
+  # ubuntu-24.04-arm hosted runner (free for public repos).
   linux:
     needs: create-release
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     env:
       VERSION: ${{ needs.create-release.outputs.version }}
     steps:
@@ -82,14 +92,14 @@ jobs:
 
       - name: Package deb + rpm
         env:
-          PKG_ARCH: amd64
+          PKG_ARCH: ${{ matrix.arch }}
         run: |
           mkdir -p dist
           nfpm pkg --config packaging/linux/nfpm.yaml --packager deb --target dist/
           nfpm pkg --config packaging/linux/nfpm.yaml --packager rpm --target dist/
           # A plain tarball of the GUI binary for non-packaged installs.
-          tar -C gui/build/bin -czf "dist/praetor_${VERSION}_linux_amd64.tar.gz" praetor
-          tar -czf "dist/praetor-tui_${VERSION}_linux_amd64.tar.gz" praetor-tui
+          tar -C gui/build/bin -czf "dist/praetor_${VERSION}_linux_${{ matrix.arch }}.tar.gz" praetor
+          tar -czf "dist/praetor-tui_${VERSION}_linux_${{ matrix.arch }}.tar.gz" praetor-tui
           ls -la dist
 
       - name: Upload release assets

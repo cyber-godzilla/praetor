@@ -84,7 +84,7 @@ echo "deb [signed-by=/etc/apt/keyrings/praetor-archive-keyring.gpg] https://pack
 sudo apt update && sudo apt install praetor
 ```
 
-The GUI appears in your desktop applications menu after install. **Existing users** who had the old terminal `praetor` upgrade in place with `sudo apt update && sudo apt upgrade` — the `praetor` command becomes the GUI and `praetor-tui` is added alongside it (amd64 only for now).
+The GUI appears in your desktop applications menu after install. **Existing users** who had the old terminal `praetor` upgrade in place with `sudo apt update && sudo apt upgrade` — the `praetor` command becomes the GUI and `praetor-tui` is added alongside it. Both amd64 and arm64 are built.
 
 ### Yum (Fedora / RHEL / CentOS)
 
