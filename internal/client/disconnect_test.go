@@ -84,6 +84,76 @@ func waitForDisconnected(t *testing.T, c *Client) types.DisconnectedEvent {
 	}
 }
 
+// newRecordingServer upgrades exactly one client connection and records every
+// non-ident text frame it receives onto a buffered channel. The initial
+// "SKOTOS ..." identification frame sent by Session.Connect is filtered out
+// so the channel only carries game commands.
+func newRecordingServer(t *testing.T) (*httptest.Server, string, <-chan string) {
+	t.Helper()
+	received := make(chan string, 16)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := discUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			text := strings.TrimRight(string(msg), "\r\n")
+			if strings.HasPrefix(text, "SKOTOS ") {
+				continue // ident frame, not a game command
+			}
+			received <- text
+		}
+	}))
+	return srv, "ws" + strings.TrimPrefix(srv.URL, "http"), received
+}
+
+// TestClient_DrainQueue_DoesNotSendStaleCommandToReconnectedSession guards
+// against a data race / cross-session leak: a command dequeued while c.Session
+// still pointed at the original (server A) session must be sent to server A,
+// even if c.Session is reassigned (reconnect to server B) while the drain
+// goroutine is mid-sleep on the command's delay.
+func TestClient_DrainQueue_DoesNotSendStaleCommandToReconnectedSession(t *testing.T) {
+	srvA, urlA, recvA := newRecordingServer(t)
+	defer srvA.Close()
+	srvB, urlB, recvB := newRecordingServer(t)
+	defer srvB.Close()
+
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, urlA)
+
+	// Enqueue a command with enough delay to span the reassignment below.
+	c.Engine.Queue().Enqueue("stale-cmd", 300)
+	c.drainQueue()
+
+	// Mimic a reconnect racing with the still-sleeping drain goroutine: swap
+	// c.Session to a brand-new session connected to server B.
+	c.Session = session.New()
+	if err := c.Session.Connect(urlB, nil); err != nil {
+		t.Fatalf("connect B: %v", err)
+	}
+
+	select {
+	case cmd := <-recvA:
+		if cmd != "stale-cmd" {
+			t.Fatalf("server A received %q, want %q", cmd, "stale-cmd")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for server A to receive the stale command")
+	}
+
+	select {
+	case cmd := <-recvB:
+		t.Fatalf("server B unexpectedly received %q; stale command leaked into the new session", cmd)
+	case <-time.After(500 * time.Millisecond):
+		// expected: nothing arrives at B
+	}
+}
+
 func TestClient_Disconnect_UserInitiated_EmptyReason(t *testing.T) {
 	// Server holds the connection open; the client closes it via Disconnect.
 	never := make(chan struct{})

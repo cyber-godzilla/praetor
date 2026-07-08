@@ -463,6 +463,13 @@ func (c *Client) emitStatusUpdate() {
 func (c *Client) drainQueue() {
 	queue := c.Engine.Queue()
 
+	// Snapshot the current session synchronously, before launching the drain
+	// goroutine. A reconnect can reassign c.Session while this goroutine is
+	// sleeping between sends; without this capture the goroutine would read
+	// c.Session unsynchronized after the sleep (a data race) and could send a
+	// stale, previously-queued command onto the newly reconnected session.
+	sess := c.Session
+
 	// Drain in a goroutine so processLine doesn't block.
 	go func() {
 		for {
@@ -482,7 +489,7 @@ func (c *Client) drainQueue() {
 				time.Sleep(queue.MinInterval() - elapsed)
 			}
 
-			if err := c.Session.Send(cmd.Command); err != nil {
+			if err := sess.Send(cmd.Command); err != nil {
 				log.Printf("[CLIENT] queue send error: %v", err)
 				return
 			}
