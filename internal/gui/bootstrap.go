@@ -25,6 +25,7 @@ type Deps struct {
 	Creds         session.CredentialStore
 	SessionLog    *client.SessionLogger
 	DesktopNotify *client.DesktopNotifier
+	Clipboard     Clipboard
 	ScriptDirs    []string
 	Version       string
 	Debug         bool
