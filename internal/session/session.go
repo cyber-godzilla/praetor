@@ -1,7 +1,6 @@
 package session
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -12,7 +11,7 @@ import (
 )
 
 const (
-	// Detection window tuned from live [CONNSTAT] telemetry: TEC answers every
+	// Detection window tuned against the live TEC server, which answers every
 	// WebSocket ping with a pong (~77ms RTT), so a live connection always yields
 	// an incoming frame within one ping period. A 30s read deadline (3x the ping
 	// period) detects a dropped link in ~30s with no false-positive risk.
@@ -32,7 +31,6 @@ type Session struct {
 	buf        *protocol.LineBuffer
 	pongWait   time.Duration
 	pingPeriod time.Duration
-	stats      *connStats
 }
 
 // New creates a new Session with initialized channels and line buffer.
@@ -43,7 +41,6 @@ func New() *Session {
 		buf:        protocol.NewLineBuffer(),
 		pongWait:   defaultPongWait,
 		pingPeriod: defaultPingPeriod,
-		stats:      newConnStats(),
 	}
 }
 
@@ -92,16 +89,13 @@ func (s *Session) Connect(url string, cookies []*http.Cookie) error {
 	// Read deadline + pong handler: any incoming frame (data or pong) resets the
 	// deadline; if none arrives within pongWait, ReadMessage errors and we detect
 	// the dead connection.
-	s.stats.onConnect()
 	_ = conn.SetReadDeadline(time.Now().Add(s.pongWait))
 	conn.SetPongHandler(func(string) error {
-		s.stats.onPong()
 		return conn.SetReadDeadline(time.Now().Add(s.pongWait))
 	})
 
 	go s.readLoop()
 	go s.pingLoop()
-	go s.statsLoop()
 	return nil
 }
 
@@ -164,19 +158,14 @@ func (s *Session) readLoop() {
 			close(s.done)
 		}
 		close(s.lines)
-		log.Printf("%s", s.stats.summary(" final"))
 	}()
 
 	for {
 		_, msg, err := s.conn.ReadMessage()
 		if err != nil {
-			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				s.stats.onDeadlineHit()
-			}
 			return
 		}
 		_ = s.conn.SetReadDeadline(time.Now().Add(s.pongWait))
-		s.stats.onData(len(msg))
 		lines := s.buf.Write(msg)
 		for _, line := range lines {
 			select {
@@ -207,22 +196,6 @@ func (s *Session) pingLoop() {
 			if err != nil {
 				return // write failed; readLoop will also error out and close the session
 			}
-			s.stats.onPingSent()
-		case <-s.done:
-			return
-		}
-	}
-}
-
-// statsLoop logs a rolling connectivity-telemetry summary every statsInterval
-// until the session closes. The final summary is logged from readLoop's defer.
-func (s *Session) statsLoop() {
-	ticker := time.NewTicker(statsInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			log.Printf("%s", s.stats.summary(""))
 		case <-s.done:
 			return
 		}
