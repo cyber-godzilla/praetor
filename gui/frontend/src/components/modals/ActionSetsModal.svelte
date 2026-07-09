@@ -11,6 +11,7 @@
   let sets = $state<ActionSet[]>((store.config?.UI?.ActionSets ?? []).map(clone));
   let sel = $state(0);
   let newSetName = $state("");
+  let saving = $state(false);
 
   const current = $derived(sets[sel]);
 
@@ -23,6 +24,10 @@
   }
   function removeSet(i: number) {
     sets = sets.filter((_, idx) => idx !== i);
+    // Keep `sel` on the same set: shift down if an earlier one was removed,
+    // then clamp so it never dangles past the end (else edits/Save would land
+    // on the wrong set).
+    if (sel > i) sel -= 1;
     if (sel >= sets.length) sel = Math.max(0, sets.length - 1);
   }
   function addButton() {
@@ -43,12 +48,25 @@
   }
 
   async function save() {
+    if (saving) return; // guard against double-submit
+    saving = true;
+    // Drop fully-blank buttons so they don't render as empty tiles that send an
+    // empty command.
+    const cleaned = sets.map((s) => ({
+      Name: s.Name,
+      Buttons: (s.Buttons ?? []).filter((b) => b.Label.trim() !== "" || b.Command.trim() !== ""),
+    }));
     try {
-      await api.setActionSets(sets);
-      store.config!.UI.ActionSets = sets;
+      await api.setActionSets(cleaned);
+      store.config!.UI.ActionSets = cleaned;
+      // Deletes/reorders here can leave the sidebar's index pointing at a
+      // different set; reset it so it can't mis-target.
+      store.actionSetIndex = 0;
       store.addToast("Action sets", "Saved");
     } catch (e) {
       store.addToast("Save failed", String(e));
+    } finally {
+      saving = false;
     }
     store.openModal = null;
   }

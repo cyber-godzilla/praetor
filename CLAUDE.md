@@ -244,6 +244,7 @@ ui:
   echo_script_commands: true
   hide_ips: false
   custom_tabs: []
+  action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons
 highlights: []
 notifications:
   desktop:

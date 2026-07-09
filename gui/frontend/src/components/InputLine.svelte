@@ -180,6 +180,7 @@
   onpointerdown={() => (pointerDown = true)}
   onpointerup={() => (pointerDown = false)}
   onpointercancel={() => (pointerDown = false)}
+  onblur={() => (pointerDown = false)}
 />
 
 <div class="inputbar">

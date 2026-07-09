@@ -6,10 +6,12 @@
 
   let label = $state("");
   let command = $state("");
+  let saving = $state(false);
   const valid = $derived(label.trim().length > 0 && command.trim().length > 0);
 
   async function save() {
-    if (!valid) return;
+    if (!valid || saving) return; // guard invalid input and double-submit
+    saving = true;
     // Deep-clone so we don't mutate the reactive store objects before persisting.
     const sets: ActionSet[] = (store.config?.UI?.ActionSets ?? []).map((s) => ({
       Name: s.Name,
@@ -17,6 +19,7 @@
     }));
     const target = sets[store.actionSetIndex];
     if (!target) {
+      saving = false;
       store.openModal = null;
       return;
     }
@@ -26,6 +29,8 @@
       if (store.config) store.config.UI.ActionSets = sets;
     } catch (e) {
       store.addToast("Save failed", String(e));
+    } finally {
+      saving = false;
     }
     store.openModal = null;
   }
@@ -33,7 +38,16 @@
 
 <Modal title="New Action" onsave={save}>
   <label class="fld">Label
-    <input type="text" bind:value={label} placeholder="e.g. Attack" />
+    <input
+      type="text"
+      bind:value={label}
+      placeholder="e.g. Attack"
+      onkeydown={(e) => {
+        if (e.key === "Enter" && valid) {
+          e.preventDefault();
+          save();
+        }
+      }} />
   </label>
   <label class="fld">Command
     <input

@@ -41,6 +41,9 @@
     // so it stays consistent through opening and closing menus: it closes any
     // open modal, otherwise opens the menu.
     if (e.key === "Escape") {
+      // The custom right-click menu owns Escape while it's open — yield so
+      // dismissing it doesn't also pop the app menu.
+      if (store.contextMenuOpen) return;
       e.preventDefault();
       // From a submenu, Esc goes back to the menu (modalEscapeTarget = "menu");
       // from the menu or a standalone modal it closes; with nothing open it

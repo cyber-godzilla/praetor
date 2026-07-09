@@ -5,10 +5,12 @@
   import type { ActionSet } from "../../lib/types";
 
   let name = $state("");
+  let saving = $state(false);
   const valid = $derived(name.trim().length > 0);
 
   async function save() {
-    if (!valid) return;
+    if (!valid || saving) return; // guard invalid input and double-submit
+    saving = true;
     const sets: ActionSet[] = [
       ...(store.config?.UI?.ActionSets ?? []),
       { Name: name.trim(), Buttons: [] },
@@ -19,6 +21,8 @@
       store.actionSetIndex = sets.length - 1; // show the new set
     } catch (e) {
       store.addToast("Save failed", String(e));
+    } finally {
+      saving = false;
     }
     store.openModal = null;
   }

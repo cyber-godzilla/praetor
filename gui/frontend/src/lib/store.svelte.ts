@@ -121,6 +121,9 @@ class AppStore {
   // UI chrome
   sidebarOpen = $state(true);
   openModal = $state<string | null>(null);
+  // True while the custom right-click context menu is open, so the game view's
+  // Escape handler yields to it instead of opening the app menu.
+  contextMenuOpen = $state(false);
   // Current Actions-tab set index. Ephemeral (not persisted): lifted out of
   // ActionsTab so the add-action modal can target the shown set and the
   // add-set modal can select the newly created set.
@@ -277,6 +280,7 @@ class AppStore {
     this.connReason = "";
     this.expandAllSuppressed = false;
     this.openModal = null;
+    this.contextMenuOpen = false;
     this.actionSetIndex = 0;
   }
 

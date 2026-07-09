@@ -1,5 +1,6 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { clampMenuPosition } from "../lib/menu";
 
@@ -16,8 +17,15 @@
     selText || (target && caret.end > caret.start ? target.value.slice(caret.start, caret.end) : ""),
   );
 
+  // Only text-like inputs support selectionStart/setSelectionRange. Reading them
+  // on a number/checkbox/range input throws InvalidStateError, so restrict the
+  // paste target to these types (and any <textarea>).
+  const SELECTABLE_INPUT_TYPES = new Set(["text", "search", "url", "tel", "password"]);
   function isTextInput(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
-    return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
+    if (!el) return false;
+    if (el.tagName === "TEXTAREA") return true;
+    if (el.tagName === "INPUT") return SELECTABLE_INPUT_TYPES.has((el as HTMLInputElement).type);
+    return false;
   }
 
   async function onContextMenu(e: MouseEvent) {
@@ -36,6 +44,9 @@
     }
     pos = { x: e.clientX, y: e.clientY };
     open = true;
+    // Signal so the game view's Escape handler yields to us instead of opening
+    // the app menu when Esc dismisses this menu.
+    store.contextMenuOpen = true;
     await tick(); // let the menu render so we can measure it
     if (menuEl) {
       const r = menuEl.getBoundingClientRect();
@@ -45,6 +56,7 @@
 
   function close() {
     open = false;
+    store.contextMenuOpen = false;
   }
 
   async function copy() {
