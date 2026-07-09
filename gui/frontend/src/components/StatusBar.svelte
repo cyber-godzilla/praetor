@@ -1,6 +1,7 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
+  import { vitalColor } from "../lib/vitals";
 
   const WIDTH = 10; // characters per bar
 
@@ -33,14 +34,6 @@
   }
   const block = (n: number) => "█".repeat(n);
   const dots = (n: number) => "░".repeat(n);
-
-  // vitalColor mirrors internal/ui/statusbar.go: >50 green, >25 orange, else red.
-  function vitalColor(v: number | null): string {
-    if (v == null) return "var(--fg-dim)";
-    if (v > 50) return "var(--green)";
-    if (v > 25) return "var(--accent)";
-    return "var(--red)";
-  }
 
   // Lighting label + color from the raw SKOOT ch9 value (approx, per CLAUDE.md).
   const lighting = $derived.by(() => {
