@@ -1,12 +1,10 @@
 <script lang="ts">
   import ActionsTab from "./sidebar/ActionsTab.svelte";
-  import StateTab from "./sidebar/StateTab.svelte";
   import ModesTab from "./sidebar/ModesTab.svelte";
 
-  type TabId = "actions" | "state" | "modes";
+  type TabId = "actions" | "modes";
   const tabs: { id: TabId; label: string }[] = [
     { id: "actions", label: "Actions" },
-    { id: "state", label: "State" },
     { id: "modes", label: "Modes" },
   ];
 
@@ -23,8 +21,6 @@
   <div class="content">
     {#if active === "actions"}
       <ActionsTab />
-    {:else if active === "state"}
-      <StateTab />
     {:else}
       <ModesTab />
     {/if}

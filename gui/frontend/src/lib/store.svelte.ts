@@ -105,7 +105,6 @@ class AppStore {
 
   // Mode / state / metrics
   mode = $state("");
-  displayState = $state<{ label: string; value: string }[]>([]);
   status = $state<StatusPayload | null>(null);
 
   // Connection
@@ -272,7 +271,6 @@ class AppStore {
     this.lighting = null;
     this.lightingRaw = null;
     this.mode = "";
-    this.displayState = [];
     this.status = null;
     this.minimap = "";
     this.compass = "";
@@ -337,7 +335,6 @@ class AppStore {
           if (ev.status) {
             this.status = ev.status;
             this.mode = ev.status.mode;
-            this.displayState = ev.status.displayState ?? [];
           }
           break;
         case Kind.Conn:
