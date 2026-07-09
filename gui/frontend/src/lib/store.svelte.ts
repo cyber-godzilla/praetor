@@ -122,6 +122,10 @@ class AppStore {
   // UI chrome
   sidebarOpen = $state(true);
   openModal = $state<string | null>(null);
+  // Current Actions-tab set index. Ephemeral (not persisted): lifted out of
+  // ActionsTab so the add-action modal can target the shown set and the
+  // add-set modal can select the newly created set.
+  actionSetIndex = $state(0);
   toasts = $state<Toast[]>([]);
   authError = $state("");
   loginUser = $state("");
@@ -275,6 +279,7 @@ class AppStore {
     this.connReason = "";
     this.expandAllSuppressed = false;
     this.openModal = null;
+    this.actionSetIndex = 0;
   }
 
   private applyConn(c: ConnPayload) {
