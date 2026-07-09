@@ -72,6 +72,10 @@ export const reloadScripts = () => call<void>("ReloadScripts", undefined);
 // ---- Graphics ----
 export const refreshGraphics = () => call<void>("RefreshGraphics", undefined);
 
+// ---- Clipboard ----
+export const clipboardGet = () => call<string>("ClipboardGet", "");
+export const clipboardSet = (t: string) => call<void>("ClipboardSet", undefined, t);
+
 // ---- Settings toggles ----
 export const setEchoTyped = (v: boolean) => call<void>("SetEchoTyped", undefined, v);
 export const setEchoScript = (v: boolean) => call<void>("SetEchoScript", undefined, v);
