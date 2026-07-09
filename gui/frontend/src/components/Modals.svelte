@@ -4,6 +4,7 @@
   import SettingsModal from "./modals/SettingsModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
   import CustomTabsModal from "./modals/CustomTabsModal.svelte";
+  import ActionSetsModal from "./modals/ActionSetsModal.svelte";
   import StringListModal from "./modals/StringListModal.svelte";
   import NotificationsModal from "./modals/NotificationsModal.svelte";
   import KudosModal from "./modals/KudosModal.svelte";
@@ -54,6 +55,8 @@
   <HighlightsModal />
 {:else if m === "tabs"}
   <CustomTabsModal />
+{:else if m === "actionsets"}
+  <ActionSetsModal />
 {:else if m === "ignore-ooc"}
   <StringListModal
     title="Ignore — OOC accounts"

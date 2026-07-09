@@ -17,6 +17,7 @@
         { label: "Retro CRT Effects", go: "crt" },
         { label: "Highlights", go: "highlights" },
         { label: "Custom Tabs", go: "tabs" },
+        { label: "Action Sets", go: "actionsets" },
         { label: "Notifications", go: "notifications" },
       ],
     },
