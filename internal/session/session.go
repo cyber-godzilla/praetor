@@ -12,8 +12,12 @@ import (
 )
 
 const (
-	defaultPongWait   = 60 * time.Second // read deadline window; connection considered dead if no frame arrives within this
-	defaultPingPeriod = 20 * time.Second // how often we send a ping; must be < pongWait
+	// Detection window tuned from live [CONNSTAT] telemetry: TEC answers every
+	// WebSocket ping with a pong (~77ms RTT), so a live connection always yields
+	// an incoming frame within one ping period. A 30s read deadline (3x the ping
+	// period) detects a dropped link in ~30s with no false-positive risk.
+	defaultPongWait   = 30 * time.Second // read deadline window; connection considered dead if no frame arrives within this
+	defaultPingPeriod = 10 * time.Second // how often we send a ping; must be < pongWait
 	writeWait         = 10 * time.Second // deadline for a single control-frame write
 )
 
