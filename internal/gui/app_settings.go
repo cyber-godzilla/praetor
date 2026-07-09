@@ -109,6 +109,12 @@ func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 	return a.save()
 }
 
+// SetActionSets replaces the sidebar quick-action sets.
+func (a *GuiApp) SetActionSets(sets []config.ActionSet) error {
+	a.cfg().UI.ActionSets = sets
+	return a.save()
+}
+
 // SetQuickCycleModes replaces the Alt+M quick-cycle mode list.
 func (a *GuiApp) SetQuickCycleModes(modes []string) error {
 	a.cfg().UI.QuickCycleModes = modes

@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -189,5 +190,34 @@ func TestRenderer_CompassProducesPNG(t *testing.T) {
 	}
 	if img.DataURI[:22] != "data:image/png;base64," {
 		t.Fatalf("wrong data URI prefix: %q", img.DataURI[:22])
+	}
+}
+
+func TestSetActionSets(t *testing.T) {
+	dir := t.TempDir()
+	deps := &Deps{
+		Config:     config.Defaults(),
+		ConfigPath: filepath.Join(dir, "config.yaml"),
+	}
+	a := NewGuiApp(deps, &captureEmitter{})
+
+	sets := []config.ActionSet{
+		{Name: "Combat", Buttons: []config.ActionButton{{Label: "Attack", Command: "attack"}}},
+	}
+	if err := a.SetActionSets(sets); err != nil {
+		t.Fatalf("SetActionSets: %v", err)
+	}
+
+	// In-memory config updated.
+	if len(deps.Config.UI.ActionSets) != 1 || deps.Config.UI.ActionSets[0].Name != "Combat" {
+		t.Fatalf("in-memory config not updated: %+v", deps.Config.UI.ActionSets)
+	}
+	// Persisted to disk.
+	got, err := config.Load(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if len(got.UI.ActionSets) != 1 || got.UI.ActionSets[0].Buttons[0].Command != "attack" {
+		t.Fatalf("persisted config wrong: %+v", got.UI.ActionSets)
 	}
 }
