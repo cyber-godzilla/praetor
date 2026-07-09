@@ -1,11 +1,16 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
+  import { shouldRefocusInput } from "../lib/focus";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
   let history: string[] = [];
   let histIdx = $state(-1); // -1 = current (not navigating)
+  // True while a mouse button is held anywhere in the window — i.e. the user is
+  // likely dragging out a text selection. Sticky-focus stands down until release
+  // so it can't clear the selection mid-drag.
+  let pointerDown = false;
 
   async function handleKudos(rest: string) {
     if (rest === "") {
@@ -149,14 +154,33 @@
   // Shift+Tab cycle tabs (handled in GameView) rather than moving the focus
   // ring through the UI.
   function onBlur() {
-    if (store.openModal) return;
+    // Defer to the next frame: the blur fires before the browser settles which
+    // element/selection the click landed on. Then only reclaim focus if the user
+    // isn't selecting text (see shouldRefocusInput) — otherwise Ctrl+C / the
+    // right-click Copy would have nothing to act on.
     requestAnimationFrame(() => {
-      if (!store.openModal && document.activeElement !== inputEl) inputEl?.focus();
+      const sel = window.getSelection();
+      if (
+        shouldRefocusInput({
+          modalOpen: !!store.openModal,
+          pointerDown,
+          selectionCollapsed: !sel || sel.isCollapsed,
+          alreadyFocused: document.activeElement === inputEl,
+        })
+      ) {
+        inputEl?.focus();
+      }
     });
   }
 </script>
 
-<svelte:window onfocus={onWindowFocus} onclick={refocusFromClick} />
+<svelte:window
+  onfocus={onWindowFocus}
+  onclick={refocusFromClick}
+  onpointerdown={() => (pointerDown = true)}
+  onpointerup={() => (pointerDown = false)}
+  onpointercancel={() => (pointerDown = false)}
+/>
 
 <div class="inputbar">
   <span class="prompt">›</span>

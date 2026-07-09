@@ -77,6 +77,10 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 20, G: 20, B: 24, A: 255},
+		// Enable the webview's native right-click menu so users get Copy on
+		// selected output text and Cut/Copy/Paste in the input, in production
+		// builds too (it's on by default only in dev).
+		EnableDefaultContextMenu: true,
 		OnStartup: func(ctx context.Context) {
 			// Capture the runtime context so the emitter can push events.
 			emitter.ctx = ctx

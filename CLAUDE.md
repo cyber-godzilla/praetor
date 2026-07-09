@@ -276,5 +276,5 @@ Tests across the project:
 
 ## Known Limitations
 
-- Text selection in the **terminal client** requires hiding the sidebar (Alt+S) or holding Shift (the GUI selects text normally)
+- Text selection in the **terminal client** requires hiding the sidebar (Alt+S) or holding Shift. The **GUI** selects text normally: select output text and copy with Ctrl+C or the right-click menu (the input's sticky focus stands down during a selection); paste into the input with Ctrl+V or the right-click menu (Wails `EnableDefaultContextMenu`).
 - Lighting level strings are approximate (tuning in progress; shared by both clients)
