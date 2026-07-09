@@ -46,6 +46,20 @@ func (e *wailsEmitter) Emit(event string, data any) {
 	wailsruntime.EventsEmit(e.ctx, event, data)
 }
 
+// wailsClipboard implements gui.Clipboard via the Wails runtime. The context is
+// captured at startup (same as wailsEmitter).
+type wailsClipboard struct {
+	ctx context.Context
+}
+
+func (c *wailsClipboard) GetText() (string, error) {
+	return wailsruntime.ClipboardGetText(c.ctx)
+}
+
+func (c *wailsClipboard) SetText(text string) error {
+	return wailsruntime.ClipboardSetText(c.ctx, text)
+}
+
 func main() {
 	debug := flag.Bool("debug", false, "Enable the debug panel and debug logging")
 	showVersion := flag.Bool("version", false, "Print version and exit")
@@ -77,13 +91,11 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 20, G: 20, B: 24, A: 255},
-		// Enable the webview's native right-click menu so users get Copy on
-		// selected output text and Cut/Copy/Paste in the input, in production
-		// builds too (it's on by default only in dev).
-		EnableDefaultContextMenu: true,
 		OnStartup: func(ctx context.Context) {
-			// Capture the runtime context so the emitter can push events.
+			// Capture the runtime context so the emitter can push events and the
+			// clipboard can read/write.
 			emitter.ctx = ctx
+			deps.Clipboard = &wailsClipboard{ctx: ctx}
 		},
 		Bind: []any{
 			app,
