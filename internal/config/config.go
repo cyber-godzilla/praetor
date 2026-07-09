@@ -203,6 +203,7 @@ type UIConfig struct {
 	EchoScript      bool              `yaml:"echo_script_commands"`
 	HideIPs         bool              `yaml:"hide_ips"`
 	CustomTabs      []CustomTabConfig `yaml:"custom_tabs"`
+	ActionSets      []ActionSet       `yaml:"action_sets"`
 }
 
 type CustomTabConfig struct {
@@ -216,6 +217,19 @@ type TabRuleConfig struct {
 	Pattern string `yaml:"pattern"` // supports * and ? wildcards
 	Include bool   `yaml:"include"` // true = "does match", false = "does not match"
 	Active  bool   `yaml:"active"`
+}
+
+// ActionSet is a named group of quick-action buttons shown in the sidebar
+// Actions tab. Users manage sets/buttons via the Action Sets editor.
+type ActionSet struct {
+	Name    string         `yaml:"name"`
+	Buttons []ActionButton `yaml:"buttons"`
+}
+
+// ActionButton is a single quick-action: a label and the game command it sends.
+type ActionButton struct {
+	Label   string `yaml:"label"`
+	Command string `yaml:"command"`
 }
 
 func Defaults() *Config {

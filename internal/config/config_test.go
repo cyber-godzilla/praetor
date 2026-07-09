@@ -530,6 +530,39 @@ func TestKudosConfig_QueueAddRemove(t *testing.T) {
 	}
 }
 
+func TestConfigActionSetsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := Defaults()
+	cfg.UI.ActionSets = []ActionSet{
+		{Name: "Combat", Buttons: []ActionButton{
+			{Label: "Attack", Command: "attack"},
+			{Label: "Get all", Command: "get all"},
+		}},
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.UI.ActionSets) != 1 {
+		t.Fatalf("ActionSets len = %d, want 1", len(got.UI.ActionSets))
+	}
+	set := got.UI.ActionSets[0]
+	if set.Name != "Combat" {
+		t.Errorf("Name = %q, want Combat", set.Name)
+	}
+	if len(set.Buttons) != 2 ||
+		set.Buttons[0].Label != "Attack" || set.Buttons[0].Command != "attack" ||
+		set.Buttons[1].Command != "get all" {
+		t.Errorf("Buttons = %+v", set.Buttons)
+	}
+}
+
 // TestSaveLoadListsRoundTrip guards cross-session persistence of the
 // StringList-backed settings edited from the GUI/TUI menus: the ignore lists,
 // high-priority commands, and script directories must survive Save -> Load
