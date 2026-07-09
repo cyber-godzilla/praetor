@@ -9,6 +9,13 @@
   // Guard the index against set deletions/reorders from the editor.
   const current = $derived(sets.length ? sets[Math.min(sel, sets.length - 1)] : undefined);
 
+  // Keep the picker's selected index in range when sets are deleted/reordered
+  // in the editor, so the dropdown and the shown buttons never disagree.
+  $effect(() => {
+    const max = Math.max(0, sets.length - 1);
+    if (sel > max) sel = max;
+  });
+
   function fire(cmd: string) {
     api.send(cmd);
   }
@@ -27,7 +34,7 @@
     </select>
   {/if}
   <div class="buttons">
-    {#each current?.Buttons ?? [] as b (b.Label)}
+    {#each current?.Buttons ?? [] as b, i (i)}
       <button class="action" onclick={() => fire(b.Command)} title={b.Command} tabindex="-1">{b.Label}</button>
     {/each}
   </div>
