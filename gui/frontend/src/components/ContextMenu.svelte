@@ -10,6 +10,12 @@
   let caret = $state({ start: 0, end: 0 });
   let menuEl = $state<HTMLDivElement | undefined>(undefined);
 
+  // Copyable text: an output/DOM selection, or a range highlighted inside the
+  // captured input (window.getSelection() is empty for input-internal selections).
+  const copyText = $derived(
+    selText || (target && caret.end > caret.start ? target.value.slice(caret.start, caret.end) : ""),
+  );
+
   function isTextInput(el: Element | null): el is HTMLInputElement | HTMLTextAreaElement {
     return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA");
   }
@@ -43,20 +49,29 @@
 
   async function copy() {
     close();
-    if (selText) await api.clipboardSet(selText);
+    if (!copyText) return;
+    try {
+      await api.clipboardSet(copyText);
+    } catch {
+      // bridge already logs; nothing else to do here
+    }
   }
 
   async function paste() {
     close();
     const el = target;
     if (!el) return;
-    const text = await api.clipboardGet();
+    let text = "";
+    try {
+      text = await api.clipboardGet();
+    } catch {
+      return;
+    }
     if (!text) return;
     el.value = el.value.slice(0, caret.start) + text + el.value.slice(caret.end);
     const p = caret.start + text.length;
     el.focus();
     el.setSelectionRange(p, p);
-    // Notify Svelte's bind:value (execCommand-free path).
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
 </script>
@@ -73,7 +88,7 @@
 
 {#if open}
   <div class="ctxmenu" bind:this={menuEl} style="left:{pos.x}px; top:{pos.y}px" role="menu">
-    <button class="item" role="menuitem" disabled={!selText} onclick={copy}>Copy</button>
+    <button class="item" role="menuitem" disabled={!copyText} onclick={copy}>Copy</button>
     <button class="item" role="menuitem" disabled={!target} onclick={paste}>Paste</button>
   </div>
 {/if}
