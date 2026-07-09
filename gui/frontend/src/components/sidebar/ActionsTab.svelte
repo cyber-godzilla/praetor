@@ -1,62 +1,73 @@
 <script lang="ts">
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
+  import { cycleIndex } from "../../lib/actions";
 
   const sets = $derived(store.config?.UI?.ActionSets ?? []);
+  // Clamp the shown index defensively for the current render; the $effect below
+  // corrects the stored value after sets shrink.
+  const current = $derived(sets.length ? sets[Math.min(store.actionSetIndex, sets.length - 1)] : undefined);
+  const canCycle = $derived(sets.length > 1);
 
-  // Component-local selection; resets to the first set each session (not persisted).
-  let sel = $state(0);
-  // Guard the index against set deletions/reorders from the editor.
-  const current = $derived(sets.length ? sets[Math.min(sel, sets.length - 1)] : undefined);
-
-  // Keep the picker's selected index in range when sets are deleted/reordered
-  // in the editor, so the dropdown and the shown buttons never disagree.
+  // Keep the shared index in range when sets are deleted/reordered in the editor.
   $effect(() => {
     const max = Math.max(0, sets.length - 1);
-    if (sel > max) sel = max;
+    if (store.actionSetIndex > max) store.actionSetIndex = max;
   });
 
+  function cycle(delta: number) {
+    if (!canCycle) return;
+    store.actionSetIndex = cycleIndex(store.actionSetIndex, delta, sets.length);
+  }
   function fire(cmd: string) {
     api.send(cmd);
   }
 </script>
 
-{#if sets.length === 0}
-  <button class="empty dim" onclick={() => (store.openModal = "actionsets")} tabindex="-1">
-    No action sets yet — add one
+<div class="toolbar">
+  <button class="nav" onclick={() => cycle(-1)} disabled={!canCycle} title="Previous set" aria-label="Previous set" tabindex="-1">‹</button>
+  <button class="cur" onclick={() => (store.openModal = "actionsets")} title="Manage action sets" tabindex="-1">
+    {current?.Name ?? "No sets"}
   </button>
-{:else}
-  {#if sets.length > 1}
-    <select class="setpicker" bind:value={sel} tabindex="-1">
-      {#each sets as s, i (i)}
-        <option value={i}>{s.Name}</option>
-      {/each}
-    </select>
-  {/if}
+  <button class="nav" onclick={() => cycle(1)} disabled={!canCycle} title="Next set" aria-label="Next set" tabindex="-1">›</button>
+  <button class="add" onclick={() => (store.openModal = "actionset-add")} title="Add action set" aria-label="Add action set" tabindex="-1">+</button>
+</div>
+
+{#if current}
   <div class="buttons">
-    {#each current?.Buttons ?? [] as b, i (i)}
+    {#each current.Buttons ?? [] as b, i (i)}
       <button class="action" onclick={() => fire(b.Command)} title={b.Command} tabindex="-1">{b.Label}</button>
     {/each}
+    <button class="action addbtn" onclick={() => (store.openModal = "action-add")} title="Add action" aria-label="Add action" tabindex="-1">+</button>
   </div>
 {/if}
 
 <style>
-  .empty {
-    display: block;
-    width: 100%;
-    text-align: left;
-    font-size: 12px;
-    padding: 8px 10px;
-  }
-  .setpicker {
-    width: 100%;
+  .toolbar {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
     margin-bottom: 8px;
-    font: inherit;
+  }
+  .nav,
+  .add {
+    width: 26px;
+    flex-shrink: 0;
+    font-size: 14px;
+    padding: 4px 0;
+  }
+  .nav:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+  .cur {
+    flex: 1;
+    min-width: 0;
     font-size: 12px;
     padding: 4px 6px;
-    background: var(--bg);
-    color: var(--fg);
-    border: 1px solid var(--border);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .buttons {
     display: grid;
@@ -70,5 +81,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .addbtn {
+    border-style: dashed;
   }
 </style>
