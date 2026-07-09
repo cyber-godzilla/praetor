@@ -13,6 +13,7 @@ import type {
   WireEvent,
   HighlightConfig,
   CustomTabConfig,
+  ActionSet,
   DesktopNotificationsConfig,
 } from "./types";
 
@@ -88,6 +89,7 @@ export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean)
 // ---- Settings lists ----
 export const setHighlights = (h: HighlightConfig[]) => call<void>("SetHighlights", undefined, h);
 export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs", undefined, t);
+export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);
 export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", undefined, c);
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);

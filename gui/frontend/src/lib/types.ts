@@ -147,6 +147,16 @@ export interface CustomTabConfig {
   Rules: TabRuleConfig[];
 }
 
+export interface ActionButton {
+  Label: string;
+  Command: string;
+}
+
+export interface ActionSet {
+  Name: string;
+  Buttons: ActionButton[] | null;
+}
+
 export interface ThresholdConfig {
   Enabled: boolean;
   Threshold: number;
@@ -193,6 +203,7 @@ export interface UIConfig {
   EchoScript: boolean;
   HideIPs: boolean;
   CustomTabs: CustomTabConfig[] | null;
+  ActionSets: ActionSet[] | null;
 }
 
 export interface AppConfig {
