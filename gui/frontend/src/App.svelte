@@ -8,6 +8,7 @@
   import Splash from "./components/Splash.svelte";
   import Toasts from "./components/Toasts.svelte";
   import Modals from "./components/Modals.svelte";
+  import ContextMenu from "./components/ContextMenu.svelte";
 
   let ready = $state(false);
   let splashDone = $state(false);
@@ -65,6 +66,7 @@
 
 <Modals />
 <Toasts />
+<ContextMenu />
 
 {#if crtRoll}
   <div class="crt-roll"></div>
