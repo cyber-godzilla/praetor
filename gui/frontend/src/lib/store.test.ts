@@ -68,19 +68,19 @@ describe("store connection routing", () => {
     store.accounts = ["alice"];
     // In game, receive a status update.
     store.apply(conn("connected"));
-    store.apply([{ kind: Kind.Status, status: { mode: "hunt", displayState: [] } }]);
+    store.apply([{ kind: Kind.Status, status: { mode: "hunt" } }]);
     expect(store.mode).toBe("hunt");
     // Disconnect, then a late Status races in AFTER the Conn:disconnected event.
     store.apply(conn("disconnected", "connection closed"));
     expect(store.mode).toBe(""); // resetSession cleared it
-    store.apply([{ kind: Kind.Status, status: { mode: "raid", displayState: [] } }]);
+    store.apply([{ kind: Kind.Status, status: { mode: "raid" } }]);
     expect(store.mode).toBe(""); // guard dropped the late event
     expect(store.screen).toBe("account"); // still on the bootup screen
   });
 
   it("applies in-game events normally while connected", () => {
     store.apply(conn("connected"));
-    store.apply([{ kind: Kind.Status, status: { mode: "craft", displayState: [] } }]);
+    store.apply([{ kind: Kind.Status, status: { mode: "craft" } }]);
     expect(store.mode).toBe("craft");
   });
 });

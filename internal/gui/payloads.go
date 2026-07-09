@@ -104,12 +104,6 @@ type SuppressPayload struct {
 	Timestamp         int64     `json:"timestamp"`
 }
 
-// StateItem mirrors types.StateDisplayItem.
-type StateItem struct {
-	Label string `json:"label"`
-	Value string `json:"value"`
-}
-
 // MetricEntry mirrors types.MetricSnapshotEntry.
 type MetricEntry struct {
 	Label string `json:"label"`
@@ -125,12 +119,11 @@ type MetricSession struct {
 	Entries    []MetricEntry `json:"entries"`
 }
 
-// StatusPayload carries mode, per-mode display state, and metrics.
+// StatusPayload carries mode and metrics.
 type StatusPayload struct {
-	Mode         string          `json:"mode"`
-	DisplayState []StateItem     `json:"displayState"`
-	Current      *MetricSession  `json:"current,omitempty"`
-	History      []MetricSession `json:"history,omitempty"`
+	Mode    string          `json:"mode"`
+	Current *MetricSession  `json:"current,omitempty"`
+	History []MetricSession `json:"history,omitempty"`
 }
 
 // BarsPayload carries the SKOOT status bar values and lighting. Any nil field

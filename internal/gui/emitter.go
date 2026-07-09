@@ -122,9 +122,6 @@ func toWire(ev types.Event) (WireEvent, bool) {
 
 func toStatusPayload(e types.StatusUpdateEvent) *StatusPayload {
 	p := &StatusPayload{Mode: e.Mode}
-	for _, item := range e.DisplayState {
-		p.DisplayState = append(p.DisplayState, StateItem{Label: item.Label, Value: item.Value})
-	}
 	if e.MetricsCurrent != nil {
 		p.Current = toMetricSession(*e.MetricsCurrent)
 	}

@@ -44,11 +44,6 @@ export interface SuppressPayload {
   timestamp: number;
 }
 
-export interface StateItem {
-  label: string;
-  value: string;
-}
-
 export interface MetricEntry {
   label: string;
   value: number;
@@ -64,7 +59,6 @@ export interface MetricSession {
 
 export interface StatusPayload {
   mode: string;
-  displayState: StateItem[];
   current?: MetricSession;
   history?: MetricSession[];
 }
