@@ -77,6 +77,9 @@
 
     <div class="editor">
       {#if current}
+        <label class="setname">Set name
+          <input type="text" bind:value={current.Name} placeholder="Set name" />
+        </label>
         <div class="btnshead dim">Buttons</div>
         {#each current.Buttons ?? [] as btn, i (i)}
           <div class="brow">
@@ -139,6 +142,15 @@
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 1px;
+  }
+  .setname {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+  }
+  .setname input {
+    font: inherit;
   }
   .brow {
     display: flex;
