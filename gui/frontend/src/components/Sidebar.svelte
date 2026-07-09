@@ -2,11 +2,12 @@
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import Frame from "./Frame.svelte";
+  import SidebarVitals from "./SidebarVitals.svelte";
+  import SidebarTabs from "./SidebarTabs.svelte";
 
   // Compass on-screen size scales with the user's compass scale (bigger scale =
   // bigger). Base 120px at scale 1.0; capped to the panel width by max-width.
   const compassPx = $derived(Math.round(120 * (store.config?.UI?.CompassScale ?? 1)));
-  const modeName = $derived(store.mode && store.mode !== "disable" ? store.mode : "disable");
 
   // Clicking a compass segment sends the movement command for that direction.
   function go(dir: string) {
@@ -20,11 +21,6 @@
 </script>
 
 <div class="sidebar">
-  <button class="modebtn" onclick={() => (store.openModal = "modeselect")} title="Switch mode" tabindex="-1">
-    <span class="dim">MODE</span>
-    <span class="modeval" class:on={modeName !== "disable"}>{modeName}</span>
-  </button>
-
   <Frame title="Map">
     <div class="mapbox">
       {#if store.minimap}
@@ -65,18 +61,9 @@
     </div>
   </Frame>
 
-  {#if store.displayState.length > 0}
-    <Frame title={modeName}>
-      <div class="statelist">
-        {#each store.displayState as item (item.label)}
-          <div class="staterow">
-            <span class="dim">{item.label}</span>
-            <span class="val">{item.value}</span>
-          </div>
-        {/each}
-      </div>
-    </Frame>
-  {/if}
+  <SidebarVitals />
+
+  <SidebarTabs />
 </div>
 
 <style>
@@ -90,24 +77,6 @@
     gap: 14px;
     padding: 12px 10px;
     overflow-y: auto;
-  }
-  .modebtn {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 6px 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    font-size: 13px;
-  }
-  .modebtn:hover {
-    border-color: var(--accent);
-  }
-  .modeval {
-    color: var(--fg-dim);
-  }
-  .modeval.on {
-    color: var(--accent);
   }
   .mapbox,
   .compassbox {
@@ -167,15 +136,5 @@
   .empty {
     font-size: 12px;
     padding: 10px;
-  }
-  .statelist {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-  }
-  .staterow {
-    display: flex;
-    justify-content: space-between;
-    font-size: 13px;
   }
 </style>
