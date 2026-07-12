@@ -17,7 +17,7 @@
   }
 </script>
 
-<Frame title="Vitals">
+<Frame title="Vitals" collapsible bind:collapsed={store.collapsed.vitals}>
   <div class="gauges">
     {#each bars as b (b.label)}
       <button class="gauge" title="{b.label} — click to check condition" onclick={checkCond} tabindex="-1">

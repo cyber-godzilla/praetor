@@ -21,7 +21,7 @@
 </script>
 
 <div class="sidebar">
-  <Frame title="Map">
+  <Frame title="Map" collapsible bind:collapsed={store.collapsed.map}>
     <div class="mapbox">
       {#if store.minimap}
         <button class="mapbtn" title="Size up the area" onclick={sizeup} tabindex="-1">
@@ -33,7 +33,7 @@
     </div>
   </Frame>
 
-  <Frame title="Exits">
+  <Frame title="Exits" collapsible bind:collapsed={store.collapsed.exits}>
     <div class="compassbox">
       {#if store.compass}
         <div class="compass" style="width:{compassPx}px; height:{compassPx}px">

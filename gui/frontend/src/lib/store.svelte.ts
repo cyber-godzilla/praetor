@@ -120,6 +120,10 @@ class AppStore {
 
   // UI chrome
   sidebarOpen = $state(true);
+  // Collapsed state of the sidebar's accordion sections. Session-only (resets to
+  // all-expanded on restart); held here rather than in Frame so it survives an
+  // Alt+S sidebar unmount/remount.
+  collapsed = $state({ map: false, exits: false, vitals: false });
   openModal = $state<string | null>(null);
   // True while the custom right-click context menu is open, so the game view's
   // Escape handler yields to it instead of opening the app menu.
