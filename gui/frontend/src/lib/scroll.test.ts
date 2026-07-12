@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { FOLLOW_BAND_LINES, followBandPx, gapToBottom, withinBand } from "./scroll";
+import {
+  FOLLOW_BAND_LINES,
+  followBandPx,
+  gapToBottom,
+  withinBand,
+  nextAutoFollow,
+  thumbMetrics,
+  scrollDeltaForThumbDrag,
+} from "./scroll";
 
 describe("followBandPx", () => {
   it("is 25 lines tall at line-height 1.4", () => {
@@ -41,5 +49,78 @@ describe("withinBand", () => {
   });
   it("detaches far from the bottom", () => {
     expect(withinBand(5000, band)).toBe(false);
+  });
+});
+
+describe("nextAutoFollow", () => {
+  const band = followBandPx(14); // 490px
+
+  it("follows when within the band, regardless of prior state", () => {
+    expect(nextAutoFollow({ gapPx: 0, bandPx: band, top: 100, lastTop: 900, current: false })).toBe(true);
+    expect(nextAutoFollow({ gapPx: 200, bandPx: band, top: 900, lastTop: 100, current: false })).toBe(true);
+  });
+
+  it("detaches when the user scrolls up out of the band", () => {
+    // scrollTop decreased (700 < 1000) and we're now far from the bottom.
+    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 700, lastTop: 1000, current: true })).toBe(false);
+  });
+
+  it("does NOT detach on a burst: gap grew but scrollTop did not move up", () => {
+    // The programmatic scroll-to-bottom event fires after more content grew the
+    // gap past the band; scrollTop is unchanged (top === lastTop). Must keep
+    // following so large chunks don't leave the view stuck behind.
+    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 5000, lastTop: 5000, current: true })).toBe(true);
+  });
+
+  it("does NOT detach when scrollTop increased (scrolling toward the bottom)", () => {
+    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 1200, lastTop: 1000, current: true })).toBe(true);
+  });
+
+  it("stays detached while paging down but still far from the bottom", () => {
+    // Already detached, moving down (top increased) but not yet within band.
+    expect(nextAutoFollow({ gapPx: 2000, bandPx: band, top: 1500, lastTop: 1000, current: false })).toBe(false);
+  });
+});
+
+describe("thumbMetrics", () => {
+  const min = 24;
+
+  it("reports not-scrollable when content fits", () => {
+    const m = thumbMetrics({ scrollTop: 0, scrollHeight: 300, clientHeight: 300, trackPx: 300, minThumbPx: min });
+    expect(m.scrollable).toBe(false);
+  });
+
+  it("sizes the thumb proportionally to the visible fraction", () => {
+    // Half the content visible → thumb is half the track.
+    const m = thumbMetrics({ scrollTop: 0, scrollHeight: 1000, clientHeight: 500, trackPx: 400, minThumbPx: min });
+    expect(m.scrollable).toBe(true);
+    expect(m.sizePx).toBeCloseTo(200);
+    expect(m.offsetPx).toBeCloseTo(0);
+  });
+
+  it("puts the thumb at the bottom of the track when scrolled to the end", () => {
+    const m = thumbMetrics({ scrollTop: 500, scrollHeight: 1000, clientHeight: 500, trackPx: 400, minThumbPx: min });
+    expect(m.offsetPx).toBeCloseTo(400 - m.sizePx); // travel fully used
+  });
+
+  it("clamps the thumb to a minimum size for very long buffers", () => {
+    const m = thumbMetrics({ scrollTop: 0, scrollHeight: 100000, clientHeight: 500, trackPx: 400, minThumbPx: min });
+    expect(m.sizePx).toBe(min);
+  });
+});
+
+describe("scrollDeltaForThumbDrag", () => {
+  it("maps thumb travel to full content scroll", () => {
+    // track 400, thumb 200 → travel 200; dragging the full travel scrolls the
+    // full maxScroll (500).
+    const d = scrollDeltaForThumbDrag({ dyPx: 200, trackPx: 400, thumbPx: 200, scrollHeight: 1000, clientHeight: 500 });
+    expect(d).toBeCloseTo(500);
+  });
+  it("scales a partial drag proportionally", () => {
+    const d = scrollDeltaForThumbDrag({ dyPx: 50, trackPx: 400, thumbPx: 200, scrollHeight: 1000, clientHeight: 500 });
+    expect(d).toBeCloseTo(125);
+  });
+  it("is zero when there is no travel", () => {
+    expect(scrollDeltaForThumbDrag({ dyPx: 100, trackPx: 200, thumbPx: 200, scrollHeight: 1000, clientHeight: 500 })).toBe(0);
   });
 });

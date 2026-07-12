@@ -3,7 +3,14 @@
   import { store } from "../lib/store.svelte";
   import type { Segment } from "../lib/types";
   import { applyHighlights, compileHighlights, maskIPs } from "../lib/highlight";
-  import { followBandPx, gapToBottom, withinBand } from "../lib/scroll";
+  import {
+    followBandPx,
+    gapToBottom,
+    withinBand,
+    nextAutoFollow,
+    thumbMetrics,
+    scrollDeltaForThumbDrag,
+  } from "../lib/scroll";
 
   let { tab }: { tab: Tab } = $props();
 
@@ -18,24 +25,99 @@
   // lands a few pixels short of the bottom, still counts as "following". Only
   // scrolling up out of the band (or pressing Home) detaches; End/PgDn re-engage.
   let autoFollow = true;
-  // Home freezes at the top even when the whole buffer is short enough that the
-  // top sits inside the follow band. Setting scrollTop=0 fires a scroll event
-  // that would otherwise re-engage following, so we swallow exactly that one
-  // programmatic event.
+  // Last observed scrollTop, used to tell a user's upward scroll (scrollTop
+  // decreases) apart from content growth (scrollHeight grows, scrollTop does
+  // not). Kept in sync on programmatic scrolls so those never read as user
+  // movement. Home also freezes at the top even when the whole buffer is short
+  // enough that the top sits inside the band; setting scrollTop=0 fires a scroll
+  // event we swallow via ignoreScroll.
+  let lastTop = 0;
   let ignoreScroll = false;
 
   function bandPx(): number {
     return followBandPx(fontSize);
   }
 
-  // Recompute the follow state from the current scroll position.
+  // Recompute the follow state from the current scroll position. Re-engage
+  // whenever within the band, but only DISENGAGE on a genuine upward scroll —
+  // a burst that grows scrollHeight faster than the auto-scroll catches up must
+  // not spuriously detach following (which would leave the view stuck behind).
   function onScroll() {
     if (!viewport) return;
+    const top = viewport.scrollTop;
     if (ignoreScroll) {
       ignoreScroll = false;
+      lastTop = top;
       return;
     }
-    autoFollow = withinBand(gapToBottom(viewport), bandPx());
+    autoFollow = nextAutoFollow({
+      gapPx: gapToBottom(viewport),
+      bandPx: bandPx(),
+      top,
+      lastTop,
+      current: autoFollow,
+    });
+    lastTop = top;
+    sampleMetrics();
+  }
+
+  // ---- Custom scrollbar rail --------------------------------------------
+  // The pane's native scrollbar is hidden so text keeps full height; an overlaid
+  // rail (buttons + draggable thumb) drives scrolling instead. Thumb geometry is
+  // pure (lib/scroll.ts); we just sample the DOM metrics into reactive state.
+  let trackEl: HTMLDivElement;
+  const MIN_THUMB = 24;
+  let metrics = $state({ scrollTop: 0, scrollHeight: 0, clientHeight: 0, trackPx: 0 });
+  const thumb = $derived(thumbMetrics({ ...metrics, minThumbPx: MIN_THUMB }));
+
+  function sampleMetrics() {
+    if (!viewport || !trackEl) return;
+    metrics = {
+      scrollTop: viewport.scrollTop,
+      scrollHeight: viewport.scrollHeight,
+      clientHeight: viewport.clientHeight,
+      trackPx: trackEl.clientHeight,
+    };
+  }
+
+  let dragging = false;
+  let dragStartY = 0;
+  let dragStartScroll = 0;
+
+  function onThumbDown(e: PointerEvent) {
+    if (!viewport) return;
+    e.preventDefault();
+    e.stopPropagation(); // don't let the track's page-click fire
+    dragging = true;
+    dragStartY = e.clientY;
+    dragStartScroll = viewport.scrollTop;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  }
+  function onThumbMove(e: PointerEvent) {
+    if (!dragging || !viewport) return;
+    const delta = scrollDeltaForThumbDrag({
+      dyPx: e.clientY - dragStartY,
+      trackPx: metrics.trackPx,
+      thumbPx: thumb.sizePx,
+      scrollHeight: metrics.scrollHeight,
+      clientHeight: metrics.clientHeight,
+    });
+    const maxScroll = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
+    viewport.scrollTop = Math.min(maxScroll, Math.max(0, dragStartScroll + delta));
+  }
+  function onThumbUp(e: PointerEvent) {
+    dragging = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* capture may already be released */
+    }
+  }
+  // Clicking the track above/below the thumb pages toward the click.
+  function onTrackDown(e: PointerEvent) {
+    if (!trackEl) return;
+    const y = e.clientY - trackEl.getBoundingClientRect().top;
+    pageBy(y < thumb.offsetPx ? -1 : 1);
   }
 
   // Coalesce all appends within a frame into a single scroll-to-bottom.
@@ -45,7 +127,10 @@
     scrollQueued = true;
     requestAnimationFrame(() => {
       scrollQueued = false;
-      if (viewport && autoFollow) viewport.scrollTop = viewport.scrollHeight;
+      if (viewport && autoFollow) {
+        viewport.scrollTop = viewport.scrollHeight;
+        lastTop = viewport.scrollTop;
+      }
     });
   }
 
@@ -58,11 +143,13 @@
       ignoreScroll = true;
       viewport.scrollTop = 0;
     }
+    lastTop = 0;
   }
   function toEnd() {
     if (!viewport) return;
     autoFollow = true;
     viewport.scrollTop = viewport.scrollHeight;
+    lastTop = viewport.scrollTop;
   }
   function pageBy(dir: 1 | -1) {
     if (!viewport) return;
@@ -76,6 +163,7 @@
     // Touch length so the effect re-runs on append.
     void tab.lines.length;
     if (autoFollow) followTail();
+    sampleMetrics();
   });
 
   // Re-anchor to the bottom when the viewport geometry changes (window/sidebar
@@ -85,6 +173,7 @@
     if (!viewport) return;
     const ro = new ResizeObserver(() => {
       if (autoFollow) followTail();
+      sampleMetrics();
     });
     ro.observe(viewport);
     return () => ro.disconnect();
@@ -95,6 +184,7 @@
   $effect(() => {
     void fontSize;
     if (autoFollow) followTail();
+    sampleMetrics();
   });
 
   // Snap to the bottom and resume following when switching to another tab.
@@ -102,6 +192,7 @@
     void tab.name;
     autoFollow = true;
     followTail();
+    sampleMetrics();
   });
 
   function segStyle(s: Segment): string {
@@ -195,27 +286,47 @@
     {/each}
   </div>
 
-  <!-- Roman-style scroll controls pinned to the top and bottom of the
-       scrollbar: single arrows page, barred arrows jump to top/bottom. -->
-  <div class="scroll-ctl scroll-ctl-top">
-    <button type="button" tabindex="-1" title="Top (Home)" aria-label="Scroll to top" onclick={toTop}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="1.7" /><path d="M8 6 L13 13 L3 13 Z" /></svg>
-    </button>
-    <button type="button" tabindex="-1" title="Page up" aria-label="Page up" onclick={() => pageBy(-1)}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4 L13 11 L3 11 Z" /></svg>
-    </button>
-  </div>
-  <div class="scroll-ctl scroll-ctl-bottom">
-    <button type="button" tabindex="-1" title="Page down" aria-label="Page down" onclick={() => pageBy(1)}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12 L3 5 L13 5 Z" /></svg>
-    </button>
-    <button type="button" tabindex="-1" title="Bottom (End)" aria-label="Scroll to bottom" onclick={toEnd}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10 L3 3 L13 3 Z" /><rect x="3" y="12" width="10" height="1.7" /></svg>
-    </button>
+  <!-- Custom scroll rail overlaying the pane's right edge: Home/PgUp cap the top,
+       PgDn/End the bottom, and a draggable thumb runs between. The pane keeps
+       full height (native scrollbar hidden), so only the scrollbar is replaced —
+       the text area is not compressed. Single arrows page, barred arrows jump. -->
+  <div class="rail" class:idle={!thumb.scrollable}>
+    <div class="rail-btns">
+      <button type="button" tabindex="-1" title="Top (Home)" aria-label="Scroll to top" onclick={toTop}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="3" width="10" height="1.7" /><path d="M8 6 L13 13 L3 13 Z" /></svg>
+      </button>
+      <button type="button" tabindex="-1" title="Page up" aria-label="Page up" onclick={() => pageBy(-1)}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4 L13 11 L3 11 Z" /></svg>
+      </button>
+    </div>
+
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="track" bind:this={trackEl} onpointerdown={onTrackDown}>
+      {#if thumb.scrollable}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+          class="thumb"
+          style="height:{thumb.sizePx}px; transform:translateY({thumb.offsetPx}px)"
+          onpointerdown={onThumbDown}
+          onpointermove={onThumbMove}
+          onpointerup={onThumbUp}
+        ></div>
+      {/if}
+    </div>
+
+    <div class="rail-btns">
+      <button type="button" tabindex="-1" title="Page down" aria-label="Page down" onclick={() => pageBy(1)}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12 L3 5 L13 5 Z" /></svg>
+      </button>
+      <button type="button" tabindex="-1" title="Bottom (End)" aria-label="Scroll to bottom" onclick={toEnd}>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 10 L3 3 L13 3 Z" /><rect x="3" y="12" width="10" height="1.7" /></svg>
+      </button>
+    </div>
   </div>
 </div>
 
 <style>
+  /* The pane fills the whole area; the rail overlays its right edge. */
   .output {
     flex: 1;
     min-height: 0;
@@ -224,41 +335,56 @@
   }
   .pane {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 8px 12px;
+    /* Extra right padding clears the overlaid rail so text never runs under it. */
+    padding: 8px 24px 8px 12px;
     font-family: var(--mono);
     font-size: 14px;
     line-height: 1.4;
     background: var(--bg);
     user-select: text;
   }
-  /* Two clusters overlaying the top and bottom ends of the scrollbar. Faint at
-     rest so they don't fight the text; each button brightens to the Skotos
-     accent on hover. */
-  .scroll-ctl {
+  /* Hide the native scrollbar — the custom rail replaces it. Scrolling via
+     wheel/keys still works. */
+  .pane {
+    scrollbar-width: none;
+  }
+  .pane::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+  /* Custom scrollbar rail: two button clusters capping a draggable thumb. Faint
+     at rest, brightening when the pointer is over the output. */
+  .rail {
     position: absolute;
+    top: 0;
     right: 0;
+    bottom: 0;
+    width: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    opacity: 0.6;
+    transition: opacity 0.12s;
+  }
+  .output:hover .rail {
+    opacity: 1;
+  }
+  .rail.idle {
+    opacity: 0.35;
+  }
+  .rail-btns {
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 3px;
-    z-index: 2;
-    opacity: 0.45;
-    transition: opacity 0.12s;
+    padding: 2px 0;
   }
-  .scroll-ctl-top {
-    top: 0;
-  }
-  .scroll-ctl-bottom {
-    bottom: 0;
-  }
-  .output:hover .scroll-ctl {
-    opacity: 0.85;
-  }
-  .scroll-ctl button {
-    width: 20px;
-    height: 20px;
+  .rail button {
+    width: 18px;
+    height: 18px;
     padding: 0;
     display: flex;
     align-items: center;
@@ -271,14 +397,36 @@
       color 0.12s,
       border-color 0.12s;
   }
-  .scroll-ctl button:hover {
+  .rail button:hover {
     color: var(--accent);
     border-color: var(--border-bright);
   }
-  .scroll-ctl svg {
-    width: 13px;
-    height: 13px;
+  .rail svg {
+    width: 12px;
+    height: 12px;
     fill: currentColor;
+  }
+  /* Track fills the space between the button clusters; the thumb is absolutely
+     positioned within it via translateY. */
+  .track {
+    position: relative;
+    flex: 1;
+    width: 12px;
+    margin: 2px 0;
+  }
+  .thumb {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    background: var(--border);
+    cursor: grab;
+  }
+  .thumb:hover {
+    background: var(--border-bright);
+  }
+  .thumb:active {
+    cursor: grabbing;
   }
   .line {
     white-space: pre-wrap;
