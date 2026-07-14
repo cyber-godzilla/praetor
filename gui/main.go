@@ -22,6 +22,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
 	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -91,6 +92,17 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 20, G: 20, B: 24, A: 255},
+		// A nil Linux block makes Wails default WebviewGpuPolicy to *Never*
+		// (webkit hardware acceleration hard-off — see wails issue #2977). With
+		// acceleration off the webview software-rasterizes every frame, so the
+		// always-on CRT animations peg a CPU core. OnDemand lets webkit enable
+		// acceleration when page content asks for it (the CRT layers hint with
+		// `will-change`), so the iGPU composites the animation instead of the CPU.
+		// OnDemand rather than Always avoids forcing acceleration on GPU stacks
+		// where issue #2977's blank-window failure mode can occur.
+		Linux: &linux.Options{
+			WebviewGpuPolicy: linux.WebviewGpuPolicyOnDemand,
+		},
 		OnStartup: func(ctx context.Context) {
 			// Capture the runtime context so the emitter can push events and the
 			// clipboard can read/write.

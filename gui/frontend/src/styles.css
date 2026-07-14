@@ -84,7 +84,9 @@ body.crt-bloom * {
     0 0 9px rgba(232, 168, 56, 0.1);
 }
 
-/* Scanline mask + gentle flicker. */
+/* Scanline mask + gentle flicker. Promoted to its own compositor layer so the
+   opacity flicker only recomposites this static layer instead of repainting the
+   whole page each frame (critical when the webview software-rasterizes). */
 body.crt-scanlines::before {
   content: "";
   position: fixed;
@@ -93,6 +95,7 @@ body.crt-scanlines::before {
   pointer-events: none;
   background: linear-gradient(rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.12) 50%);
   background-size: 100% 3px;
+  will-change: opacity;
   animation: crt-flicker 3s ease-in-out infinite;
 }
 /* Vignette / tube curvature (rides with the scanline layer). */
@@ -108,6 +111,7 @@ body.crt-scanlines::after {
    the "off calibration" motion of an unsynced CRT. */
 .crt-roll {
   position: fixed;
+  top: 0;
   left: 0;
   right: 0;
   height: 12%;
@@ -118,14 +122,19 @@ body.crt-scanlines::after {
     rgba(255, 255, 255, 0.035) 50%,
     rgba(255, 255, 255, 0) 100%
   );
+  /* Drive the drift with transform, not `top`: `top` is a layout property, so
+     animating it reflowed + repainted the entire page every frame (a full CPU
+     core, since the webview software-rasterizes). translateY composites the
+     layer instead. `vh` in the translate matches the old -12%→100% travel. */
+  will-change: transform;
   animation: crt-roll 7s linear infinite;
 }
 @keyframes crt-roll {
   0% {
-    top: -12%;
+    transform: translateY(-12vh);
   }
   100% {
-    top: 100%;
+    transform: translateY(100vh);
   }
 }
 @keyframes crt-flicker {
