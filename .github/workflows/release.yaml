@@ -77,6 +77,13 @@ jobs:
 
       - name: Install webview + packaging deps
         run: |
+          # The arm64 hosted runner (ubuntu-24.04-arm) can't reach
+          # ports.ubuntu.com over IPv6 ("Network is unreachable"), which
+          # intermittently fails apt on a random GTK build dep. Force apt to
+          # IPv4 there; amd64 (archive.ubuntu.com over IPv4) is left untouched.
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
+          fi
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
           go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
