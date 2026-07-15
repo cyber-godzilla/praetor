@@ -1,19 +1,23 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
   import type { MetricSession } from "../lib/types";
-
-  function fmtDur(ms: number): string {
-    const s = Math.floor(ms / 1000);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (h > 0) return `${h}h ${m}m ${sec}s`;
-    if (m > 0) return `${m}m ${sec}s`;
-    return `${sec}s`;
-  }
+  import { fmtDur, currentElapsedMs } from "../lib/metrics";
 
   const current = $derived<MetricSession | undefined>(store.status?.current);
   const history = $derived<MetricSession[]>(store.status?.history ?? []);
+
+  // Live 1 Hz clock so the active session's elapsed time ticks on its own,
+  // rather than only advancing when a game event pushes a fresh snapshot. This
+  // panel only mounts while the Metrics tab is active, so the interval runs only
+  // while it's on screen. Depend on presence (not identity) so per-line snapshot
+  // updates don't churn the timer.
+  let now = $state(Date.now());
+  const hasCurrent = $derived(current != null);
+  $effect(() => {
+    if (!hasCurrent) return;
+    const id = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(id);
+  });
 </script>
 
 <div class="metrics">
@@ -21,7 +25,7 @@
     <div class="card">
       <div class="chead">
         <span class="mode">{current.mode || "session"}</span>
-        <span class="dim">active · {fmtDur(current.durationMs)}</span>
+        <span class="dim">active · {fmtDur(currentElapsedMs(current, now))}</span>
       </div>
       <div class="entries">
         {#each current.entries as e (e.label)}
@@ -30,7 +34,7 @@
             <span class="dim">{e.label}</span>
           </div>
         {/each}
-        {#if current.entries.length === 0}
+        {#if (current.entries?.length ?? 0) === 0}
           <div class="dim">no metrics tracked this session</div>
         {/if}
       </div>
