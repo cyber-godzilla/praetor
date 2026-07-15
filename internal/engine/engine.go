@@ -3,7 +3,7 @@ package engine
 import (
 	"fmt"
 	"log"
-
+	"strings"
 	"sync"
 	"time"
 
@@ -396,9 +396,21 @@ func (e *Engine) rebuildVM(dirs []string) error {
 	return nil
 }
 
-// ModeNames returns the sorted names of all loaded modes.
+// ModeNames returns the sorted names of all loaded modes, excluding library
+// modules (names prefixed "lib_"). Libraries are require()d by real modes and
+// are not player-selectable, so they are hidden from every mode listing (GUI
+// modals, sidebar, quick-cycle pickers, and the TUI mode picker). Mode-setting
+// validation goes through HasMode, which is unaffected.
 func (e *Engine) ModeNames() []string {
-	return e.vm.ModeNames()
+	all := e.vm.ModeNames()
+	names := make([]string, 0, len(all))
+	for _, n := range all {
+		if strings.HasPrefix(n, "lib_") {
+			continue
+		}
+		names = append(names, n)
+	}
+	return names
 }
 
 // HasMode reports whether a mode with the given name is loaded.

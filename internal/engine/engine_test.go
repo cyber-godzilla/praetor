@@ -352,6 +352,39 @@ return M
 	}
 }
 
+func TestEngine_ModeNamesExcludesLibPrefix(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+
+	writeEngineMode(t, modesDir, "alpha", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "lib_util", `
+local M = {}
+M.reactions = {}
+return M
+`)
+
+	e := newTestEngine(t, modesDir, libDir)
+
+	names := e.ModeNames()
+	for _, n := range names {
+		if n == "lib_util" {
+			t.Errorf("ModeNames() = %v, should exclude lib_-prefixed modes", names)
+		}
+	}
+	found := false
+	for _, n := range names {
+		if n == "alpha" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ModeNames() = %v, want to include 'alpha'", names)
+	}
+}
+
 func TestEngine_ProcessNoMode(t *testing.T) {
 	modesDir, libDir := setupEngineTestDirs(t)
 
