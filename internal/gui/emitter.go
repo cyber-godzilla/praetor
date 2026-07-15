@@ -137,6 +137,9 @@ func toMetricSession(m types.MetricSnapshot) *MetricSession {
 		Start:      unixMillis(m.Start),
 		End:        unixMillis(m.End),
 		DurationMs: m.Duration().Milliseconds(),
+		// Non-nil so an entry-less session marshals as "entries":[] rather than
+		// null; the Svelte MetricsPanel reads current.entries.length directly.
+		Entries: make([]MetricEntry, 0, len(m.Entries)),
 	}
 	for _, e := range m.Entries {
 		out.Entries = append(out.Entries, MetricEntry{Label: e.Label, Value: e.Value})
