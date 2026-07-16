@@ -135,6 +135,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 - Timer support: `set_timeout(fn, ms)`, `set_interval(fn, ms)`, `clear_timer(id)` — auto-cancel on mode switch
 - Pattern matching in Go (substring + wildcard→regex), Lua only called on match
 - Action functions receive the matched text as first argument: `action = function(text)`
+- Mode names are resolved case-insensitively for `/mode`, `/sm`, and `set_mode` (the canonical stored name is used for `currentMode`, metrics, and events).
 
 ### Lua API
 
@@ -178,6 +179,18 @@ A, B, C, D, F, H, J, K, L, R, T, U, Y, Z, [ — VT100/readline/Ghostty conflicts
 
 ### Available Alt Keys for future bindings
 E, G, N, O, P, Q, V, W, X
+
+### Numpad Navigation (GUI)
+
+With **NumLock OFF**, the numpad drives movement (NumLock ON types digits as usual):
+
+| Key | Command | Key | Command | Key | Command |
+|-----|---------|-----|---------|-----|---------|
+| 7 | nw | 8 | n | 9 | ne |
+| 4 | w  | 5 | look | 6 | e |
+| 1 | sw | 2 | s | 3 | se |
+| 0 | ss | . | stand | | |
+| − | down | + | up | | |
 
 ## Tabs
 
