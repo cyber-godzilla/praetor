@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
+  import { numpadCommand } from "../lib/numpad";
   import StatusBar from "./StatusBar.svelte";
   import TabBar from "./TabBar.svelte";
   import OutputPane from "./OutputPane.svelte";
@@ -53,6 +54,17 @@
     }
     // All other shortcuts are inert while a modal owns the keyboard.
     if (store.openModal) return;
+
+    // Numpad navigation: NumLock OFF drives movement (NumLock ON types digits).
+    // stopPropagation so the NumLock-off arrow aliases (Numpad8 => ArrowUp) never
+    // reach the input's history handler.
+    const npCmd = numpadCommand(e.code, e.getModifierState("NumLock"));
+    if (npCmd) {
+      e.preventDefault();
+      e.stopPropagation();
+      api.send(npCmd);
+      return;
+    }
 
     // Match on e.code (physical key), not e.key: on X11/WebKitGTK, Shift+Tab
     // emits the ISO_Left_Tab keysym, so e.key is NOT "Tab" for the reverse case
