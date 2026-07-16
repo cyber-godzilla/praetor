@@ -148,6 +148,16 @@ func (e *Engine) SetMode(name string, args []string) {
 func (e *Engine) setModeLocked(name string, args []string) {
 	L := e.vm.State()
 
+	// Normalize the requested mode to its canonical (case-correct) name so
+	// currentMode, the metrics session, and the mode-change event all agree
+	// regardless of how the caller cased it. "" and "disable" have no canonical
+	// form and pass through unchanged.
+	if name != "" && name != "disable" {
+		if canonical, ok := e.vm.ResolveModeName(name); ok {
+			name = canonical
+		}
+	}
+
 	// Call on_stop on previous mode
 	if e.modeObj != nil && e.modeObj.HasOnStop && e.modeObj.onStopRef != nil {
 		if err := L.CallByParam(lua.P{
@@ -413,9 +423,10 @@ func (e *Engine) ModeNames() []string {
 	return names
 }
 
-// HasMode reports whether a mode with the given name is loaded.
+// HasMode reports whether a mode matching the given name (case-insensitively) is
+// loaded.
 func (e *Engine) HasMode(name string) bool {
-	_, ok := e.vm.GetMode(name)
+	_, ok := e.vm.ResolveModeName(name)
 	return ok
 }
 

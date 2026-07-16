@@ -586,3 +586,52 @@ return M
 		t.Error("only first matching reaction should fire")
 	}
 }
+
+func TestVM_ResolveModeName(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "Fishing", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	e := newTestEngine(t, modesDir, libDir)
+
+	if got, ok := e.vm.ResolveModeName("fishing"); !ok || got != "Fishing" {
+		t.Errorf("ResolveModeName(\"fishing\") = (%q, %v), want (\"Fishing\", true)", got, ok)
+	}
+	if got, ok := e.vm.ResolveModeName("Fishing"); !ok || got != "Fishing" {
+		t.Errorf("ResolveModeName(\"Fishing\") = (%q, %v), want (\"Fishing\", true)", got, ok)
+	}
+	if _, ok := e.vm.ResolveModeName("nope"); ok {
+		t.Error("ResolveModeName(\"nope\") ok = true, want false")
+	}
+}
+
+func TestEngine_HasModeCaseInsensitive(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "Fishing", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	e := newTestEngine(t, modesDir, libDir)
+
+	if !e.HasMode("fishing") {
+		t.Error("HasMode(\"fishing\") = false, want true")
+	}
+}
+
+func TestEngine_SetModeCanonicalizesName(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "Fishing", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	e := newTestEngine(t, modesDir, libDir)
+
+	e.SetMode("fishing", nil)
+	if e.CurrentMode() != "Fishing" {
+		t.Errorf("CurrentMode() = %q, want canonical \"Fishing\"", e.CurrentMode())
+	}
+}

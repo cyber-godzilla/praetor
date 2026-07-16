@@ -124,6 +124,25 @@ func (vm *LuaVM) GetMode(name string) (*LuaMode, bool) {
 	return m, ok
 }
 
+// ResolveModeName returns the canonical (stored) name of the loaded mode whose
+// name matches `name` case-insensitively, and whether such a mode exists. An
+// exact match wins immediately. If several names differ only in case (highly
+// unlikely), the match is arbitrary.
+func (vm *LuaVM) ResolveModeName(name string) (string, bool) {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	if _, ok := vm.modes[name]; ok {
+		return name, true
+	}
+	lower := strings.ToLower(name)
+	for stored := range vm.modes {
+		if strings.ToLower(stored) == lower {
+			return stored, true
+		}
+	}
+	return "", false
+}
+
 // ReloadMode re-reads a single mode file from disk and replaces the loaded
 // mode. Shared libraries are uncached first so require() picks up changes.
 // The matcher cache is cleared since patterns may have changed.
