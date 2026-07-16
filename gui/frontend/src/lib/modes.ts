@@ -12,3 +12,19 @@ export function modeList(names: string[] | null | undefined): string[] {
 export function isActiveMode(name: string, current: string): boolean {
   return current === name || (name === "disable" && (current === "" || current === "disable"));
 }
+
+// resolveModeName maps a user-typed mode name to its canonical (case-correct)
+// name, matching case-insensitively. "disable" is always valid. Returns null if
+// no mode matches — callers use that to reject with a friendly message before a
+// round-trip to the core (which also resolves case-insensitively).
+export function resolveModeName(
+  input: string,
+  names: string[] | null | undefined,
+): string | null {
+  const lower = input.toLowerCase();
+  if (lower === "disable") return "disable";
+  for (const n of names ?? []) {
+    if (n.toLowerCase() === lower) return n;
+  }
+  return null;
+}

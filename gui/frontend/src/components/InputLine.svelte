@@ -2,6 +2,7 @@
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
+  import { resolveModeName } from "../lib/modes";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
@@ -71,15 +72,16 @@
     }
     if (lower.startsWith("/mode ") || lower.startsWith("/sm ")) {
       const parts = trimmed.split(/\s+/);
-      const mode = parts[1];
+      const raw = parts[1];
       const args = parts.slice(2);
-      if (mode && mode !== "disable" && !(store.modeNames ?? []).includes(mode)) {
-        store.addToast("Unknown mode", `"${mode}" — type /list to see available modes`);
+      const mode = raw ? resolveModeName(raw, store.modeNames) : raw;
+      if (raw && mode === null) {
+        store.addToast("Unknown mode", `"${raw}" — type /list to see available modes`);
         pushHistory(line);
         return;
       }
       try {
-        await api.setMode(mode, args);
+        await api.setMode(mode ?? "", args);
       } catch (e) {
         store.addToast("Mode error", String(e));
       }
