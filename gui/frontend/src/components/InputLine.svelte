@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
-  import { shouldRefocusInput } from "../lib/focus";
+  import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
@@ -134,17 +134,21 @@
     if (!store.openModal) inputEl?.focus();
   }
 
-  // Webview window-focus events are unreliable, so also treat a click anywhere
-  // in the app as a signal to return the cursor to the input — unless it landed
-  // on an interactive control or a modal, or the user is selecting text (so
-  // copying from the output still works).
+  // Webview window-focus events are unreliable, so treat a click anywhere in the
+  // app as a signal to return the cursor to the input — unless it landed on a
+  // text field or modal, or the user is selecting text (so copying still works).
   function refocusFromClick(e: MouseEvent) {
-    if (store.openModal) return;
     const t = e.target as HTMLElement | null;
-    if (t?.closest("input, textarea, select, button, a, [contenteditable], .backdrop")) return;
     const sel = window.getSelection();
-    if (sel && !sel.isCollapsed) return;
-    inputEl?.focus();
+    if (
+      shouldRefocusFromClick({
+        modalOpen: !!store.openModal,
+        targetMatchesNonRefocus: !!t?.closest(NON_REFOCUS_SELECTOR),
+        selectionCollapsed: !sel || sel.isCollapsed,
+      })
+    ) {
+      inputEl?.focus();
+    }
   }
 
   // Sticky focus: WebKitGTK moves focus on Tab/Shift+Tab (and clicks on

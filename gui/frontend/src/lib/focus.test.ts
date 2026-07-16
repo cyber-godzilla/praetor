@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldRefocusInput } from "./focus";
+import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "./focus";
 
 // Idle, unfocused, nothing selected: the sticky-focus should pull focus back.
 const base = {
@@ -24,5 +24,30 @@ describe("shouldRefocusInput", () => {
   });
   it("does not refocus when the input already has focus", () => {
     expect(shouldRefocusInput({ ...base, alreadyFocused: true })).toBe(false);
+  });
+});
+
+const clickBase = {
+  modalOpen: false,
+  targetMatchesNonRefocus: false,
+  selectionCollapsed: true,
+};
+
+describe("shouldRefocusFromClick", () => {
+  it("refocuses when a non-text control (e.g. a button) is clicked", () => {
+    expect(shouldRefocusFromClick(clickBase)).toBe(true);
+  });
+  it("does not refocus when a text field is clicked", () => {
+    expect(shouldRefocusFromClick({ ...clickBase, targetMatchesNonRefocus: true })).toBe(false);
+  });
+  it("does not refocus while a modal is open", () => {
+    expect(shouldRefocusFromClick({ ...clickBase, modalOpen: true })).toBe(false);
+  });
+  it("does not refocus while a text selection is live", () => {
+    expect(shouldRefocusFromClick({ ...clickBase, selectionCollapsed: false })).toBe(false);
+  });
+  it("no longer excludes buttons or links from refocus", () => {
+    expect(NON_REFOCUS_SELECTOR).not.toMatch(/\bbutton\b/);
+    expect(NON_REFOCUS_SELECTOR).not.toMatch(/(^|[\s,])a([\s,]|$)/);
   });
 });
