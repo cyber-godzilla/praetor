@@ -83,9 +83,9 @@
     <div class="field">
       <span>Numpad navigation</span>
       <select bind:value={numpadNav}>
-        <option value="numlock">NumLock off = move (Linux/Windows)</option>
-        <option value="always">Always move (macOS — numpad won't type digits)</option>
-        <option value="off">Off</option>
+        <option value="numlock">Only when NumLock is off</option>
+        <option value="always">Always</option>
+        <option value="off">Never</option>
       </select>
     </div>
     <div class="field">
