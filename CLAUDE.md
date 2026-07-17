@@ -194,6 +194,12 @@ With **NumLock OFF**, the numpad drives movement (NumLock ON types digits as usu
 
 NumLock state is read from `e.key` (the digit/decimal keys report a navigation value like `ArrowUp` when NumLock is off), because WebKitGTK does not report NumLock via `getModifierState`. Numpad `+`/`−` always report `+`/`−` regardless of NumLock, so they always send up/down — type `+`/`−` from the main row.
 
+Behavior is set by `ui.numpad_navigation` (Settings → Numpad navigation):
+
+- `numlock` (default) — move when NumLock is off; type digits when on. Works on Linux/Windows.
+- `always` — the numpad always sends movement, ignoring NumLock. **Required on macOS**, which has no NumLock, so the digit keys never enter navigation mode; the tradeoff is the numpad can no longer type digits.
+- `off` — numpad navigation disabled.
+
 ## Tabs
 
 - **All** — always present, receives all game text
@@ -258,6 +264,7 @@ ui:
   echo_typed_commands: true
   echo_script_commands: true
   hide_ips: false
+  numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
   custom_tabs: []
   action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons
 highlights: []

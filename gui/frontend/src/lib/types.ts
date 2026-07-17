@@ -196,6 +196,7 @@ export interface UIConfig {
   EchoTyped: boolean;
   EchoScript: boolean;
   HideIPs: boolean;
+  NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;
 }

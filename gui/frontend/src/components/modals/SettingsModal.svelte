@@ -18,6 +18,7 @@
   let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
   let compassScale = $state(seed?.UI?.CompassScale ?? 1);
   let fontSize = $state(seed?.UI?.OutputFontSize || 14);
+  let numpadNav = $state(seed?.UI?.NumpadNavigation ?? "numlock");
 
   async function save() {
     try {
@@ -32,6 +33,7 @@
       await api.setMinimapScale(minimapScale);
       await api.setCompassScale(compassScale);
       await api.setOutputFontSize(fontSize);
+      await api.setNumpadNavigation(numpadNav);
       if (store.config) {
         Object.assign(store.config.UI, {
           EchoTyped: echoTyped,
@@ -41,6 +43,7 @@
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
+          NumpadNavigation: numpadNav,
         });
         store.config.Logging.Session.Enabled = sessionLogging;
         store.config.Logging.Session.Path = logPath;
@@ -76,6 +79,14 @@
           <button class="sz" class:active={fontSize === sz} onclick={() => (fontSize = sz)}>{sz}</button>
         {/each}
       </div>
+    </div>
+    <div class="field">
+      <span>Numpad navigation</span>
+      <select bind:value={numpadNav}>
+        <option value="numlock">NumLock off = move (Linux/Windows)</option>
+        <option value="always">Always move (macOS — numpad won't type digits)</option>
+        <option value="off">Off</option>
+      </select>
     </div>
     <div class="field">
       <span>Log path (blank = default)</span>

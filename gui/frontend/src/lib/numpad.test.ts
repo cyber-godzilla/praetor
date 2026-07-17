@@ -56,4 +56,28 @@ describe("numpadCommand", () => {
     expect(numpadCommand("KeyA", "a")).toBe(null);
     expect(numpadCommand("NumpadEnter", "Enter")).toBe(null);
   });
+
+  // The default mode ("numlock") is the e.key-based behavior above; these cover
+  // the explicit modes selectable in config.
+  it("mode 'off' never moves", () => {
+    expect(numpadCommand("Numpad8", "ArrowUp", "off")).toBe(null);
+    expect(numpadCommand("Numpad8", "8", "off")).toBe(null);
+    expect(numpadCommand("NumpadAdd", "+", "off")).toBe(null);
+  });
+
+  it("mode 'always' moves even when e.key is the printable digit (NumLock on / macOS)", () => {
+    expect(numpadCommand("Numpad8", "8", "always")).toBe("n");
+    expect(numpadCommand("Numpad0", "0", "always")).toBe("ss");
+    expect(numpadCommand("NumpadDecimal", ".", "always")).toBe("stand");
+    expect(numpadCommand("NumpadAdd", "+", "always")).toBe("u");
+  });
+
+  it("mode 'always' still returns null for unmapped codes", () => {
+    expect(numpadCommand("KeyA", "a", "always")).toBe(null);
+  });
+
+  it("an unrecognized mode falls back to numlock behavior", () => {
+    expect(numpadCommand("Numpad8", "ArrowUp", "bogus")).toBe("n");
+    expect(numpadCommand("Numpad8", "8", "bogus")).toBe(null);
+  });
 });

@@ -58,6 +58,13 @@ func (a *GuiApp) SetDisplayMode(mode string) error {
 	return a.save()
 }
 
+// SetNumpadNavigation persists the numpad-navigation mode (numlock/always/off).
+// The value is validated on the next load; the frontend applies it live.
+func (a *GuiApp) SetNumpadNavigation(mode string) error {
+	a.cfg().UI.NumpadNavigation = mode
+	return a.save()
+}
+
 // SetMinimapScale persists and applies the minimap scale.
 func (a *GuiApp) SetMinimapScale(scale float64) error {
 	a.cfg().UI.MinimapScale = scale

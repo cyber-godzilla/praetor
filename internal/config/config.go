@@ -186,24 +186,30 @@ type UIConfig struct {
 	//   "topbar"  — horizontal strip across the top
 	//   "off"     — game pane only, sidebar/topbar hidden
 	// Migrated from the legacy sidebar_open bool by migrateLegacyDisplay.
-	DisplayMode     string            `yaml:"display_mode"`
-	DefaultTab      string            `yaml:"default_tab"`
-	Scrollback      int               `yaml:"scrollback"`
-	SidebarWidth    int               `yaml:"sidebar_width"`
-	MinimapScale    float64           `yaml:"minimap_scale"`
-	MinimapHeight   int               `yaml:"minimap_height"`
-	CompassScale    float64           `yaml:"compass_scale"`
-	OutputFontSize  int               `yaml:"output_font_size"`
-	CRTScanlines    bool              `yaml:"crt_scanlines"`
-	CRTRoll         bool              `yaml:"crt_roll"`
-	CRTBloom        bool              `yaml:"crt_bloom"`
-	QuickCycleModes []string          `yaml:"quick_cycle_modes"`
-	ColorWords      bool              `yaml:"color_words"`
-	EchoTyped       bool              `yaml:"echo_typed_commands"`
-	EchoScript      bool              `yaml:"echo_script_commands"`
-	HideIPs         bool              `yaml:"hide_ips"`
-	CustomTabs      []CustomTabConfig `yaml:"custom_tabs"`
-	ActionSets      []ActionSet       `yaml:"action_sets"`
+	DisplayMode     string   `yaml:"display_mode"`
+	DefaultTab      string   `yaml:"default_tab"`
+	Scrollback      int      `yaml:"scrollback"`
+	SidebarWidth    int      `yaml:"sidebar_width"`
+	MinimapScale    float64  `yaml:"minimap_scale"`
+	MinimapHeight   int      `yaml:"minimap_height"`
+	CompassScale    float64  `yaml:"compass_scale"`
+	OutputFontSize  int      `yaml:"output_font_size"`
+	CRTScanlines    bool     `yaml:"crt_scanlines"`
+	CRTRoll         bool     `yaml:"crt_roll"`
+	CRTBloom        bool     `yaml:"crt_bloom"`
+	QuickCycleModes []string `yaml:"quick_cycle_modes"`
+	ColorWords      bool     `yaml:"color_words"`
+	EchoTyped       bool     `yaml:"echo_typed_commands"`
+	EchoScript      bool     `yaml:"echo_script_commands"`
+	HideIPs         bool     `yaml:"hide_ips"`
+	// NumpadNavigation controls the GUI numpad-walking behavior:
+	//   "numlock" — move when NumLock is off; type digits when on (default)
+	//   "always"  — numpad always sends movement (needed on macOS, which has
+	//               no NumLock; the numpad can no longer type digits)
+	//   "off"     — numpad navigation disabled
+	NumpadNavigation string            `yaml:"numpad_navigation"`
+	CustomTabs       []CustomTabConfig `yaml:"custom_tabs"`
+	ActionSets       []ActionSet       `yaml:"action_sets"`
 }
 
 type CustomTabConfig struct {
@@ -248,20 +254,21 @@ func Defaults() *Config {
 		},
 		Scripts: []string{},
 		UI: UIConfig{
-			DisplayMode:     "sidebar",
-			DefaultTab:      "all",
-			Scrollback:      5000,
-			SidebarWidth:    40,
-			MinimapScale:    1.0,
-			MinimapHeight:   12,
-			CompassScale:    1.0,
-			OutputFontSize:  14,
-			CRTScanlines:    true,
-			CRTRoll:         true,
-			CRTBloom:        true,
-			QuickCycleModes: []string{"disable"},
-			EchoTyped:       true,
-			EchoScript:      true,
+			DisplayMode:      "sidebar",
+			DefaultTab:       "all",
+			Scrollback:       5000,
+			SidebarWidth:     40,
+			MinimapScale:     1.0,
+			MinimapHeight:    12,
+			CompassScale:     1.0,
+			OutputFontSize:   14,
+			CRTScanlines:     true,
+			CRTRoll:          true,
+			CRTBloom:         true,
+			QuickCycleModes:  []string{"disable"},
+			EchoTyped:        true,
+			EchoScript:       true,
+			NumpadNavigation: "numlock",
 		},
 		Highlights: []HighlightConfig{},
 		Kudos: KudosConfig{
@@ -447,6 +454,13 @@ func (c *Config) Validate() error {
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}
+	}
+	// Numpad navigation mode: fall back to "numlock" for empty (pre-existing
+	// configs) or unrecognized values.
+	switch c.UI.NumpadNavigation {
+	case "numlock", "always", "off":
+	default:
+		c.UI.NumpadNavigation = "numlock"
 	}
 
 	// Highlights

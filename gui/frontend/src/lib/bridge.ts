@@ -84,6 +84,7 @@ export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v)
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
+export const setNumpadNavigation = (m: string) => call<void>("SetNumpadNavigation", undefined, m);
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
 export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
 export const setOutputFontSize = (px: number) => call<void>("SetOutputFontSize", undefined, px);

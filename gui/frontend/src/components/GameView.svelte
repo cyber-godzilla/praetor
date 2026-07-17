@@ -59,7 +59,7 @@
     // NumLock state is read from e.key inside numpadCommand — WebKitGTK doesn't
     // report it via getModifierState. stopPropagation so the NumLock-off arrow
     // aliases (Numpad8 => ArrowUp) never reach the input's history handler.
-    const npCmd = numpadCommand(e.code, e.key);
+    const npCmd = numpadCommand(e.code, e.key, store.config?.UI?.NumpadNavigation ?? "numlock");
     if (npCmd) {
       e.preventDefault();
       e.stopPropagation();

@@ -598,3 +598,34 @@ func TestSaveLoadListsRoundTrip(t *testing.T) {
 		t.Errorf("Scripts not persisted: got %v want %v", loaded.Scripts, c.Scripts)
 	}
 }
+
+func TestValidate_NumpadNavigation(t *testing.T) {
+	// Default is "numlock".
+	if got := Defaults().UI.NumpadNavigation; got != "numlock" {
+		t.Errorf("default NumpadNavigation = %q, want \"numlock\"", got)
+	}
+
+	// Empty (pre-existing configs) and unrecognized values normalize to "numlock".
+	for _, in := range []string{"", "bogus", "NumLock"} {
+		cfg := Defaults()
+		cfg.UI.NumpadNavigation = in
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error: %v", err)
+		}
+		if cfg.UI.NumpadNavigation != "numlock" {
+			t.Errorf("NumpadNavigation %q normalized to %q, want \"numlock\"", in, cfg.UI.NumpadNavigation)
+		}
+	}
+
+	// Valid values are preserved.
+	for _, in := range []string{"numlock", "always", "off"} {
+		cfg := Defaults()
+		cfg.UI.NumpadNavigation = in
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error: %v", err)
+		}
+		if cfg.UI.NumpadNavigation != in {
+			t.Errorf("NumpadNavigation %q changed to %q, want preserved", in, cfg.UI.NumpadNavigation)
+		}
+	}
+}

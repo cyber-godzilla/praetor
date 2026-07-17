@@ -34,13 +34,24 @@ const NUMPAD_COMMANDS: Record<string, NumpadEntry> = {
   NumpadAdd: { cmd: "u" },
 };
 
-// numpadCommand returns the game command for a numpad key press, or null when the
-// key isn't a bound numpad key or NumLock is on (so the numpad types a digit and
-// we leave the event alone). NumLock-on is inferred from `key` (e.key): a
-// digit/decimal key whose value is its printable character.
-export function numpadCommand(code: string, key: string): string | null {
+// NumpadNavMode is the configured behavior (config.UI.NumpadNavigation):
+//   "numlock" — move when NumLock is off, type digits when on (default;
+//               inferred from e.key, since getModifierState is unreliable)
+//   "always"  — numpad always drives movement, ignoring NumLock. Required on
+//               macOS, which has no NumLock so digit keys never enter nav mode.
+//   "off"     — numpad navigation disabled
+export type NumpadNavMode = "numlock" | "always" | "off";
+
+// numpadCommand returns the game command for a numpad key press, or null when
+// the key isn't bound or the mode says to leave the event alone. In "numlock"
+// mode, NumLock-on is inferred from `key` (e.key): a digit/decimal key whose
+// value is its printable character means the user is typing, so we don't move.
+// Any unrecognized `mode` falls back to "numlock".
+export function numpadCommand(code: string, key: string, mode: string = "numlock"): string | null {
+  if (mode === "off") return null;
   const entry = NUMPAD_COMMANDS[code];
   if (!entry) return null;
-  if (entry.printable?.includes(key)) return null; // NumLock on → typing a digit
+  if (mode === "always") return entry.cmd;
+  if (entry.printable?.includes(key)) return null; // numlock: NumLock on → typing a digit
   return entry.cmd;
 }
