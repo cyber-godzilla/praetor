@@ -192,6 +192,8 @@ With **NumLock OFF**, the numpad drives movement (NumLock ON types digits as usu
 | 0 | ss | . | stand | | |
 | − | down | + | up | | |
 
+NumLock state is read from `e.key` (the digit/decimal keys report a navigation value like `ArrowUp` when NumLock is off), because WebKitGTK does not report NumLock via `getModifierState`. Numpad `+`/`−` always report `+`/`−` regardless of NumLock, so they always send up/down — type `+`/`−` from the main row.
+
 ## Tabs
 
 - **All** — always present, receives all game text
