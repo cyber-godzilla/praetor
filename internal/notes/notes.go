@@ -6,6 +6,7 @@ package notes
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -195,7 +196,12 @@ func (s *Store) Save(originalTitle, title, body string) error {
 		return err
 	}
 	if current != nil && current.path != targetPath {
-		os.Remove(current.path) // best-effort; new file is already written
+		// Best-effort: the new file is already written, so a failed removal of
+		// the old file is non-fatal — but log it, since it leaves a stale
+		// duplicate note behind.
+		if err := os.Remove(current.path); err != nil {
+			log.Printf("[NOTES] removing old note file after rename: %v", err)
+		}
 	}
 	return nil
 }
