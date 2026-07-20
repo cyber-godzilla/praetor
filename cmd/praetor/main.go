@@ -137,6 +137,14 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				username := w.lastUsername
 				password := w.lastPassword
 				promptCmd := func() tea.Msg {
+					descriptor := w.gc.Creds.Descriptor()
+					if !descriptor.CanStore {
+						return ui.CredentialStoreMsg{Username: username, Password: password, Store: false}
+					}
+					if _, err := w.gc.Creds.ListAccounts(); err != nil {
+						log.Printf("credential storage unavailable; continuing without saving: %v", err)
+						return ui.CredentialStoreMsg{Username: username, Password: password, Store: false}
+					}
 					_, err := w.gc.Creds.GetAccount(username)
 					return ui.CredentialPromptMsg{
 						Username:      username,
@@ -767,7 +775,19 @@ func main() {
 	if len(scriptDirs) == 0 {
 		scriptDirs = []string{filepath.Join(configDir, "scripts")}
 	}
-	creds := &session.KeyringStore{}
+	credentialPath := cfg.Credentials.EncryptedFile.Path
+	if credentialPath != "" {
+		credentialPath = expandPath(credentialPath)
+	}
+	creds, err := session.NewCredentialStore(session.CredentialStoreOptions{
+		Backend:  cfg.Credentials.Backend,
+		StateDir: stateDir,
+		FilePath: credentialPath,
+		KeyEnv:   cfg.Credentials.EncryptedFile.KeyEnv,
+	})
+	if err != nil {
+		log.Fatalf("creating credential store: %v", err)
+	}
 
 	gc, err := client.NewClient(cfg, scriptDirs, dataDir, creds)
 	if err != nil {

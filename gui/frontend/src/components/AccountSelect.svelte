@@ -4,6 +4,15 @@
 
   let busy = $state("");
   let error = $state("");
+  const canManageAccounts = $derived(
+    store.credentialStore.available && store.credentialStore.canStore,
+  );
+
+  async function refreshAccounts() {
+    const state = await api.listAccounts();
+    store.accounts = state.accounts ?? [];
+    store.credentialStore = state.credentialStore;
+  }
 
   async function connect(username: string) {
     if (busy) return;
@@ -19,6 +28,11 @@
     } catch (e: any) {
       error = e?.message ?? String(e);
       busy = "";
+      try {
+        await refreshAccounts();
+      } catch {
+        // Preserve the connection error; account health is best-effort here.
+      }
     }
   }
 
@@ -32,7 +46,7 @@
     }
     try {
       await api.removeAccount(username);
-      store.accounts = store.accounts.filter((a) => a !== username);
+      await refreshAccounts();
       if (store.accounts.length === 0) store.screen = "login";
     } catch (cause: any) {
       error = cause?.message ?? String(cause);
@@ -67,14 +81,18 @@
             {/if}
           </button>
           {#if busy !== acct}
-            <button class="del" onclick={(e) => remove(acct, e)} disabled={!!busy}
-              title="Remove account" aria-label="Remove account" type="button">✕</button>
+            <button class="del" onclick={(e) => remove(acct, e)} disabled={!!busy || !canManageAccounts}
+              title={canManageAccounts ? "Remove account" : "Credential storage unavailable"}
+              aria-label="Remove account" type="button">✕</button>
           {/if}
         </div>
       {/each}
     </div>
 
     {#if error}<div class="err">{error}</div>{/if}
+    {#if !canManageAccounts && store.credentialStore.message}
+      <div class="storage-note">{store.credentialStore.message}</div>
+    {/if}
 
     <button class="add" onclick={() => (store.screen = "login")} disabled={!!busy} type="button">
       + Add another account
@@ -154,6 +172,12 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .storage-note {
+    margin-top: 12px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.4;
   }
   .acct {
     display: flex;

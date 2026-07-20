@@ -41,6 +41,7 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Commands      CommandsConfig      `yaml:"commands"`
+	Credentials   CredentialsConfig   `yaml:"credentials"`
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
 	Highlights    []HighlightConfig   `yaml:"highlights"`
@@ -54,6 +55,23 @@ type Config struct {
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
 type UpdatesConfig struct {
 	Check bool `yaml:"check"` // notify when a newer release exists
+}
+
+// CredentialsConfig selects the secure account credential backend. Backend is
+// deliberately explicit: Praetor never falls back from a failed keyring to a
+// plaintext or file-backed store.
+type CredentialsConfig struct {
+	Backend       string                         `yaml:"backend"`
+	EncryptedFile EncryptedFileCredentialsConfig `yaml:"encrypted_file"`
+}
+
+// EncryptedFileCredentialsConfig controls the headless-service credential
+// store. Path may be empty to use STATE_DIR/credentials/credentials.enc. KeyEnv
+// names the environment variable containing a base64-encoded 32-byte key; the
+// key itself is never written to config.yaml.
+type EncryptedFileCredentialsConfig struct {
+	Path   string `yaml:"path"`
+	KeyEnv string `yaml:"key_env"`
 }
 
 type ServerConfig struct {
@@ -275,6 +293,13 @@ func Defaults() *Config {
 			MinInterval:  Duration{500 * time.Millisecond},
 			MaxQueueSize: 20,
 			HighPriority: []string{},
+		},
+		Credentials: CredentialsConfig{
+			Backend: "keyring",
+			EncryptedFile: EncryptedFileCredentialsConfig{
+				Path:   "",
+				KeyEnv: "PRAETOR_CREDENTIALS_KEY",
+			},
 		},
 		Scripts: []string{},
 		UI: UIConfig{
@@ -511,6 +536,24 @@ func (c *Config) Validate() error {
 	}
 	if c.Commands.MaxQueueSize < 1 {
 		c.Commands.MaxQueueSize = 20
+	}
+
+	// Credentials. Backends are never inferred from runtime availability: a
+	// missing keyring remains a visible keyring error, and an encrypted file
+	// requires its own independently supplied key.
+	switch c.Credentials.Backend {
+	case "keyring", "encrypted_file", "disabled":
+	default:
+		return fmt.Errorf("credentials.backend must be 'keyring', 'encrypted_file', or 'disabled', got %q", c.Credentials.Backend)
+	}
+	if c.Credentials.EncryptedFile.KeyEnv == "" {
+		c.Credentials.EncryptedFile.KeyEnv = "PRAETOR_CREDENTIALS_KEY"
+	}
+	for i, r := range c.Credentials.EncryptedFile.KeyEnv {
+		if (i == 0 && r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')) ||
+			(i > 0 && r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9')) {
+			return fmt.Errorf("credentials.encrypted_file.key_env is not a valid environment variable name")
+		}
 	}
 
 	// UI

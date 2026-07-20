@@ -13,18 +13,19 @@ const ProtocolVersion = 1
 // message for a subscription. Config and mode/account updates are authoritative
 // shared-state changes initiated by any connected browser.
 type Envelope struct {
-	Type         string             `json:"type"`
-	Protocol     int                `json:"protocol"`
-	ServerID     string             `json:"serverId"`
-	Sequence     uint64             `json:"sequence,omitempty"`
-	FromSequence uint64             `json:"fromSequence,omitempty"`
-	ToSequence   uint64             `json:"toSequence,omitempty"`
-	Events       []appgui.WireEvent `json:"events,omitempty"`
-	Config       any                `json:"config,omitempty"`
-	Revision     uint64             `json:"revision,omitempty"`
-	ModeNames    []string           `json:"modeNames,omitempty"`
-	Accounts     []string           `json:"accounts,omitempty"`
-	Result       *OperationResult   `json:"result,omitempty"`
+	Type            string                        `json:"type"`
+	Protocol        int                           `json:"protocol"`
+	ServerID        string                        `json:"serverId"`
+	Sequence        uint64                        `json:"sequence,omitempty"`
+	FromSequence    uint64                        `json:"fromSequence,omitempty"`
+	ToSequence      uint64                        `json:"toSequence,omitempty"`
+	Events          []appgui.WireEvent            `json:"events,omitempty"`
+	Config          any                           `json:"config,omitempty"`
+	Revision        uint64                        `json:"revision,omitempty"`
+	ModeNames       []string                      `json:"modeNames,omitempty"`
+	Accounts        *[]string                     `json:"accounts,omitempty"`
+	CredentialStore *appgui.CredentialStoreStatus `json:"credentialStore,omitempty"`
+	Result          *OperationResult              `json:"result,omitempty"`
 }
 
 type OperationResult struct {

@@ -1,4 +1,4 @@
-import type { AppConfig, InitState, WireEvent } from "./types";
+import type { AppConfig, CredentialStoreStatus, InitState, WireEvent } from "./types";
 
 export interface SystemUpdate {
   type: "config" | "modes" | "accounts" | "operation" | "auth-expired" | "transport";
@@ -6,6 +6,7 @@ export interface SystemUpdate {
   revision?: number;
   modeNames?: string[];
   accounts?: string[];
+  credentialStore?: CredentialStoreStatus;
   result?: { operation: string; ok: boolean; message?: string };
   transportState?: "connecting" | "connected" | "reconnecting";
 }

@@ -235,9 +235,30 @@ export interface InitState {
   version: string;
   debug: boolean;
   accounts: string[] | null;
+  credentialStore: CredentialStoreStatus;
   hasModes: boolean;
   modeNames: string[] | null;
   config: AppConfig;
+}
+
+export interface CredentialStoreStatus {
+  backend: string;
+  available: boolean;
+  canStore: boolean;
+  message?: string;
+}
+
+export interface AccountState {
+  accounts: string[];
+  credentialStore: CredentialStoreStatus;
+}
+
+export interface ConnectResult {
+  connected: boolean;
+  credentialSaveRequested: boolean;
+  credentialsSaved: boolean;
+  warning?: string;
+  accountState?: AccountState;
 }
 
 export interface PersistentKeyInfo {

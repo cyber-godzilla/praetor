@@ -4,9 +4,18 @@
 
   let username = $state("");
   let password = $state("");
-  let storeCredentials = $state(true);
+  let storeCredentials = $state(
+    store.credentialStore.available && store.credentialStore.canStore,
+  );
   let busy = $state(false);
   let error = $state("");
+  const canRemember = $derived(
+    store.credentialStore.available && store.credentialStore.canStore,
+  );
+
+  $effect(() => {
+    if (!canRemember) storeCredentials = false;
+  });
 
   async function submit(e: Event) {
     e.preventDefault();
@@ -15,11 +24,18 @@
     error = "";
     store.disconnectNotice = "";
     try {
-      await api.connectNew(username, password, storeCredentials);
+      const result = await api.connectNew(username, password, storeCredentials);
       password = "";
       store.loginUser = username;
-      if (storeCredentials && !store.accounts.includes(username)) {
-        store.accounts = [...store.accounts, username];
+      if (result.accountState) {
+        store.accounts = result.accountState.accounts ?? [];
+        store.credentialStore = result.accountState.credentialStore;
+      }
+      if (result.credentialsSaved && !store.accounts.includes(username)) {
+        store.accounts = [...store.accounts, username].sort((a, b) => a.localeCompare(b));
+      }
+      if (result.warning) {
+        store.addToast("Account not remembered", result.warning);
       }
       // The server starts the game loop before this HTTP request returns, so
       // its WebSocket "connected" event may already have advanced the UI to
@@ -54,10 +70,14 @@
       <input type="password" bind:value={password} autocomplete="current-password" />
     </label>
 
-    <label class="check">
-      <input type="checkbox" bind:checked={storeCredentials} />
+    <label class="check" class:disabled={!canRemember}>
+      <input type="checkbox" bind:checked={storeCredentials} disabled={!canRemember} />
       Remember this account
     </label>
+
+    {#if !canRemember && store.credentialStore.message}
+      <div class="storage-note">{store.credentialStore.message}</div>
+    {/if}
 
     {#if error}<div class="err">{error}</div>{/if}
 
@@ -154,6 +174,17 @@
   }
   .check input {
     width: auto;
+  }
+  .check.disabled {
+    cursor: default;
+    color: var(--fg-dim);
+  }
+  .storage-note {
+    margin-top: -6px;
+    padding-left: 23px;
+    color: var(--fg-dim);
+    font-size: 11px;
+    line-height: 1.35;
   }
   .submit {
     margin-top: 6px;

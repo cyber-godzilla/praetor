@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -354,6 +355,55 @@ func TestValidate_RequiredFields(t *testing.T) {
 	cfg.Server.LoginURL = ""
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for empty login_url")
+	}
+}
+
+func TestCredentialBackendDefaultsAndValidation(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Credentials.Backend != "keyring" || cfg.Credentials.EncryptedFile.KeyEnv != "PRAETOR_CREDENTIALS_KEY" {
+		t.Fatalf("credential defaults = %+v", cfg.Credentials)
+	}
+	for _, backend := range []string{"keyring", "encrypted_file", "disabled"} {
+		cfg := Defaults()
+		cfg.Credentials.Backend = backend
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("backend %q rejected: %v", backend, err)
+		}
+	}
+	cfg = Defaults()
+	cfg.Credentials.Backend = "automatic"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("implicit/fallback credential backend was accepted")
+	}
+	cfg = Defaults()
+	cfg.Credentials.EncryptedFile.KeyEnv = "BAD-NAME"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("invalid credential key environment name was accepted")
+	}
+}
+
+func TestExistingConfigDefaultsToKeyringWithoutWritingASecret(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  host: game.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Credentials.Backend != "keyring" {
+		t.Fatalf("backend = %q, want keyring", cfg.Credentials.Backend)
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "credentials:") || !strings.Contains(text, "backend: keyring") || strings.Contains(text, "PRAETOR_CREDENTIALS_KEY=") {
+		t.Fatalf("saved credential configuration is wrong:\n%s", text)
 	}
 }
 

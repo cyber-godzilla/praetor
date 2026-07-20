@@ -1,5 +1,8 @@
 import type {
   AppConfig,
+  AccountState,
+  ConnectResult,
+  CredentialStoreStatus,
   DesktopNotificationsConfig,
   InitState,
   KudosConfig,
@@ -25,6 +28,7 @@ interface WebEnvelope {
   revision?: number;
   modeNames?: string[];
   accounts?: string[];
+  credentialStore?: CredentialStoreStatus;
   result?: { operation: string; ok: boolean; message?: string };
 }
 
@@ -71,16 +75,14 @@ export class WebTransport implements PraetorTransport {
         return init.config as T;
       }
       case "ListAccounts": {
-        const data = await this.request<{ accounts: string[] }>("GET", "/api/v1/accounts");
-        return (data.accounts ?? []) as T;
+        return (await this.request<AccountState>("GET", "/api/v1/accounts")) as T;
       }
       case "ConnectNew":
-        await this.request("POST", "/api/v1/game/connect", {
+        return (await this.request<ConnectResult>("POST", "/api/v1/game/connect", {
           username: args[0],
           password: args[1],
           store: args[2],
-        });
-        return undefined as T;
+        })) as T;
       case "ConnectStored":
         await this.request("POST", "/api/v1/game/connect-stored", { username: args[0] });
         return undefined as T;
@@ -287,7 +289,13 @@ export class WebTransport implements PraetorTransport {
         this.emitSystem({ type: "config", config: message.config, revision: this.revision });
       }
       if (message.modeNames) this.emitSystem({ type: "modes", modeNames: message.modeNames });
-      if (message.accounts) this.emitSystem({ type: "accounts", accounts: message.accounts });
+      if (message.accounts || message.credentialStore) {
+        this.emitSystem({
+          type: "accounts",
+          accounts: message.accounts ?? [],
+          credentialStore: message.credentialStore,
+        });
+      }
       for (const handler of this.handlers) handler.snapshot?.(message.events ?? []);
       this.socketReady = true;
       this.emitSystem({ type: "transport", transportState: "connected" });
@@ -311,7 +319,11 @@ export class WebTransport implements PraetorTransport {
     } else if (message.type === "modes") {
       this.emitSystem({ type: "modes", modeNames: message.modeNames ?? [], result: message.result });
     } else if (message.type === "accounts") {
-      this.emitSystem({ type: "accounts", accounts: message.accounts ?? [] });
+      this.emitSystem({
+        type: "accounts",
+        accounts: message.accounts ?? [],
+        credentialStore: message.credentialStore,
+      });
     } else if (message.type === "operation") {
       this.emitSystem({ type: "operation", result: message.result });
     }

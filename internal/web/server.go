@@ -75,7 +75,7 @@ func NewServer(app *appgui.GuiApp, auth *AuthManager, hub *Hub, assets fs.FS, lo
 		hub.SetObserver(s.observeEvents)
 		if app != nil {
 			init := app.GetInitState()
-			hub.SetInitialState(cloneJSON(init.Config), s.revision, init.ModeNames, init.Accounts)
+			hub.SetInitialState(cloneJSON(init.Config), s.revision, init.ModeNames, init.Accounts, init.CredentialStore)
 		}
 	}
 	s.routes()

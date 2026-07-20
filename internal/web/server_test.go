@@ -22,9 +22,14 @@ import (
 
 func newTestServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
+	srv, handler, _ := newTestServerWithCredentials(t, &session.MockCredentialStore{})
+	return srv, handler
+}
+
+func newTestServerWithCredentials(t *testing.T, creds session.CredentialStore) (*Server, http.Handler, *client.Client) {
+	t.Helper()
 	dir := t.TempDir()
 	cfg := config.Defaults()
-	creds := &session.MockCredentialStore{}
 	gameClient, err := client.NewClient(cfg, []string{dir}, dir, creds)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +54,48 @@ func newTestServer(t *testing.T) (*Server, http.Handler) {
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('praetor')")},
 	}
 	srv := NewServer(app, auth, hub, fs.FS(assets), log.New(io.Discard, "", 0))
-	return srv, srv.Handler()
+	return srv, srv.Handler(), gameClient
+}
+
+func TestCredentialStoreStatusIsNotCollapsedIntoAnEmptyAccountList(t *testing.T) {
+	storeErr := fmt.Errorf("secret service unavailable")
+	_, handler, _ := newTestServerWithCredentials(
+		t,
+		&session.MockCredentialStore{Err: storeErr},
+	)
+	cookie, csrf := loginRequest(t, handler)
+
+	accountsReq := httptest.NewRequest(http.MethodGet, "http://praetor.test/api/v1/accounts", nil)
+	accountsReq.Host = "praetor.test"
+	accountsReq.AddCookie(cookie)
+	accountsResponse := httptest.NewRecorder()
+	handler.ServeHTTP(accountsResponse, accountsReq)
+	if accountsResponse.Code != http.StatusOK {
+		t.Fatalf("accounts status=%d body=%s", accountsResponse.Code, accountsResponse.Body.String())
+	}
+	var state appgui.AccountState
+	if err := json.Unmarshal(accountsResponse.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.CredentialStore.Available || !state.CredentialStore.CanStore || state.CredentialStore.Message == "" {
+		t.Fatalf("credential status = %+v", state.CredentialStore)
+	}
+
+	saveReq := httptest.NewRequest(
+		http.MethodPut,
+		"http://praetor.test/api/v1/accounts/alice",
+		bytes.NewBufferString(`{"password":"password"}`),
+	)
+	saveReq.Host = "praetor.test"
+	saveReq.Header.Set("Origin", "http://praetor.test")
+	saveReq.Header.Set("X-Praetor-CSRF", csrf)
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveReq.AddCookie(cookie)
+	saveResponse := httptest.NewRecorder()
+	handler.ServeHTTP(saveResponse, saveReq)
+	if saveResponse.Code != http.StatusServiceUnavailable || !strings.Contains(saveResponse.Body.String(), "credential_store_unavailable") {
+		t.Fatalf("save status=%d body=%s", saveResponse.Code, saveResponse.Body.String())
+	}
 }
 
 func TestProtectedRoutesRejectUnauthenticatedRequests(t *testing.T) {

@@ -25,17 +25,18 @@ type Subscription struct {
 type Hub struct {
 	mu sync.Mutex
 
-	serverID  string
-	sequence  uint64
-	nextID    uint64
-	projector *Projection
-	clients   map[uint64]chan Envelope
-	closed    bool
-	observer  func([]appgui.WireEvent)
-	config    json.RawMessage
-	revision  uint64
-	modeNames []string
-	accounts  []string
+	serverID        string
+	sequence        uint64
+	nextID          uint64
+	projector       *Projection
+	clients         map[uint64]chan Envelope
+	closed          bool
+	observer        func([]appgui.WireEvent)
+	config          json.RawMessage
+	revision        uint64
+	modeNames       []string
+	accounts        []string
+	credentialStore appgui.CredentialStoreStatus
 }
 
 func NewHub(historyLimit int) *Hub {
@@ -106,15 +107,16 @@ func (h *Hub) Subscribe() (Subscription, Envelope) {
 	ch := make(chan Envelope, subscriberQueueSize)
 	h.clients[id] = ch
 	snapshot := Envelope{
-		Type:      "snapshot",
-		Protocol:  ProtocolVersion,
-		ServerID:  h.serverID,
-		Sequence:  h.sequence,
-		Events:    h.projector.SnapshotEvents(),
-		Config:    append(json.RawMessage(nil), h.config...),
-		Revision:  h.revision,
-		ModeNames: append([]string(nil), h.modeNames...),
-		Accounts:  append([]string(nil), h.accounts...),
+		Type:            "snapshot",
+		Protocol:        ProtocolVersion,
+		ServerID:        h.serverID,
+		Sequence:        h.sequence,
+		Events:          h.projector.SnapshotEvents(),
+		Config:          append(json.RawMessage(nil), h.config...),
+		Revision:        h.revision,
+		ModeNames:       append([]string(nil), h.modeNames...),
+		Accounts:        cloneAccounts(h.accounts),
+		CredentialStore: cloneCredentialStoreStatus(h.credentialStore),
 	}
 	return Subscription{ID: id, Messages: ch}, snapshot
 }
@@ -157,12 +159,13 @@ func (h *Hub) Close() {
 	}
 }
 
-func (h *Hub) SetInitialState(config json.RawMessage, revision uint64, modeNames, accounts []string) {
+func (h *Hub) SetInitialState(config json.RawMessage, revision uint64, modeNames, accounts []string, credentialStore appgui.CredentialStoreStatus) {
 	h.mu.Lock()
 	h.config = append(json.RawMessage(nil), config...)
 	h.revision = revision
 	h.modeNames = append([]string(nil), modeNames...)
 	h.accounts = append([]string(nil), accounts...)
+	h.credentialStore = credentialStore
 	h.mu.Unlock()
 }
 
@@ -176,8 +179,26 @@ func (h *Hub) applyStateLocked(env Envelope) {
 	case "modes":
 		h.modeNames = append([]string(nil), env.ModeNames...)
 	case "accounts":
-		h.accounts = append([]string(nil), env.Accounts...)
+		if env.Accounts != nil {
+			h.accounts = append([]string(nil), (*env.Accounts)...)
+		}
+		if env.CredentialStore != nil {
+			h.credentialStore = *env.CredentialStore
+		}
 	}
+}
+
+func cloneCredentialStoreStatus(status appgui.CredentialStoreStatus) *appgui.CredentialStoreStatus {
+	copy := status
+	return &copy
+}
+
+func cloneAccounts(accounts []string) *[]string {
+	copy := append([]string(nil), accounts...)
+	if copy == nil {
+		copy = []string{}
+	}
+	return &copy
 }
 
 func (h *Hub) broadcastLocked(env Envelope) {

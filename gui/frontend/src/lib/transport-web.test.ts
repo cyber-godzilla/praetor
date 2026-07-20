@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 // The production tsconfig intentionally omits Node types; Vitest still runs in
 // Node and provides this built-in for the source-level parity contract.
 // @ts-expect-error node:fs types are test-runner-only
@@ -7,6 +7,10 @@ import { settingsOperations, WEB_SUPPORTED_METHODS, WebTransport } from "./trans
 import { Kind } from "./types";
 
 describe("web transport operation parity", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("has an explicit web decision for every transport-neutral bridge call", () => {
     const source = readFileSync(new URL("./bridge.ts", import.meta.url), "utf8");
     const methods = new Set<string>();
@@ -89,5 +93,68 @@ describe("web transport operation parity", () => {
     });
 
     expect(revisions).toEqual([1, 3]);
+  });
+
+  it("returns a successful connection separately from a credential-save warning", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      connected: true,
+      credentialSaveRequested: true,
+      credentialsSaved: false,
+      warning: "Connected, but the account was not remembered.",
+      accountState: {
+        accounts: [],
+        credentialStore: {
+          backend: "keyring",
+          available: false,
+          canStore: true,
+          message: "The system keyring is unavailable.",
+        },
+      },
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const transport = new WebTransport();
+    const result = await transport.invoke<any>("ConnectNew", undefined, "alice", "password", true);
+
+    expect(result.connected).toBe(true);
+    expect(result.credentialsSaved).toBe(false);
+    expect(result.warning).toContain("not remembered");
+    expect(result.accountState.credentialStore.available).toBe(false);
+  });
+
+  it("projects credential-store health with account snapshots", () => {
+    const transport = new WebTransport();
+    const updates: any[] = [];
+    transport.subscribe({
+      events: () => {},
+      system: (update) => {
+        if (update.type === "accounts") updates.push(update);
+      },
+    });
+
+    (transport as any).handleEnvelope({
+      type: "snapshot",
+      protocol: 1,
+      serverId: "server-a",
+      sequence: 1,
+      accounts: [],
+      credentialStore: {
+        backend: "encrypted_file",
+        available: false,
+        canStore: true,
+        message: "Encrypted credential storage is unavailable.",
+      },
+    });
+
+    expect(updates).toEqual([{
+      type: "accounts",
+      accounts: [],
+      credentialStore: {
+        backend: "encrypted_file",
+        available: false,
+        canStore: true,
+        message: "Encrypted credential storage is unavailable.",
+      },
+    }]);
   });
 });

@@ -15,7 +15,7 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **Desktop Notifications** — alerts for health/fatigue thresholds and custom pattern matches
 - **Metrics Dashboard** — session tracking for kills, actions, and custom metrics with history
 - **Persistent State** — Lua scripts can persist data across sessions (e.g., armor absorption tracking)
-- **Multi-Account** — system keyring storage with account selection, optional credential storage
+- **Multi-Account** — system-keyring or encrypted-service storage with account selection
 - **Scrollback & History Search** — Ctrl+F searches the output, Ctrl+R reverse-searches your commands (GUI)
 - **Responsive Sidebar** — auto-hides or compacts when terminal is too small
 - **IP Masking** — optional scrambling of IP addresses in game text
@@ -149,7 +149,7 @@ make clean    # Remove built binaries
 
 ### Login
 
-Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. After logging in, you're prompted whether to store credentials in your system keyring.
+Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. Desktop installs use the system keyring by default; headless services can explicitly use an encrypted credential file with a separately managed key. Credential-storage failures never block an otherwise successful TEC connection, and Praetor never falls back to plaintext storage.
 
 ### Key Bindings
 

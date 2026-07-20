@@ -2,7 +2,7 @@
 
 `praetor-web` is Praetor's headless browser shell. It serves the same Svelte
 frontend used by the Wails desktop application and runs the same Go client,
-protocol parser, Lua engine, map/compass renderers, config, keyring integration,
+protocol parser, Lua engine, map/compass renderers, config, secure credential storage,
 logging, and persistent state used by the other shells.
 
 One process owns one TEC session. Every authenticated browser is an equal
@@ -36,6 +36,9 @@ browser storage. Processes running as the same OS user may still be able to
 observe a process's startup environment, so the service account is part of the
 trust boundary. Rotate the password by restarting the process with a new value;
 the restart also invalidates all browser sessions.
+
+`PRAETOR_WEB_PASSWORD` is only the browser-access password. Do not reuse it as
+the encrypted TEC credential-store key described below.
 
 For a release-style Linux amd64 artifact with no GTK/WebKit dependency:
 
@@ -142,7 +145,7 @@ credentials.
 - Closing a tab, changing networks, or reconnecting a browser does not reconnect
   or disconnect TEC. The browser receives an atomic bounded-history snapshot,
   then resumes ordered live updates.
-- A settings change, script reload, mode switch, keyring mutation, Kudos update,
+- A settings change, script reload, mode switch, credential-store mutation, Kudos update,
   persistent-data clear, or command affects the shared process.
 - Input drafts, command history, active tab, scroll position, unread markers,
   text selection, collapsed panels, and browser-notification permission remain
@@ -185,7 +188,7 @@ First-letter normalization also applies to a
 coarse-pointer web device whose viewport is wider than the mobile breakpoint.
 These mobile-layout preferences do not affect the TUI or native Wails layout.
 
-## Files, keyring, logs, and backups
+## Files, credentials, logs, and backups
 
 Run `praetor-web` as the ordinary OS user that owns the Praetor profile. Script
 and transcript paths shown in a remote browser refer to the **server host**, not
@@ -211,14 +214,47 @@ Changing the logging directory while transcript logging is enabled closes the
 old transcript and starts a new timestamped transcript immediately. Enabling or
 disabling logging also applies immediately in web, Wails, and TUI shells.
 
-A headless service may not have access to a desktop keyring session. In that
-case, stored-account operations return an error, while an unstored TEC login
-remains available. Praetor never falls back to a plaintext credential file.
+Desktop installs default to the operating-system keyring. A headless service
+normally cannot access or unlock a desktop keyring session, so it should select
+the encrypted-file backend explicitly:
+
+```yaml
+credentials:
+  backend: encrypted_file
+  encrypted_file:
+    path: ""                       # state/credentials/credentials.enc
+    key_env: PRAETOR_CREDENTIALS_KEY
+```
+
+Supply an independent base64-encoded 32-byte key through the service secret
+manager:
+
+```sh
+openssl rand -base64 32
+```
+
+Praetor removes `PRAETOR_CREDENTIALS_KEY` from its own environment after
+initializing the store. The encrypted account map uses a versioned
+AES-256-GCM envelope, a fresh nonce for every write, authenticated decryption,
+and atomic mode-0600 replacement. Missing, malformed, or incorrect keys fail
+startup. The application never falls back to a plaintext credential file or
+to a different backend.
+
+When **Remember this account** is selected, Praetor authenticates and opens the
+TEC WebSocket before attempting persistence. A storage failure therefore
+leaves the shared game connected and produces an **Account not remembered**
+warning. The login screen disables Remember when storage is known to be
+unavailable, and distinguishes that state from a valid empty account list.
+Saved usernames appear in the existing account selector; switching accounts
+still requires disconnecting the one shared TEC session first.
 
 Back up `config.yaml`, script directories, Lua persistent data, and any desired
-session logs. Credential backups are managed by the OS keyring and are not part
-of Praetor's filesystem backup. Only one Praetor process should use a given XDG
-profile at a time.
+session logs. Keyring-backed credentials remain managed by the OS keyring. For
+the encrypted-file backend, back up `credentials.enc` and its secret-manager
+key separately; neither is useful without the other. Losing or rotating the
+key without re-encrypting the file makes saved accounts unrecoverable, but does
+not affect scripts, configuration, logs, or interactive TEC login. Only one
+Praetor process should use a given XDG profile at a time.
 
 ## systemd user service
 
@@ -229,6 +265,9 @@ install -Dm755 praetor-web-linux-amd64 "$HOME/.local/bin/praetor-web"
 install -Dm600 /dev/null "$HOME/.config/praetor/web.env"
 printf '%s\n' 'PRAETOR_WEB_PASSWORD=replace-with-a-long-random-password' \
   > "$HOME/.config/praetor/web.env"
+# Required only when credentials.backend is encrypted_file:
+printf 'PRAETOR_CREDENTIALS_KEY=' >> "$HOME/.config/praetor/web.env"
+openssl rand -base64 32 >> "$HOME/.config/praetor/web.env"
 chmod 0600 "$HOME/.config/praetor/web.env"
 install -Dm644 packaging/systemd/praetor-web.service \
   "$HOME/.config/systemd/user/praetor-web.service"

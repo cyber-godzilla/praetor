@@ -16,6 +16,8 @@ import type {
   UpdateInfo,
   NoteSummary,
   Note,
+  AccountState,
+  ConnectResult,
 } from "./types";
 import type { PraetorTransport, SystemUpdate } from "./transport";
 import { WebAuthRequiredError } from "./transport";
@@ -52,6 +54,12 @@ export const getInitState = () =>
     version: "dev",
     debug: false,
     accounts: [],
+    credentialStore: {
+      backend: "unconfigured",
+      available: false,
+      canStore: false,
+      message: "Secure credential storage is not configured.",
+    },
     hasModes: false,
     modeNames: [],
     config: {} as AppConfig,
@@ -61,9 +69,21 @@ export const getConfig = () => call<AppConfig>("GetConfig", {} as AppConfig);
 export const start = () => transport.start();
 
 // ---- Auth / connection ----
-export const listAccounts = () => call<string[]>("ListAccounts", []);
+export const listAccounts = () => call<AccountState>("ListAccounts", {
+  accounts: [],
+  credentialStore: {
+    backend: "unconfigured",
+    available: false,
+    canStore: false,
+    message: "Secure credential storage is not configured.",
+  },
+});
 export const connectNew = (u: string, p: string, store: boolean) =>
-  call<void>("ConnectNew", undefined, u, p, store);
+  call<ConnectResult>("ConnectNew", {
+    connected: false,
+    credentialSaveRequested: store,
+    credentialsSaved: false,
+  }, u, p, store);
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
 export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);

@@ -1,16 +1,194 @@
 package gui
 
 import (
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/gorilla/websocket"
 )
+
+type observingCredentialStore struct {
+	client           *client.Client
+	accounts         map[string]string
+	setErr           error
+	setCalls         int
+	connectedWhenSet bool
+}
+
+func (s *observingCredentialStore) Descriptor() session.CredentialStoreDescriptor {
+	return session.CredentialStoreDescriptor{Backend: "test", CanStore: true}
+}
+
+func (s *observingCredentialStore) ListAccounts() ([]string, error) {
+	names := make([]string, 0, len(s.accounts))
+	for name := range s.accounts {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func (s *observingCredentialStore) GetAccount(username string) (string, error) {
+	password, ok := s.accounts[username]
+	if !ok {
+		return "", session.ErrNoCredentials
+	}
+	return password, nil
+}
+
+func (s *observingCredentialStore) SetAccount(username, password string) error {
+	s.setCalls++
+	s.connectedWhenSet = s.client != nil && s.client.Session.IsConnected()
+	if s.setErr != nil {
+		return s.setErr
+	}
+	if s.accounts == nil {
+		s.accounts = make(map[string]string)
+	}
+	s.accounts[username] = password
+	return nil
+}
+
+func (s *observingCredentialStore) RemoveAccount(username string) error {
+	delete(s.accounts, username)
+	return nil
+}
+
+func newConnectedTestApp(t *testing.T, creds session.CredentialStore) (*GuiApp, func()) {
+	t.Helper()
+	loginServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			http.SetCookie(w, &http.Cookie{Name: "biscuit", Value: "test", Path: "/"})
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "user", Value: "alice", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "pass", Value: "server-token", Path: "/"})
+		w.WriteHeader(http.StatusOK)
+	}))
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	gameServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	parsed, err := url.Parse(gameServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, portText, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Server.LoginURL = loginServer.URL
+	cfg.Server.Protocol = "ws"
+	cfg.Server.Host = host
+	cfg.Server.Port = port
+	gameClient, err := client.NewClient(cfg, nil, t.TempDir(), creds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := NewGuiApp(&Deps{
+		Client: gameClient,
+		Config: cfg,
+		Creds:  creds,
+	}, &captureEmitter{})
+	cleanup := func() {
+		app.Disconnect()
+		gameServer.Close()
+		loginServer.Close()
+	}
+	return app, cleanup
+}
+
+func TestConnectNewConnectsBeforeSavingCredentials(t *testing.T) {
+	store := &observingCredentialStore{}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", true)
+	if err != nil {
+		t.Fatalf("ConnectNew: %v", err)
+	}
+	if !result.Connected || !result.CredentialsSaved || result.Warning != "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if store.setCalls != 1 || !store.connectedWhenSet {
+		t.Fatalf("save calls=%d connectedWhenSet=%v", store.setCalls, store.connectedWhenSet)
+	}
+}
+
+func TestConnectNewCredentialSaveFailureIsNonFatal(t *testing.T) {
+	store := &observingCredentialStore{setErr: errors.New("secret service unavailable")}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", true)
+	if err != nil {
+		t.Fatalf("ConnectNew returned a credential persistence error: %v", err)
+	}
+	if !result.Connected || result.CredentialsSaved || result.Warning == "" || result.AccountState == nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if !store.connectedWhenSet || !app.client().Session.IsConnected() {
+		t.Fatal("game session was not kept connected after credential save failure")
+	}
+}
+
+func TestConnectNewWithoutRememberDoesNotTouchCredentialStore(t *testing.T) {
+	store := &observingCredentialStore{setErr: errors.New("must not be called")}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", false)
+	if err != nil {
+		t.Fatalf("ConnectNew: %v", err)
+	}
+	if !result.Connected || result.Warning != "" || store.setCalls != 0 {
+		t.Fatalf("result=%+v save calls=%d", result, store.setCalls)
+	}
+}
+
+func TestListAccountsReportsUnavailableStore(t *testing.T) {
+	app := NewGuiApp(&Deps{
+		Config: config.Defaults(),
+		Creds:  &session.MockCredentialStore{Err: errors.New("keyring locked")},
+	}, &captureEmitter{})
+	state := app.ListAccounts()
+	if state.CredentialStore.Available || !state.CredentialStore.CanStore {
+		t.Fatalf("credential status = %+v", state.CredentialStore)
+	}
+	if len(state.Accounts) != 0 || state.CredentialStore.Message == "" {
+		t.Fatalf("account state = %+v", state)
+	}
+}
 
 func TestToWire_GameText(t *testing.T) {
 	ev := types.GameTextEvent{

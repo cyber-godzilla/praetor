@@ -12,6 +12,56 @@ server:
   login_url: https://login.eternalcitygame.com/login.php
 ```
 
+## Credentials
+
+```yaml
+credentials:
+  backend: keyring                  # keyring, encrypted_file, or disabled
+  encrypted_file:
+    path: ""                        # empty = state/credentials/credentials.enc
+    key_env: PRAETOR_CREDENTIALS_KEY
+```
+
+`keyring` is the desktop default. On Linux it requires an available Secret
+Service provider on the user-session D-Bus, such as GNOME Keyring or KWallet,
+with an unlocked default collection. If the keyring is unavailable, Praetor
+shows that condition separately from an empty account list. A login without
+**Remember this account** remains available, and a save failure after TEC has
+accepted a login does not disconnect or block the game session.
+
+`encrypted_file` is intended for headless web services that cannot safely join
+a desktop D-Bus session. `key_env` must contain a base64-encoded 32-byte random
+key when Praetor starts. For example:
+
+```sh
+openssl rand -base64 32
+```
+
+The key is removed from Praetor's environment after the store is initialized;
+it is never written to `config.yaml` or beside the encrypted file. The store
+uses a versioned AES-256-GCM envelope with a fresh nonce on every write,
+authenticated decryption, atomic file replacement, and mode `0600`. The
+default parent directory is created with mode `0700`. A missing, malformed, or
+incorrect key fails startup rather than falling back to another backend.
+
+`disabled` removes account persistence while retaining ordinary interactive
+login. Praetor never silently falls back to plaintext credential storage.
+Changing credential backends does not migrate accounts automatically. Add the
+accounts again under the new backend after confirming the prior store is
+backed up or no longer needed.
+
+## Reconnection
+
+```yaml
+reconnect:
+  enabled: true                   # Auto-reconnect on disconnect
+  initial_delay: 1s
+  max_delay: 60s
+  backoff_multiplier: 2           # Exponential backoff between attempts
+```
+
+Toggleable via Esc → Auto Reconnect.
+
 ## Scripts
 
 ```yaml
@@ -205,7 +255,7 @@ Toggleable in the GUI under Settings → "Check for updates on startup".
 | Notes | `~/.config/praetor/notes/` |
 | App logs | `~/.local/state/praetor/tec.log` |
 | Persistent state | `~/.local/share/praetor/persistent_state.json` |
-| Credentials | System keyring |
+| Credentials | System keyring, or an explicitly configured encrypted file under the state directory |
 
 ## How the config file is written
 

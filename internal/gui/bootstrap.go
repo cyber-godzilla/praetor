@@ -99,7 +99,20 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		scriptDirs = []string{filepath.Join(configDir, "scripts")}
 	}
 
-	creds := &session.KeyringStore{}
+	credentialPath := cfg.Credentials.EncryptedFile.Path
+	if credentialPath != "" {
+		credentialPath = expandPath(credentialPath)
+	}
+	creds, err := session.NewCredentialStore(session.CredentialStoreOptions{
+		Backend:  cfg.Credentials.Backend,
+		StateDir: stateDir,
+		FilePath: credentialPath,
+		KeyEnv:   cfg.Credentials.EncryptedFile.KeyEnv,
+	})
+	if err != nil {
+		appLog.Close()
+		return nil, err
+	}
 	gc, err := client.NewClient(cfg, scriptDirs, dataDir, creds)
 	if err != nil {
 		return nil, err

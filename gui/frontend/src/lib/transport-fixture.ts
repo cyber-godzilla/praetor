@@ -14,6 +14,11 @@ export class FixtureTransport implements PraetorTransport {
         version: "fixture",
         debug: true,
         accounts: ["fixture-account"],
+        credentialStore: {
+          backend: "memory",
+          available: true,
+          canStore: true,
+        },
         hasModes: true,
         modeNames: ["fixture"],
         config: { UI: { DisplayMode: "sidebar", Scrollback: 5000, CustomTabs: [] } } as unknown as AppConfig,

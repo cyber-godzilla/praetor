@@ -13,6 +13,7 @@ import type {
   TextPayload,
   SuppressPayload,
   WireEvent,
+  CredentialStoreStatus,
 } from "./types";
 import { Kind } from "./types";
 
@@ -98,6 +99,12 @@ class AppStore {
   version = $state("dev");
   debug = $state(false);
   accounts = $state<string[]>([]);
+  credentialStore = $state<CredentialStoreStatus>({
+    backend: "unconfigured",
+    available: false,
+    canStore: false,
+    message: "Secure credential storage is not configured.",
+  });
   config = $state<AppConfig | null>(null);
   modeNames = $state<string[]>([]);
   hasModes = $state(false);
