@@ -154,6 +154,7 @@ Toggleable in the GUI under Settings → "Check for updates on startup".
 | Scripts (default) | `~/.config/praetor/scripts/` |
 | Session logs | `~/.config/praetor/logs/` |
 | Exports | `~/.config/praetor/exports/` |
+| Notes | `~/.config/praetor/notes/` |
 | App logs | `~/.local/state/praetor/tec.log` |
 | Persistent state | `~/.local/share/praetor/persistent_state.json` |
 | Credentials | System keyring |

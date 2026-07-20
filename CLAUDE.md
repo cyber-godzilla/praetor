@@ -233,6 +233,17 @@ Configurable pattern highlighting for loot detection. Managed via Esc → Highli
 - Per-pattern active toggle, style cycling, add/delete
 - Persisted to `config.yaml` → `highlights:` section
 
+## Notes
+
+A freeform notepad, GUI-only (the terminal client does not wire this up). Each note is a single plaintext file — first line is the title, the rest is the body — stored under `~/.config/praetor/notes/` with a safe slug filename (non-alphanumeric characters stripped, collision-suffixed). Notes are global (not per-account) and listed most-recently-edited first.
+
+- `/notes` — open the Notes modal (list view)
+- `/notes add <title>` — open the editor prefilled with `<title>`
+- `/notes open <title>` — open an existing note by title (case-insensitive)
+- `/notes delete <title>` — delete a note by title
+- `/notes list` — print `Title — preview…` lines into the output pane, most-recent first
+- Esc menu → Tools & References → **Notes** — opens the same modal
+
 ## HTML Parsing
 
 - `<b>` → bold, `<i>` → italic, `<font color>` → color (dark colors like #000000 skipped)
