@@ -21,9 +21,26 @@ var splashArt = `  _._._                                                        
    |║|  ██║     ██║  ██║██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║    |║|
    |║|  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    |║|
    |║|                           ═══ ✦ ═══                            |║|
-   |║|                            %s                              |║|
+   |║|%s|║|
   _|_|_                                                              _|_|_
  |_____|                                                            |_____|`
+
+// splashBoxInterior is the column width between the |║| borders of splashArt;
+// the version line's %s is centered within it.
+const splashBoxInterior = 64
+
+// centerVersion centers version within a width-column field, padding with
+// spaces on both sides so the splash box border stays aligned for any version
+// length. Longer strings are clipped (the version was previously hard-truncated
+// to 6 chars, dropping a digit at two-digit patch numbers like v0.2.10).
+func centerVersion(version string, width int) string {
+	if len(version) > width {
+		version = version[:width]
+	}
+	total := width - len(version)
+	left := total / 2
+	return strings.Repeat(" ", left) + version + strings.Repeat(" ", total-left)
+}
 
 type splashTickMsg struct{}
 
@@ -67,15 +84,9 @@ func (s Splash) View() string {
 	artStyle := lipgloss.NewStyle().Foreground(colorOrange)
 	dimStyle := lipgloss.NewStyle().Foreground(colorDim)
 
-	// Pad version to 6 chars to maintain art alignment.
-	ver := s.version
-	if len(ver) < 6 {
-		ver = ver + strings.Repeat(" ", 6-len(ver))
-	} else if len(ver) > 6 {
-		ver = ver[:6]
-	}
-
-	art := fmt.Sprintf(splashArt, ver)
+	// Center the version within the box interior so the border stays aligned for
+	// any version length.
+	art := fmt.Sprintf(splashArt, centerVersion(s.version, splashBoxInterior))
 
 	var b strings.Builder
 	b.WriteString(artStyle.Render(art))

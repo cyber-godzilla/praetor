@@ -2,19 +2,18 @@
   import { onMount } from "svelte";
   import { fade } from "svelte/transition";
   import { store } from "../lib/store.svelte";
+  import { centerInBox } from "../lib/splash";
 
   let { ondismiss }: { ondismiss: () => void } = $props();
 
   let showHint = $state(false);
   let dismissed = false;
 
-  // Pad the version to 6 chars to preserve the art's alignment (as the TUI does).
-  const ver = $derived.by(() => {
-    let v = store.version || "dev";
-    if (v.length < 6) v = v + " ".repeat(6 - v.length);
-    else if (v.length > 6) v = v.slice(0, 6);
-    return v;
-  });
+  // The version line, centered within the art box's 64-column interior so the
+  // border stays aligned for any version length (a fixed 6-char slot dropped a
+  // digit at two-digit patch numbers, e.g. v0.2.10 -> v0.2.1).
+  const BOX_INTERIOR = 64;
+  const ver = $derived(centerInBox(store.version || "dev", BOX_INTERIOR));
 
   // The PRAETOR art from internal/ui/splash.go (%s -> version).
   const art = $derived(
@@ -28,7 +27,7 @@
    |║|  ██║     ██║  ██║██║  ██║███████╗   ██║   ╚██████╔╝██║  ██║    |║|
    |║|  ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝    |║|
    |║|                           ═══ ✦ ═══                            |║|
-   |║|                            ${ver}                              |║|
+   |║|${ver}|║|
   _|_|_                                                              _|_|_
  |_____|                                                            |_____|`,
   );
