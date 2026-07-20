@@ -133,6 +133,8 @@ func (s *Store) Get(title string) (Note, bool, error) {
 
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
+var winReserved = regexp.MustCompile(`^(con|prn|aux|nul|com[1-9]|lpt[1-9])$`)
+
 // slug produces a filesystem-safe base name from a title.
 func slug(title string) string {
 	out := nonSlug.ReplaceAllString(strings.ToLower(title), "-")
@@ -142,6 +144,13 @@ func slug(title string) string {
 	}
 	if out == "" {
 		out = "note"
+	}
+	// Avoid Windows reserved device names (CON, NUL, COM1, …): such a file
+	// collides with the device namespace even inside a subdirectory and with a
+	// .txt extension — on Windows "nul.txt" silently discards the file. Prefix
+	// to sidestep it (harmless on Linux/macOS).
+	if winReserved.MatchString(out) {
+		out = "note-" + out
 	}
 	return out
 }

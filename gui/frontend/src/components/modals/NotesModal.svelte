@@ -55,8 +55,10 @@
 
   // Guarded return to list (Back button and Esc route here).
   function requestList() {
-    if (dirty) confirmDiscard = true;
-    else toList();
+    if (dirty) {
+      confirmDiscard = true;
+      confirmDelete = false;
+    } else toList();
   }
 
   async function save() {
@@ -86,13 +88,14 @@
   function guard(): boolean {
     if (view === "edit" && dirty) {
       confirmDiscard = true;
+      confirmDelete = false;
       return false;
     }
     return true;
   }
 
   // GameView bumps notesBackRequest for Esc while the editor is active.
-  let lastBack = 0;
+  let lastBack = store.notesBackRequest;
   $effect(() => {
     const r = store.notesBackRequest;
     if (r === lastBack) return;
@@ -130,7 +133,7 @@
             </span>
           {:else}
             <button class="danger sm" title="Delete"
-              onclick={() => { confirmDelete = true; confirmDeleteTitle = n.title; }}>✕</button>
+              onclick={() => { confirmDelete = true; confirmDeleteTitle = n.title; confirmDiscard = false; }}>✕</button>
           {/if}
         </div>
       {/each}
@@ -153,10 +156,10 @@
     </div>
     {#snippet footer()}
       {#if confirmDelete}
-        <button class="danger" onclick={() => del(originalTitle || title)}>Confirm delete</button>
+        <button class="danger" onclick={() => del(originalTitle)}>Confirm delete</button>
         <button onclick={() => (confirmDelete = false)}>Cancel</button>
       {:else if originalTitle}
-        <button class="danger" onclick={() => (confirmDelete = true)}>Delete</button>
+        <button class="danger" onclick={() => { confirmDelete = true; confirmDiscard = false; }}>Delete</button>
       {/if}
       {#if confirmDiscard}
         <span class="confirm">

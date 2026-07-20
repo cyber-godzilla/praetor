@@ -212,3 +212,40 @@ func TestSave_NoTmpLeftBehind(t *testing.T) {
 		}
 	}
 }
+
+func TestSlug_WindowsReservedNamesPrefixed(t *testing.T) {
+	for _, r := range []string{"con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"} {
+		if got := slug(r); got != "note-"+r {
+			t.Errorf("slug(%q) = %q, want note-%s (Windows reserved)", r, got, r)
+		}
+	}
+	if got := slug("CON"); got != "note-con" { // slug lowercases first
+		t.Errorf("slug(CON) = %q, want note-con", got)
+	}
+	for _, r := range []string{"com", "com10", "console", "lpt", "con1"} { // lookalikes, not reserved
+		if got := slug(r); got != r {
+			t.Errorf("slug(%q) = %q, want unchanged", r, got)
+		}
+	}
+}
+
+func TestSave_CollisionSuffix(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	// Two different titles that slug to the same base ("foo").
+	if err := s.Save("", "Foo!", "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save("", "Foo?", "b"); err != nil {
+		t.Fatal(err)
+	}
+	if n, ok, _ := s.Get("Foo!"); !ok || n.Body != "a" {
+		t.Errorf("Foo! = %+v ok=%v", n, ok)
+	}
+	if n, ok, _ := s.Get("Foo?"); !ok || n.Body != "b" {
+		t.Errorf("Foo? = %+v ok=%v", n, ok)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 2 {
+		t.Errorf("want 2 files (base + collision suffix), got %v", entries)
+	}
+}
