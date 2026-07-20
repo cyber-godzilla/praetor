@@ -236,3 +236,56 @@ func TestParseHTML_HTMLEntities(t *testing.T) {
 		t.Errorf("expected decoded entities, got %q", result.Text)
 	}
 }
+
+// TestParseHTML_NearBlackFontColorNoPanic is a regression guard: a <font color>
+// whose weighted brightness rounds to 0 under integer division (but is not pure
+// black) drove brightness to 0 → scale = 50/0 = +Inf → int(NaN) negative index
+// → panic, killing both clients from a single line of game text.
+func TestParseHTML_NearBlackFontColorNoPanic(t *testing.T) {
+	for _, hex := range []string{"#000001", "#000008", "#010000", "#010100", "#000100", "#010101"} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("ParseHTML panicked on <font color=%q>: %v", hex, r)
+				}
+			}()
+			ParseHTML(`<font color="` + hex + `">x</font>`)
+		}()
+	}
+}
+
+// FuzzParseHTML asserts the HTML parser never panics on arbitrary input. Game
+// text is attacker-influenceable and a parse panic kills the client, so the
+// only invariant that matters here is panic-freedom.
+func FuzzParseHTML(f *testing.F) {
+	f.Add("Hello world")
+	f.Add(`<font color="#000001">x</font>`)
+	f.Add(`<b><i>nested`)
+	f.Add(`<font color="#zzzzzz">bad hex</font>`)
+	f.Add(`<hr/><ul><li>item`)
+	f.Add("&lt;entity&gt; &amp; &#x1F600;")
+	f.Fuzz(func(t *testing.T, s string) {
+		_ = ParseHTML(s)
+		_ = ParseHTMLWithIndent(s, 2)
+	})
+}
+
+// TestBrightenIfDark covers the near-black boundary directly plus the
+// pure-black and already-bright cases that must keep their existing behavior.
+func TestBrightenIfDark(t *testing.T) {
+	// Near-black, non-zero: must brighten to a valid #RRGGBB, never panic.
+	for _, in := range []string{"#000001", "#000008", "#010000", "#010100", "#000100"} {
+		got := brightenIfDark(in)
+		if len(got) != 7 || got[0] != '#' {
+			t.Errorf("brightenIfDark(%q) = %q, want a #RRGGBB color", in, got)
+		}
+	}
+	// Pure black stays the "default text" marker (empty).
+	if got := brightenIfDark("#000000"); got != "" {
+		t.Errorf("brightenIfDark(#000000) = %q, want \"\"", got)
+	}
+	// An already-bright color is returned unchanged.
+	if got := brightenIfDark("#ffcc00"); got != "#ffcc00" {
+		t.Errorf("brightenIfDark(#ffcc00) = %q, want unchanged", got)
+	}
+}

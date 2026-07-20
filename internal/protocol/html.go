@@ -380,6 +380,13 @@ func brightenIfDark(c string) string {
 	if brightness >= 40 {
 		return c // bright enough
 	}
+	// Integer division floors near-black-but-nonzero colors (e.g. #000001) to 0.
+	// Clamp to 1 so the `50/brightness` scale below can't become +Inf, which
+	// would turn int(NaN) into a negative array index and panic. Pure black is
+	// already returned above.
+	if brightness < 1 {
+		brightness = 1
+	}
 
 	// Brighten: boost each channel so perceived brightness reaches ~50.
 	// Blue-heavy colors (darkblue, indigo) need extra boost because
