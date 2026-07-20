@@ -15,6 +15,7 @@ import type {
   CustomTabConfig,
   ActionSet,
   DesktopNotificationsConfig,
+  UpdateInfo,
 } from "./types";
 
 function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
@@ -81,6 +82,8 @@ export const setEchoTyped = (v: boolean) => call<void>("SetEchoTyped", undefined
 export const setEchoScript = (v: boolean) => call<void>("SetEchoScript", undefined, v);
 export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefined, v);
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
+export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
+export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
@@ -134,6 +137,10 @@ export const calcTrainCost = (
   selfTaught: boolean,
   healing: boolean,
 ) => call<number>("CalcTrainCost", 0, curRank, desRank, slot, difficulty, selfTrained, selfTaught, healing);
+
+// ---- Updates ----
+export const checkForUpdate = () =>
+  call<UpdateInfo>("CheckForUpdate", { available: false, current: "", latest: "", url: "" });
 
 // ---- Events ----
 export function onEvents(cb: (batch: WireEvent[]) => void): () => void {

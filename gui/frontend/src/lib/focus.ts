@@ -7,11 +7,13 @@ export function shouldRefocusInput(s: {
   pointerDown: boolean; // a mouse gesture is in progress (likely selecting)
   selectionCollapsed: boolean; // false = a text selection is live
   alreadyFocused: boolean; // the input already has focus (no-op)
+  activeIsTextField: boolean; // focus moved to another text field (e.g. the Ctrl+F search box) — leave it there
 }): boolean {
   if (s.modalOpen) return false;
   if (s.pointerDown) return false;
   if (!s.selectionCollapsed) return false;
   if (s.alreadyFocused) return false;
+  if (s.activeIsTextField) return false;
   return true;
 }
 

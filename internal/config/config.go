@@ -41,6 +41,12 @@ type Config struct {
 	Ignorelist    Ignorelist          `yaml:"ignorelist"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 	Logging       LoggingConfig       `yaml:"logging"`
+	Updates       UpdatesConfig       `yaml:"updates"`
+}
+
+// UpdatesConfig controls the GUI's startup check against GitHub releases.
+type UpdatesConfig struct {
+	Check bool `yaml:"check"` // notify when a newer release exists
 }
 
 type ServerConfig struct {
@@ -202,6 +208,10 @@ type UIConfig struct {
 	EchoTyped       bool     `yaml:"echo_typed_commands"`
 	EchoScript      bool     `yaml:"echo_script_commands"`
 	HideIPs         bool     `yaml:"hide_ips"`
+	// InputSpellcheck enables the webview's native spellchecker on the GUI
+	// command input (red squiggles under misspelled words while composing says
+	// and emotes). Engine support varies by platform webview.
+	InputSpellcheck bool `yaml:"input_spellcheck"`
 	// NumpadNavigation controls the GUI numpad-walking behavior:
 	//   "numlock" — move when NumLock is off; type digits when on (default)
 	//   "always"  — numpad always sends movement (needed on macOS, which has
@@ -268,6 +278,7 @@ func Defaults() *Config {
 			QuickCycleModes:  []string{"disable"},
 			EchoTyped:        true,
 			EchoScript:       true,
+			InputSpellcheck:  true,
 			NumpadNavigation: "numlock",
 		},
 		Highlights: []HighlightConfig{},
@@ -297,6 +308,9 @@ func Defaults() *Config {
 				Enabled: true,
 				Path:    "",
 			},
+		},
+		Updates: UpdatesConfig{
+			Check: true,
 		},
 	}
 }

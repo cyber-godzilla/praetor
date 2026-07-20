@@ -196,6 +196,7 @@ export interface UIConfig {
   EchoTyped: boolean;
   EchoScript: boolean;
   HideIPs: boolean;
+  InputSpellcheck: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;
@@ -214,6 +215,15 @@ export interface AppConfig {
     Session: { Enabled: boolean; Path: string };
     [k: string]: unknown;
   };
+  Updates: { Check: boolean };
+}
+
+// UpdateInfo mirrors internal/update.Info (json tags).
+export interface UpdateInfo {
+  available: boolean;
+  current: string;
+  latest: string;
+  url: string;
 }
 
 export interface InitState {

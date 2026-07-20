@@ -137,6 +137,22 @@ class AppStore {
   loginUser = $state("");
   // Set to push text into the input line (e.g. kudos favorite prefill).
   inputPrefill = $state("");
+  // Scrollback search (Ctrl+F). The open flag lives here so GameView's
+  // capture-phase key routing, the OutputPane search bar, and Escape handling
+  // all agree; the query itself is local to OutputPane.
+  searchOpen = $state(false);
+  // Bumped to ask the search bar to (re)focus and select its input.
+  searchFocusRequest = $state(0);
+  // Bumped to return keyboard focus to the game input (e.g. after closing the
+  // search bar), since the sticky-focus logic only reacts to blur events.
+  focusInputRequest = $state(0);
+  // Reverse history search (Ctrl+R). GameView owns the capture-phase keydown,
+  // so it bumps the request counter; InputLine performs the search and mirrors
+  // its active state here so Escape routing can yield to it. Cancel is likewise
+  // a counter so GameView can dismiss it from the window handler.
+  histSearchRequest = $state(0);
+  histSearchCancel = $state(0);
+  histSearchActive = $state(false);
   // Global reveal of all suppressed lines (Alt+I), complementing per-line click.
   expandAllSuppressed = $state(false);
   // Where Esc goes from the currently-open modal: "menu" for submenus (with a
@@ -286,6 +302,8 @@ class AppStore {
     this.openModal = null;
     this.contextMenuOpen = false;
     this.actionSetIndex = 0;
+    this.searchOpen = false;
+    this.histSearchActive = false;
   }
 
   private applyConn(c: ConnPayload) {
@@ -306,12 +324,12 @@ class AppStore {
     this.screen = this.accounts.length > 0 ? "account" : "login";
   }
 
-  addToast(title: string, message: string) {
+  addToast(title: string, message: string, durationMs = 6000) {
     const t: Toast = { id: this.nextToastId++, title, message };
     this.toasts.push(t);
     setTimeout(() => {
       this.toasts = this.toasts.filter((x) => x.id !== t.id);
-    }, 6000);
+    }, durationMs);
   }
 
   // apply processes one batch of wire events in order.

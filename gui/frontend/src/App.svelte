@@ -41,6 +41,24 @@
       // Subscribe before Start() so we never miss early events.
       unsub = api.onEvents((batch) => store.apply(batch));
       await api.start();
+
+      // Quietly check for a newer release (config-gated on the Go side, which
+      // also swallows network failures). Delayed so the toast lands after the
+      // splash instead of underneath it.
+      setTimeout(async () => {
+        try {
+          const u = await api.checkForUpdate();
+          if (u.available) {
+            store.addToast(
+              "Update available",
+              `Praetor ${u.latest} is out (you have ${u.current}). Grab it from GitHub releases or your package manager.`,
+              15000,
+            );
+          }
+        } catch {
+          // Never surface update-check failures at startup.
+        }
+      }, 2500);
     })();
     return () => unsub?.();
   });

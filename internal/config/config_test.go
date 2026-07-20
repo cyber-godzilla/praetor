@@ -629,3 +629,42 @@ func TestValidate_NumpadNavigation(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadConfig_SpellcheckAndUpdatesDefaults(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	// Neither key present: both default on (pre-existing configs get the
+	// features without editing their YAML).
+	if err := os.WriteFile(cfgPath, []byte("server:\n  host: example.com\n"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !got.UI.InputSpellcheck {
+		t.Error("ui.input_spellcheck should default true when absent")
+	}
+	if !got.Updates.Check {
+		t.Error("updates.check should default true when absent")
+	}
+}
+
+func TestLoadConfig_SpellcheckAndUpdatesExplicitOff(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	yaml := "ui:\n  input_spellcheck: false\nupdates:\n  check: false\n"
+	if err := os.WriteFile(cfgPath, []byte(yaml), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.UI.InputSpellcheck {
+		t.Error("ui.input_spellcheck: false should be honored")
+	}
+	if got.Updates.Check {
+		t.Error("updates.check: false should be honored")
+	}
+}

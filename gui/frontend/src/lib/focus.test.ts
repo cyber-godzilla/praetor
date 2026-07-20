@@ -7,6 +7,7 @@ const base = {
   pointerDown: false,
   selectionCollapsed: true,
   alreadyFocused: false,
+  activeIsTextField: false,
 };
 
 describe("shouldRefocusInput", () => {
@@ -24,6 +25,9 @@ describe("shouldRefocusInput", () => {
   });
   it("does not refocus when the input already has focus", () => {
     expect(shouldRefocusInput({ ...base, alreadyFocused: true })).toBe(false);
+  });
+  it("does not steal focus from another text field (search box)", () => {
+    expect(shouldRefocusInput({ ...base, activeIsTextField: true })).toBe(false);
   });
 });
 

@@ -45,6 +45,19 @@
       // The custom right-click menu owns Escape while it's open — yield so
       // dismissing it doesn't also pop the app menu.
       if (store.contextMenuOpen) return;
+      // Inline search layers yield next (innermost first): the Ctrl+R history
+      // search, then the Ctrl+F search bar. Only then does Esc reach the menu.
+      if (!store.openModal && store.histSearchActive) {
+        e.preventDefault();
+        store.histSearchCancel++;
+        return;
+      }
+      if (!store.openModal && store.searchOpen) {
+        e.preventDefault();
+        store.searchOpen = false;
+        store.focusInputRequest++;
+        return;
+      }
       e.preventDefault();
       // From a submenu, Esc goes back to the menu (modalEscapeTarget = "menu");
       // from the menu or a standalone modal it closes; with nothing open it
@@ -54,6 +67,28 @@
     }
     // All other shortcuts are inert while a modal owns the keyboard.
     if (store.openModal) return;
+
+    // Ctrl+F opens the scrollback search bar; Ctrl+R steps the reverse history
+    // search. Handled here in the capture phase so the webview's native
+    // find/reload defaults can never fire, and stopPropagation keeps the
+    // keystroke out of the input-line handlers (which would otherwise also see
+    // it — Ctrl+R's only path is the store counter).
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyF") {
+      e.preventDefault();
+      e.stopPropagation();
+      const t = store.tabs[store.activeTab];
+      if (t && t.kind !== "metrics") {
+        store.searchOpen = true;
+        store.searchFocusRequest++;
+      }
+      return;
+    }
+    if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === "KeyR") {
+      e.preventDefault();
+      e.stopPropagation();
+      store.histSearchRequest++;
+      return;
+    }
 
     // Numpad navigation: NumLock OFF drives movement (NumLock ON types digits).
     // NumLock state is read from e.key inside numpadCommand — WebKitGTK doesn't

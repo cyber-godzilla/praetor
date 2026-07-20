@@ -3,11 +3,21 @@
   import * as api from "../lib/bridge";
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
   import { resolveModeName } from "../lib/modes";
+  import { searchBackward, dropLastChar } from "../lib/histsearch";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
   let history: string[] = [];
   let histIdx = $state(-1); // -1 = current (not navigating)
+
+  // Reverse history search (Ctrl+R), readline-style. Active state is mirrored
+  // in store.histSearchActive so GameView's Escape routing can yield to it;
+  // GameView also owns the Ctrl+R keydown (capture phase) and drives us via
+  // the histSearchRequest counter.
+  let rsQuery = $state("");
+  let rsFailed = $state(false);
+  let rsIndex = 0; // history index of the current match
+  let rsSaved = ""; // input contents before the search began (restored on Esc)
   // True while a mouse button is held anywhere in the window — i.e. the user is
   // likely dragging out a text selection. Sticky-focus stands down until release
   // so it can't clear the selection mid-drag.
@@ -94,7 +104,115 @@
     pushHistory(line);
   }
 
+  // ---- Reverse history search --------------------------------------------
+
+  function rsBegin() {
+    store.histSearchActive = true;
+    rsSaved = value;
+    rsQuery = "";
+    rsFailed = false;
+    rsIndex = history.length; // first Ctrl+R step scans from the newest entry
+  }
+
+  // rsStep advances to the next-older match (repeat Ctrl+R).
+  function rsStep() {
+    const idx = searchBackward(history, rsQuery, rsIndex - 1);
+    if (idx >= 0) {
+      rsIndex = idx;
+      value = history[idx];
+      rsFailed = false;
+    } else if (rsQuery !== "") {
+      rsFailed = true;
+    }
+  }
+
+  // rsSearchFresh re-runs the search from the newest entry (query changed).
+  function rsSearchFresh() {
+    const idx = searchBackward(history, rsQuery, history.length - 1);
+    if (idx >= 0) {
+      rsIndex = idx;
+      value = history[idx];
+      rsFailed = false;
+    } else {
+      rsFailed = rsQuery !== "";
+      if (rsQuery === "") value = rsSaved;
+    }
+  }
+
+  function rsAccept() {
+    store.histSearchActive = false;
+    histIdx = -1;
+  }
+
+  function rsCancel() {
+    store.histSearchActive = false;
+    value = rsSaved;
+    histIdx = -1;
+  }
+
+  // GameView bumps these counters from its capture-phase key handling.
+  let lastRsReq = 0;
+  $effect(() => {
+    const req = store.histSearchRequest;
+    if (req === lastRsReq) return;
+    lastRsReq = req;
+    if (store.histSearchActive) rsStep();
+    else rsBegin();
+    inputEl?.focus();
+  });
+  let lastRsCancel = 0;
+  $effect(() => {
+    const req = store.histSearchCancel;
+    if (req === lastRsCancel) return;
+    lastRsCancel = req;
+    if (store.histSearchActive) rsCancel();
+  });
+
+  // rsKeydown consumes keys while the history search is active. Returns true
+  // when the event was fully handled; false lets normal handling run (after
+  // the search has been accepted or ignored for that key).
+  function rsKeydown(e: KeyboardEvent): boolean {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      rsAccept();
+      submit();
+      return true;
+    }
+    if (e.key === "Escape") {
+      // Normally captured by GameView first; kept as a local fallback.
+      e.preventDefault();
+      rsCancel();
+      return true;
+    }
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      rsQuery = dropLastChar(rsQuery);
+      rsSearchFresh();
+      return true;
+    }
+    if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      rsAccept(); // fall through: arrows resume normal history navigation
+      return false;
+    }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End" || e.key === "Tab") {
+      rsAccept(); // accept the match and let the key do its usual thing
+      return false;
+    }
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      rsQuery += e.key;
+      rsSearchFresh();
+      return true;
+    }
+    return false; // other chords (Ctrl+C, …) behave normally
+  }
+
   function onKeydown(e: KeyboardEvent) {
+    // IME composition: committing a candidate (Enter) or picking one (arrows)
+    // must never submit or navigate history. keyCode 229 covers WebKit quirks
+    // where isComposing is false on the final composition keystroke.
+    if (e.isComposing || e.keyCode === 229) return;
+    if (store.histSearchActive && rsKeydown(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();
       submit();
@@ -122,6 +240,21 @@
     if (!store.openModal && inputEl) inputEl.focus();
   });
 
+  // Explicit refocus requests (e.g. after the Ctrl+F search bar closes — the
+  // sticky-focus logic only reacts to blur events, so closing the bar would
+  // otherwise strand focus on <body>).
+  $effect(() => {
+    void store.focusInputRequest;
+    if (!store.openModal) inputEl?.focus();
+  });
+
+  // True when keyboard focus sits in some OTHER text field (the Ctrl+F search
+  // box, a future inline editor) — sticky focus must stand down for it.
+  function otherTextFieldActive(): boolean {
+    const ae = document.activeElement as HTMLElement | null;
+    return !!ae && ae !== inputEl && !!ae.closest?.(NON_REFOCUS_SELECTOR);
+  }
+
   // Accept prefill pushes from other components (e.g. kudos favorites).
   $effect(() => {
     if (store.inputPrefill) {
@@ -131,9 +264,10 @@
     }
   });
 
-  // When the app window regains focus, put the cursor back in the input.
+  // When the app window regains focus, put the cursor back in the input —
+  // unless the browser restored focus to another text field (the search box).
   function onWindowFocus() {
-    if (!store.openModal) inputEl?.focus();
+    if (!store.openModal && !otherTextFieldActive()) inputEl?.focus();
   }
 
   // Webview window-focus events are unreliable, so treat a click anywhere in the
@@ -172,6 +306,7 @@
           pointerDown,
           selectionCollapsed: !sel || sel.isCollapsed,
           alreadyFocused: document.activeElement === inputEl,
+          activeIsTextField: otherTextFieldActive(),
         })
       ) {
         inputEl?.focus();
@@ -189,30 +324,68 @@
   onblur={() => (pointerDown = false)}
 />
 
-<div class="inputbar">
-  <span class="prompt">›</span>
-  <input
-    type="text"
-    bind:this={inputEl}
-    bind:value
-    onkeydown={onKeydown}
-    onblur={onBlur}
-    spellcheck="false"
-    autocomplete="off"
-    placeholder={store.connState === "connected" ? "" : "(disconnected)"}
-  />
-  <button
-    class="mode"
-    class:active={!!store.mode && store.mode !== "disable"}
-    title="Switch mode"
-    onclick={() => (store.openModal = "modeselect")}
-    tabindex="-1"
-  >
-    {store.mode && store.mode !== "disable" ? store.mode : "disable"}
-  </button>
+<div class="inputwrap">
+  {#if store.histSearchActive}
+    <div class="rsearch" class:failed={rsFailed}>
+      <span>(history search) “{rsQuery}”{rsFailed ? " — no match" : ""}</span>
+      <span class="hint">Enter sends · Esc cancels · Ctrl+R older</span>
+    </div>
+  {/if}
+  <div class="inputbar">
+    <span class="prompt">›</span>
+    <input
+      type="text"
+      bind:this={inputEl}
+      bind:value
+      onkeydown={onKeydown}
+      oninput={() => {
+        // Direct edits that bypass rsKeydown (paste, IME commit) implicitly
+        // accept whatever is now in the field and end the search.
+        if (store.histSearchActive) rsAccept();
+      }}
+      onblur={onBlur}
+      spellcheck={store.config?.UI?.InputSpellcheck ?? true}
+      autocomplete="off"
+      placeholder={store.connState === "connected" ? "" : "(disconnected)"}
+    />
+    <button
+      class="mode"
+      class:active={!!store.mode && store.mode !== "disable"}
+      title="Switch mode"
+      onclick={() => (store.openModal = "modeselect")}
+      tabindex="-1"
+    >
+      {store.mode && store.mode !== "disable" ? store.mode : "disable"}
+    </button>
+  </div>
 </div>
 
 <style>
+  .inputwrap {
+    position: relative;
+  }
+  .rsearch {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 12px;
+    background: var(--bg-elevated);
+    border-top: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .rsearch.failed {
+    color: #cc6666;
+  }
+  .rsearch .hint {
+    color: var(--fg-dim);
+  }
   .inputbar {
     display: flex;
     align-items: center;

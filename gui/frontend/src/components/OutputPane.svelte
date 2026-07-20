@@ -2,7 +2,8 @@
   import type { Tab, Line } from "../lib/store.svelte";
   import { store } from "../lib/store.svelte";
   import type { Segment } from "../lib/types";
-  import { applyHighlights, compileHighlights, maskIPs } from "../lib/highlight";
+  import { applyHighlights, compileHighlights, maskIPs, SEARCH_STYLE } from "../lib/highlight";
+  import { matchingLineIds, stepIndex } from "../lib/search";
   import {
     followBandPx,
     gapToBottom,
@@ -166,6 +167,87 @@
     sampleMetrics();
   });
 
+  // ---- Scrollback search (Ctrl+F) ---------------------------------------
+  // GameView toggles store.searchOpen from its capture-phase key handling; the
+  // query and match cursor live here. Matches are recomputed against the
+  // active tab's rendered text; navigation scrolls the match into view.
+  let searchEl: HTMLInputElement | undefined = $state();
+  let searchQuery = $state("");
+  let searchIdx = $state(-1); // index into searchMatches; -1 = none yet
+
+  const searchMatches = $derived(
+    store.searchOpen && searchQuery.trim()
+      ? matchingLineIds(
+          tab.lines.map((l) => ({ id: l.id, text: textOf(l) })),
+          searchQuery,
+        )
+      : [],
+  );
+  const currentMatchId = $derived(
+    searchIdx >= 0 && searchIdx < searchMatches.length ? searchMatches[searchIdx] : -1,
+  );
+
+  // Keep the cursor valid as matches change (appends, trims, tab switches):
+  // out-of-range or unset snaps to the newest match.
+  $effect(() => {
+    const len = searchMatches.length;
+    if (len === 0) {
+      if (searchIdx !== -1) searchIdx = -1;
+    } else if (searchIdx < 0 || searchIdx >= len) {
+      searchIdx = len - 1;
+    }
+  });
+
+  // (Re)focus the search input on open and on repeat Ctrl+F.
+  $effect(() => {
+    void store.searchFocusRequest;
+    if (store.searchOpen) {
+      queueMicrotask(() => {
+        searchEl?.focus();
+        searchEl?.select();
+      });
+    }
+  });
+
+  function textOf(line: Line): string {
+    return segsFor(line)
+      .map((s) => s.text)
+      .join("");
+  }
+
+  function scrollToCurrent() {
+    const id = searchMatches[searchIdx];
+    if (id === undefined || !viewport) return;
+    const el = viewport.querySelector(`[data-lid="${id}"]`);
+    el?.scrollIntoView({ block: "center" });
+    onScroll(); // refresh follow state + rail metrics after the jump
+  }
+
+  function onQueryInput(v: string) {
+    searchQuery = v;
+    searchIdx = searchMatches.length - 1; // restart at the newest match
+    scrollToCurrent();
+  }
+
+  function searchStep(delta: number) {
+    if (searchMatches.length === 0) return;
+    searchIdx = stepIndex(searchIdx, delta, searchMatches.length);
+    scrollToCurrent();
+  }
+
+  function closeSearch() {
+    store.searchOpen = false;
+    store.focusInputRequest++;
+  }
+
+  function onSearchKey(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      searchStep(e.shiftKey ? 1 : -1); // Enter walks older; Shift+Enter newer
+    }
+    // Escape is handled by GameView's capture-phase handler (closes the bar).
+  }
+
   // Re-anchor to the bottom when the viewport geometry changes (window/sidebar
   // resize, font-size change). Without this, scrollHeight/clientHeight shift
   // while scrollTop stays put, leaving the "followed" view stuck at an offset.
@@ -208,10 +290,15 @@
   }
 
   // Apply frontend render transforms in the TUI order: highlights, then IP
-  // masking. (Color words are applied upstream in the Go facade.)
+  // masking. (Color words are applied upstream in the Go facade.) An active
+  // Ctrl+F query is painted last so search matches win visually.
   function displaySegs(line: Line): Segment[] {
     let segs = applyHighlights(segsFor(line), highlights);
     if (hideIPs) segs = maskIPs(segs);
+    const q = searchQuery.trim().toLowerCase();
+    if (store.searchOpen && q) {
+      segs = applyHighlights(segs, [{ pattern: q, bg: SEARCH_STYLE.bg, fg: SEARCH_STYLE.fg }]);
+    }
     return segs;
   }
 
@@ -232,6 +319,8 @@
   // control wins); PgUp/PgDn page the view, with PgDn-near-bottom acting as End.
   function onWindowKey(e: KeyboardEvent) {
     if (store.openModal || !viewport) return;
+    // While the search box has focus, Home/End/PgUp/PgDn edit/navigate there.
+    if (searchEl && document.activeElement === searchEl) return;
     switch (e.key) {
       case "PageUp":
         e.preventDefault();
@@ -261,6 +350,23 @@
 <svelte:window onkeydown={onWindowKey} />
 
 <div class="output">
+  {#if store.searchOpen}
+    <div class="searchbar">
+      <input
+        bind:this={searchEl}
+        value={searchQuery}
+        oninput={(e) => onQueryInput(e.currentTarget.value)}
+        onkeydown={onSearchKey}
+        placeholder="Find in scrollback…"
+        spellcheck="false"
+        autocomplete="off"
+      />
+      <span class="count">{searchMatches.length ? `${searchIdx + 1}/${searchMatches.length}` : "0/0"}</span>
+      <button type="button" tabindex="-1" title="Older match (Enter)" onclick={() => searchStep(-1)}>▲</button>
+      <button type="button" tabindex="-1" title="Newer match (Shift+Enter)" onclick={() => searchStep(1)}>▼</button>
+      <button type="button" tabindex="-1" title="Close (Esc)" onclick={closeSearch}>✕</button>
+    </div>
+  {/if}
   <div class="pane" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
     {#each tab.lines as line (line.id)}
       {#if isBlank(line)}
@@ -272,6 +378,8 @@
           class="line"
           class:echo={line.isEcho}
           class:suppressed={!!line.suppressed}
+          class:search-current={line.id === currentMatchId}
+          data-lid={line.id}
           onclick={() => line.suppressed && reveal(line)}
           role={line.suppressed ? "button" : undefined}
           tabindex={line.suppressed ? -1 : undefined}
@@ -428,10 +536,59 @@
   .thumb:active {
     cursor: grabbing;
   }
+  /* Ctrl+F search bar overlays the top-right corner, clear of the rail. */
+  .searchbar {
+    position: absolute;
+    top: 6px;
+    right: 26px;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-bright);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+  .searchbar input {
+    width: 200px;
+    font-family: var(--mono);
+    font-size: 13px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+  }
+  .searchbar .count {
+    min-width: 44px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .searchbar button {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--fg-dim);
+    cursor: pointer;
+  }
+  .searchbar button:hover {
+    color: var(--accent);
+    border-color: var(--border-bright);
+  }
   .line {
     white-space: pre-wrap;
     word-break: break-word;
     min-height: 1.4em;
+  }
+  .line.search-current {
+    outline: 1px solid var(--accent);
+    outline-offset: -1px;
   }
   .line.echo {
     color: var(--fg-dim);

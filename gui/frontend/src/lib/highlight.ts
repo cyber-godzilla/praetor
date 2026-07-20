@@ -19,6 +19,10 @@ export interface CompiledHighlight {
   fg: string;
 }
 
+// Style for transient Ctrl+F search matches — deliberately distinct from the
+// four configurable highlight styles so a search never masquerades as loot.
+export const SEARCH_STYLE = { bg: "#7f5fb0", fg: "#ffffff" };
+
 export function compileHighlights(rules: HighlightConfig[] | null | undefined): CompiledHighlight[] {
   return (rules ?? [])
     .filter((r) => r.Active && r.Pattern)

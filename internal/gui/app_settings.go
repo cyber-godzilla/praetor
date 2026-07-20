@@ -40,6 +40,19 @@ func (a *GuiApp) SetHideIPs(v bool) error {
 	return a.save()
 }
 
+// SetInputSpellcheck toggles the webview spellchecker on the command input.
+// Applied live in the frontend via the input's spellcheck attribute.
+func (a *GuiApp) SetInputSpellcheck(v bool) error {
+	a.cfg().UI.InputSpellcheck = v
+	return a.save()
+}
+
+// SetUpdateCheck toggles the startup check for newer releases.
+func (a *GuiApp) SetUpdateCheck(v bool) error {
+	a.cfg().Updates.Check = v
+	return a.save()
+}
+
 // SetSessionLogging toggles transcript logging.
 func (a *GuiApp) SetSessionLogging(v bool) error {
 	a.cfg().Logging.Session.Enabled = v

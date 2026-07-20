@@ -13,6 +13,8 @@
   let echoScript = $state(seed?.UI?.EchoScript ?? true);
   let colorWords = $state(seed?.UI?.ColorWords ?? false);
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
+  let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
+  let updateCheck = $state(seed?.Updates?.Check ?? true);
   let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
   let logPath = $state(seed?.Logging?.Session?.Path ?? "");
   let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
@@ -28,6 +30,8 @@
       await api.setEchoScript(echoScript);
       await api.setColorWords(colorWords);
       await api.setHideIPs(hideIPs);
+      await api.setInputSpellcheck(inputSpellcheck);
+      await api.setUpdateCheck(updateCheck);
       await api.setSessionLogging(sessionLogging);
       await api.setLogPath(logPath);
       await api.setMinimapScale(minimapScale);
@@ -40,11 +44,13 @@
           EchoScript: echoScript,
           ColorWords: colorWords,
           HideIPs: hideIPs,
+          InputSpellcheck: inputSpellcheck,
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
           NumpadNavigation: numpadNav,
         });
+        store.config.Updates = { Check: updateCheck };
         store.config.Logging.Session.Enabled = sessionLogging;
         store.config.Logging.Session.Path = logPath;
       }
@@ -62,6 +68,8 @@
     <label class="t"><span>Echo script commands</span><input type="checkbox" bind:checked={echoScript} /></label>
     <label class="t"><span>Color words</span><input type="checkbox" bind:checked={colorWords} /></label>
     <label class="t"><span>Hide IP addresses</span><input type="checkbox" bind:checked={hideIPs} /></label>
+    <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
+    <label class="t"><span>Check for updates on startup</span><input type="checkbox" bind:checked={updateCheck} /></label>
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
 
     <div class="field">
