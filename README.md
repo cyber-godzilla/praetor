@@ -170,12 +170,16 @@ Praetor shows a splash screen, then either an account selection screen (if you h
 
 | Command | Description |
 |---------|-------------|
-| `/mode <name> [args]` | Set automation mode |
-| `/list` | List available modes |
+| `/mode <name> [args]` | Set automation mode (alias `/sm`) |
+| `/list` | List / select available modes |
 | `/toggle <label>` | Toggle a boolean state value |
 | `/set <label> <val>` | Set a state value |
-| `/reconnect` | Reconnect to game server |
-| `/help` | Show help screen |
+| `/wiki [term]` | Open a TEC wiki bookmark (bare `/wiki` lists them) |
+| `/maps [term]` | Open a TEC map page (bare `/maps` lists them) |
+| `/calc` | Rank-bonus & training-cost calculator (alias `/rb`) |
+| `/kudos [name] [msg]` | Manage kudos favorites / queued messages |
+| `/notes` | Freeform notepad — add / open / delete / list (GUI) |
+| `/help` | Show the help screen |
 
 ### Menu (Esc)
 
@@ -183,6 +187,7 @@ The pause menu provides access to all settings:
 
 - **Scripts** — Reload scripts, manage script directories, configure quick-cycle modes, set priority commands
 - **Display** — Highlights, custom tabs, colorwords, echo commands, IP masking
+- **Tools & References** — Notes, kudos, rank-bonus calculator, wiki & map bookmarks
 - **Logs** — Game log toggle and log location
 - **Data** — Persistent data viewer with export/clear
 

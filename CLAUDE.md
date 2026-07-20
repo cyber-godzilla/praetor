@@ -57,7 +57,7 @@ The GUI lives in a **nested Go module** (`gui/go.mod` with a `replace` directive
 - `make build` — builds the `./praetor-tui` binary (the terminal client)
 - `make run` — builds and launches the TUI
 - `make vet` / `make fmt` / `make lint` — `go vet`, `gofmt`, `staticcheck`
-- `make check` — runs vet + fmt + lint + test (the gate for core changes)
+- `make check` — runs vet + fmt + test (the gate for core changes; `make lint`/staticcheck is a separate target, not part of `check`)
 
 **Desktop GUI** (run from `gui/` — needs the Wails toolchain; Ubuntu 25.10+/Debian 13+ use `WAILS_TAGS=webkit2_41`, the default):
 

@@ -212,6 +212,28 @@ You can also press **W** from the help screen to open the [TEC Wiki](https://ete
 
 ---
 
+## Take Notes (GUI)
+
+The desktop GUI includes a freeform notepad. Each note is a plain text file under `~/.config/praetor/notes/`, so you can also read or back them up with any editor.
+
+1. Type `/notes` (or **Esc** → **Notes**, under Tools & References) to open the Notepad
+2. Click **+ New note**, give it a title, write the body, then press **Save**
+3. Click any note in the list to edit it; the **✕** on a note deletes it (with a confirm)
+
+Command shortcuts (GUI only):
+
+| Command | Action |
+|---------|--------|
+| `/notes` | Open the notepad (list view) |
+| `/notes add <title>` | Open the editor for a new note titled `<title>` |
+| `/notes open <title>` | Open an existing note in the editor |
+| `/notes delete <title>` | Delete a note by title |
+| `/notes list` | Print your notes (title + preview) into the output |
+
+Notes are shared across all your characters, and the list shows the most-recently-edited first. Closing the editor with unsaved changes prompts you before discarding them.
+
+---
+
 ## Use Quick-Keys
 
 These key bindings are always available during gameplay:
