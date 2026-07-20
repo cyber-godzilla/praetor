@@ -5,6 +5,7 @@
 package notes
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -144,5 +145,112 @@ func slug(title string) string {
 	return out
 }
 
-// (Save, Delete, uniqueFileName, atomicWrite land in Task 2, which also adds the
-// "fmt" import.)
+// Save creates or updates a note. originalTitle is "" for a new note, else the
+// title the editor opened with (enables rename). It validates the title,
+// enforces case-insensitive uniqueness against *other* notes, writes atomically,
+// and removes the old file when a rename changes the slug.
+func (s *Store) Save(originalTitle, title, body string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("note title cannot be empty")
+	}
+	if strings.ContainsRune(title, '\n') {
+		return fmt.Errorf("note title cannot contain a newline")
+	}
+
+	files, err := s.readAll()
+	if err != nil {
+		return err
+	}
+
+	// Locate the note being edited, if any.
+	var current *noteFile
+	if strings.TrimSpace(originalTitle) != "" {
+		for i := range files {
+			if strings.EqualFold(files[i].title, originalTitle) {
+				current = &files[i]
+				break
+			}
+		}
+	}
+
+	// Reject a title already held by a *different* note.
+	for i := range files {
+		if strings.EqualFold(files[i].title, title) {
+			if current == nil || files[i].path != current.path {
+				return fmt.Errorf("a note titled %q already exists", title)
+			}
+		}
+	}
+
+	keepBase := ""
+	if current != nil {
+		keepBase = filepath.Base(current.path)
+	}
+	targetPath := filepath.Join(s.dir, s.uniqueFileName(title, files, keepBase))
+	if err := s.atomicWrite(targetPath, title+"\n"+body); err != nil {
+		return err
+	}
+	if current != nil && current.path != targetPath {
+		os.Remove(current.path) // best-effort; new file is already written
+	}
+	return nil
+}
+
+// Delete removes the note with the given case-insensitive title.
+func (s *Store) Delete(title string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	files, err := s.readAll()
+	if err != nil {
+		return false, err
+	}
+	for _, f := range files {
+		if strings.EqualFold(f.title, title) {
+			if err := os.Remove(f.path); err != nil {
+				return false, err
+			}
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// uniqueFileName returns a "<slug>.txt" name, collision-suffixed, excluding the
+// note's own current file (keepBase) so an in-place update reuses its name.
+func (s *Store) uniqueFileName(title string, files []noteFile, keepBase string) string {
+	base := slug(title)
+	name := base + ".txt"
+	if name == keepBase {
+		return name
+	}
+	taken := make(map[string]bool)
+	for _, f := range files {
+		if b := filepath.Base(f.path); b != keepBase {
+			taken[b] = true
+		}
+	}
+	for i := 2; taken[name]; i++ {
+		name = fmt.Sprintf("%s-%d.txt", base, i)
+	}
+	return name
+}
+
+// atomicWrite writes content to path via a temp file + rename.
+func (s *Store) atomicWrite(path, content string) error {
+	if err := os.MkdirAll(s.dir, 0o755); err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return nil
+}

@@ -3,6 +3,7 @@ package notes
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,5 +91,124 @@ func TestGet_CaseInsensitive(t *testing.T) {
 	}
 	if _, ok, _ := New(dir).Get("nope"); ok {
 		t.Error("missing title should return ok=false")
+	}
+}
+
+func read(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestSave_CreateGetRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	if err := s.Save("", "Combat: Round 1", "sweep\nthen retreat"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	n, ok, _ := s.Get("combat: round 1")
+	if !ok || n.Title != "Combat: Round 1" || n.Body != "sweep\nthen retreat" {
+		t.Fatalf("round trip failed: %+v ok=%v", n, ok)
+	}
+	// Filename is a safe slug; the colon/space never reach the filesystem.
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 || strings.ContainsAny(entries[0].Name(), `:\/`) {
+		t.Errorf("unsafe or missing filename: %v", entries)
+	}
+	if got := read(t, filepath.Join(dir, entries[0].Name())); got != "Combat: Round 1\nsweep\nthen retreat" {
+		t.Errorf("file content = %q", got)
+	}
+}
+
+func TestSave_RejectsEmptyOrNewlineTitle(t *testing.T) {
+	s := New(t.TempDir())
+	if err := s.Save("", "   ", "x"); err == nil {
+		t.Error("empty title should error")
+	}
+	if err := s.Save("", "a\nb", "x"); err == nil {
+		t.Error("newline title should error")
+	}
+}
+
+func TestSave_RejectsDuplicateTitle(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_ = s.Save("", "Loot", "a")
+	if err := s.Save("", "loot", "b"); err == nil {
+		t.Error("duplicate (case-insensitive) title should error")
+	}
+}
+
+func TestSave_UpdateInPlace(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_ = s.Save("", "Notes", "v1")
+	if err := s.Save("Notes", "Notes", "v2"); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	n, _, _ := s.Get("Notes")
+	if n.Body != "v2" {
+		t.Errorf("body = %q, want v2", n.Body)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("update should not create a second file: %v", entries)
+	}
+}
+
+func TestSave_RenameRemovesOldFile(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_ = s.Save("", "Old Title", "body")
+	if err := s.Save("Old Title", "New Title", "body"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if _, ok, _ := s.Get("Old Title"); ok {
+		t.Error("old title should be gone after rename")
+	}
+	if _, ok, _ := s.Get("New Title"); !ok {
+		t.Error("new title should exist after rename")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("rename should leave exactly one file: %v", entries)
+	}
+}
+
+func TestSave_RenameToOtherExistingTitleRejected(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_ = s.Save("", "A", "a")
+	_ = s.Save("", "B", "b")
+	if err := s.Save("A", "B", "a2"); err == nil {
+		t.Error("renaming A to an existing title B should error")
+	}
+}
+
+func TestDelete(t *testing.T) {
+	dir := t.TempDir()
+	s := New(dir)
+	_ = s.Save("", "Gone", "x")
+	ok, err := s.Delete("gone")
+	if err != nil || !ok {
+		t.Fatalf("delete: ok=%v err=%v", ok, err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("file should be removed: %v", entries)
+	}
+	if ok, _ := s.Delete("missing"); ok {
+		t.Error("deleting a missing note should return ok=false")
+	}
+}
+
+func TestSave_NoTmpLeftBehind(t *testing.T) {
+	dir := t.TempDir()
+	_ = New(dir).Save("", "T", "body")
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Errorf("temp file left behind: %s", e.Name())
+		}
 	}
 }
