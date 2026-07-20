@@ -520,3 +520,73 @@ func TestLoadAllModes(t *testing.T) {
 			name, len(mode.Reactions), mode.onStartRef != nil, mode.HasOnStop)
 	}
 }
+
+// TestLuaVM_ModeFileWithoutReturnSkipped is a regression guard: a syntactically
+// valid mode file that forgets `return M` left DoFile with an empty stack, and
+// the unconditional Pop(1) hit gopher-lua's "register underflow" panic —
+// crashing the client on startup or Reload Scripts (the classic beginner
+// mistake). It must be skipped like any other bad file, and a good mode
+// alongside it must still load (proving the stack stays clean).
+func TestLuaVM_ModeFileWithoutReturnSkipped(t *testing.T) {
+	modesDir, libDir := setupTestDirs(t)
+	writeMode(t, modesDir, "noreturn", `
+local M = {}
+M.on_start = function() end
+-- oops: no `+"`return M`"+`
+`)
+	writeMode(t, modesDir, "zgood", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	vm := NewLuaVM([]string{modesDir, libDir})
+	defer vm.Close()
+
+	var err error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Fatalf("LoadModes panicked on a no-return mode file: %v", r)
+			}
+		}()
+		err = vm.LoadModes()
+	}()
+	if err != nil {
+		t.Fatalf("LoadModes should skip the bad file, got error: %v", err)
+	}
+	if _, ok := vm.GetMode("noreturn"); ok {
+		t.Error("mode 'noreturn' should be skipped, not loaded")
+	}
+	if _, ok := vm.GetMode("zgood"); !ok {
+		t.Error("mode 'zgood' should still load after skipping the bad file")
+	}
+}
+
+// TestLuaVM_ModeFileMultiReturnTakesFirst guards the corollary: `return M, extra`
+// left stack residue (only one value popped). The mode should load from its
+// first return value (the table), and the next file in the scan must still
+// parse against a clean stack.
+func TestLuaVM_ModeFileMultiReturnTakesFirst(t *testing.T) {
+	modesDir, libDir := setupTestDirs(t)
+	writeMode(t, modesDir, "aaa_multi", `
+local M = {}
+M.reactions = {}
+return M, 42
+`)
+	writeMode(t, modesDir, "bbb_next", `
+local M = {}
+M.reactions = {}
+return M
+`)
+	vm := NewLuaVM([]string{modesDir, libDir})
+	defer vm.Close()
+	if err := vm.LoadModes(); err != nil {
+		t.Fatalf("LoadModes: %v", err)
+	}
+	if _, ok := vm.GetMode("aaa_multi"); !ok {
+		t.Error("multi-return mode should load from its first return value (the table)")
+	}
+	if _, ok := vm.GetMode("bbb_next"); !ok {
+		t.Error("the file after a multi-return file should still parse (clean stack)")
+	}
+}

@@ -248,13 +248,27 @@ func (vm *LuaVM) Matcher() *Matcher {
 // loadModeFile loads a single .lua file which must return a table M with
 // on_start(args), optional on_stop(), and reactions array.
 func (vm *LuaVM) loadModeFile(name, path string) (*LuaMode, error) {
+	// Snapshot the stack depth so we can (a) detect a file that returns nothing
+	// and (b) always restore the stack afterward, leaving it clean for the next
+	// file regardless of how many values this one returned.
+	base := vm.state.GetTop()
 	if err := vm.state.DoFile(path); err != nil {
+		vm.state.SetTop(base)
 		return nil, fmt.Errorf("executing %s: %w", path, err)
 	}
 
-	// The file should push its return value onto the stack
-	ret := vm.state.Get(-1)
-	vm.state.Pop(1)
+	// A file with no `return M` leaves the stack unchanged. Popping in that case
+	// underflows gopher-lua's register stack and panics (uncaught), so guard it
+	// and report a skippable error instead of crashing the client.
+	if vm.state.GetTop() <= base {
+		vm.state.SetTop(base)
+		return nil, fmt.Errorf("%s: mode file returned no value (did you forget `return M`?)", path)
+	}
+
+	// Take the first returned value (the mode table); `return M, extra` leaves
+	// the extras above it. SetTop(base) then drops everything this file pushed.
+	ret := vm.state.Get(base + 1)
+	vm.state.SetTop(base)
 
 	tbl, ok := ret.(*lua.LTable)
 	if !ok {
