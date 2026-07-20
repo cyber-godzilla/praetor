@@ -25,6 +25,7 @@ praetor/
 ├── internal/
 │   ├── gui/                         # UI-agnostic GUI facade: Emitter interface, wire events,
 │   │                                #   bootstrap — testable without a webview
+│   ├── calc/                        # TEC rank-bonus + training-cost formulas (from the wiki calculators)
 │   ├── client/                      # Client orchestrator: session, engine, protocol, notifications
 │   ├── colorwords/                  # Color word detection and data for game text
 │   ├── compass/                     # Compass rose renderer (image + Kitty graphics)
@@ -35,8 +36,12 @@ praetor/
 │   ├── minimap/                     # Minimap renderer (image + Kitty graphics)
 │   ├── protocol/                    # Line buffer, SKOOT parsing, HTML parsing
 │   ├── session/                     # WebSocket, HTTP auth, keyring (multi-account)
+│   ├── textutil/                    # Small shared text helpers
 │   ├── types/                       # Shared event types
-│   └── ui/                          # Bubbletea TUI components (secondary shell)
+│   ├── ui/                          # Bubbletea TUI components (secondary shell)
+│   ├── update/                      # GitHub-releases update check (GUI startup toast)
+│   ├── version/                     # Embedded VERSION file — single version source of truth
+│   └── wiki/                        # TEC wiki bookmark + map-page lookups
 ├── packaging/                       # Release assets (deb/rpm, homebrew, chocolatey, .desktop)
 ├── Makefile                         # TUI: make test, build, run, vet, fmt, lint, check
 └── .gitignore
@@ -180,6 +185,19 @@ A, B, C, D, F, H, J, K, L, R, T, U, Y, Z, [ — VT100/readline/Ghostty conflicts
 ### Available Alt Keys for future bindings
 E, G, N, O, P, Q, V, W, X
 
+### GUI-only Bindings
+
+The desktop GUI adds bindings the TUI does not have:
+
+| Key | Action |
+|-----|--------|
+| Ctrl+F | Scrollback search bar (Enter = older match, Shift+Enter = newer, Esc closes) |
+| Ctrl+R | Reverse history search, readline-style (type to filter, Ctrl+R = older match, Enter sends, Esc cancels, arrows/Home/End accept into the input) |
+
+Search matches are tinted in the output and the current match line is outlined.
+Both are handled in GameView's capture-phase keydown (see `searchOpen` /
+`histSearch*` in `store.svelte.ts` for the routing contract).
+
 ### Numpad Navigation (GUI)
 
 With **NumLock OFF**, the numpad drives movement (NumLock ON types digits as usual):
@@ -264,10 +282,13 @@ ui:
   echo_typed_commands: true
   echo_script_commands: true
   hide_ips: false
+  input_spellcheck: true       # GUI: webview spellcheck on the command input
   numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
   custom_tabs: []
   action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons
 highlights: []
+updates:
+  check: true           # GUI: startup check against GitHub releases (toast on newer)
 notifications:
   desktop:
     health_below:

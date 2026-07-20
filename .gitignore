@@ -7,3 +7,5 @@
 /packaging/choco/praetor.rendered.nuspec
 .superpowers/
 .claude/
+# Local review-findings backlog (one task file per finding); not for the public repo.
+/todo/

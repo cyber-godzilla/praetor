@@ -16,8 +16,10 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **Metrics Dashboard** — session tracking for kills, actions, and custom metrics with history
 - **Persistent State** — Lua scripts can persist data across sessions (e.g., armor absorption tracking)
 - **Multi-Account** — system keyring storage with account selection, optional credential storage
+- **Scrollback & History Search** — Ctrl+F searches the output, Ctrl+R reverse-searches your commands (GUI)
 - **Responsive Sidebar** — auto-hides or compacts when terminal is too small
 - **IP Masking** — optional scrambling of IP addresses in game text
+- **Update Notifier** — the GUI checks GitHub releases at startup and toasts when a newer version exists (optional)
 
 The two binaries:
 
@@ -157,6 +159,8 @@ Praetor shows a splash screen, then either an account selection screen (if you h
 | Alt+M | Quick-cycle automation mode |
 | Esc | Open menu |
 | Ctrl+C | Clear input / confirm quit |
+| Ctrl+F | Search scrollback (GUI) |
+| Ctrl+R | Search command history (GUI) |
 | PgUp / PgDn | Scroll output |
 | Mouse wheel | Scroll output |
 | Enter (empty) | Send blank line to server |
@@ -178,7 +182,6 @@ The pause menu provides access to all settings:
 
 - **Scripts** — Reload scripts, manage script directories, configure quick-cycle modes, set priority commands
 - **Display** — Highlights, custom tabs, colorwords, echo commands, IP masking
-- **Connection** — Auto reconnect toggle
 - **Logs** — Game log toggle and log location
 - **Data** — Persistent data viewer with export/clear
 

@@ -170,18 +170,6 @@ Each real IP is consistently mapped to the same fake IP for the session.
 
 ---
 
-## Enable Auto-Reconnect
-
-> Important Note: Autoreconnect will dump you right back into the game if you sleep from the WA.
-
-Auto-reconnect automatically attempts to restore your connection when it drops, using exponential backoff.
-
-1. Press **Esc** to open the menu
-2. Select **Auto Reconnect: ON/OFF** (under Connection)
-3. Press **Enter** to toggle
-
----
-
 ## Find Your Game Session Logs
 
 Session logs record timestamped game text to a file.

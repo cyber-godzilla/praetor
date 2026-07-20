@@ -12,18 +12,6 @@ server:
   login_url: https://login.eternalcitygame.com/login.php
 ```
 
-## Reconnection
-
-```yaml
-reconnect:
-  enabled: true                   # Auto-reconnect on disconnect
-  initial_delay: 1s
-  max_delay: 60s
-  backoff_multiplier: 2           # Exponential backoff between attempts
-```
-
-Toggleable via Esc → Auto Reconnect.
-
 ## Scripts
 
 ```yaml
@@ -67,6 +55,7 @@ ui:
   echo_typed_commands: true       # Echo commands you type
   echo_script_commands: true      # Echo commands sent by Lua scripts
   hide_ips: false                 # Scramble IP addresses in text
+  input_spellcheck: true          # GUI: spellcheck the command input (webview native)
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
@@ -144,6 +133,18 @@ logging:
 - **Session logs** record timestamped game text to `~/.config/praetor/logs/` (or the configured path).
 
 Log settings are available via Esc → Game Logs and Esc → Log Location.
+
+## Updates
+
+```yaml
+updates:
+  check: true                     # GUI: check GitHub releases at startup
+```
+
+When enabled, the desktop GUI makes a single anonymous request to the GitHub
+releases API shortly after launch and shows a toast if a newer version exists.
+Nothing is downloaded or installed automatically, and failures are silent.
+Toggleable in the GUI under Settings → "Check for updates on startup".
 
 ## File Locations
 
