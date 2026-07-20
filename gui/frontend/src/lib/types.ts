@@ -264,3 +264,13 @@ export interface RBResult {
   subskillRB: number;
   cells: RBCell[];
 }
+
+export interface NoteSummary {
+  title: string;
+  preview: string;
+}
+
+export interface Note {
+  title: string;
+  body: string;
+}

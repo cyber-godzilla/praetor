@@ -16,6 +16,8 @@ import type {
   ActionSet,
   DesktopNotificationsConfig,
   UpdateInfo,
+  NoteSummary,
+  Note,
 } from "./types";
 
 function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
@@ -141,6 +143,14 @@ export const calcTrainCost = (
 // ---- Updates ----
 export const checkForUpdate = () =>
   call<UpdateInfo>("CheckForUpdate", { available: false, current: "", latest: "", url: "" });
+
+// ---- Notes ----
+export const listNotes = () => call<NoteSummary[]>("ListNotes", []);
+export const getNote = (title: string) =>
+  call<Note>("GetNote", { title: "", body: "" }, title);
+export const saveNote = (originalTitle: string, title: string, body: string) =>
+  call<void>("SaveNote", undefined, originalTitle, title, body);
+export const deleteNote = (title: string) => call<void>("DeleteNote", undefined, title);
 
 // ---- Events ----
 export function onEvents(cb: (batch: WireEvent[]) => void): () => void {
