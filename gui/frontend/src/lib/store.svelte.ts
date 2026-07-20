@@ -19,6 +19,12 @@ import { Kind } from "./types";
 export type Screen = "loading" | "account" | "login" | "connecting" | "game";
 export type TabKind = "all" | "custom" | "metrics" | "debug";
 
+// Initial state for the Notes modal when opened by a /notes command. null (the
+// menu path) means "open on the list view".
+export type NotesInitial =
+  | { view: "list" }
+  | { view: "edit"; originalTitle: string; title: string; body: string };
+
 export interface Line {
   id: number;
   segments: Segment[];
@@ -137,6 +143,12 @@ class AppStore {
   loginUser = $state("");
   // Set to push text into the input line (e.g. kudos favorite prefill).
   inputPrefill = $state("");
+  // Notes modal: initial view/note (set by a /notes command before opening),
+  // whether the editor sub-view is active (so GameView routes Esc to it), and a
+  // counter GameView bumps to ask the editor to step back to the list.
+  notesInitial = $state<NotesInitial | null>(null);
+  notesEditorActive = $state(false);
+  notesBackRequest = $state(0);
   // Scrollback search (Ctrl+F). The open flag lives here so GameView's
   // capture-phase key routing, the OutputPane search bar, and Escape handling
   // all agree; the query itself is local to OutputPane.
@@ -304,6 +316,8 @@ class AppStore {
     this.actionSetIndex = 0;
     this.searchOpen = false;
     this.histSearchActive = false;
+    this.notesInitial = null;
+    this.notesEditorActive = false;
   }
 
   private applyConn(c: ConnPayload) {
@@ -330,6 +344,19 @@ class AppStore {
     setTimeout(() => {
       this.toasts = this.toasts.filter((x) => x.id !== t.id);
     }, durationMs);
+  }
+
+  // addLocalLine appends a UI-generated informational line (dim) to the All tab.
+  // Used by /notes list; this text is never sent to the game server.
+  addLocalLine(text: string) {
+    const all = this.tabs.find((t) => t.kind === "all");
+    if (!all) return;
+    const line: Line = {
+      id: this.nextLineId++,
+      segments: [{ text, color: "#8a8a99" }],
+      isEcho: false,
+    };
+    this.appendLine(all, line, false);
   }
 
   // apply processes one batch of wire events in order.

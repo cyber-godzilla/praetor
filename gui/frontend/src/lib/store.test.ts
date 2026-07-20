@@ -84,3 +84,16 @@ describe("store connection routing", () => {
     expect(store.mode).toBe("craft");
   });
 });
+
+describe("addLocalLine", () => {
+  it("appends a dim informational line to the All tab", () => {
+    store.rebuildTabs([]);
+    const all = store.tabs.find((t) => t.kind === "all")!;
+    const before = all.lines.length;
+    store.addLocalLine("Note A — hello");
+    expect(all.lines.length).toBe(before + 1);
+    const last = all.lines[all.lines.length - 1];
+    expect(last.segments[0].text).toBe("Note A — hello");
+    expect(last.isEcho).toBe(false);
+  });
+});
