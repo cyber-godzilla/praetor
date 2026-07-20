@@ -1,7 +1,9 @@
 package colorwords
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
@@ -517,4 +519,77 @@ func TestColorWords_Multicolored(t *testing.T) {
 	if colorCount < 5 {
 		t.Errorf("multicolored should produce per-character colored segments, got %d colored chars in: %+v", colorCount, result)
 	}
+}
+
+// TestColorWords_CaseFoldingRunesNoPanic is a regression guard: match offsets
+// were computed against strings.ToLower(text) but used to slice the original
+// text. Runes whose lowercase changes byte length (Ⱥ 2→3, İ 2→1) shifted the
+// offsets, panicking with slice-bounds-out-of-range or splitting mid-rune —
+// player-triggerable via a say containing such runes near a color word.
+func TestColorWords_CaseFoldingRunesNoPanic(t *testing.T) {
+	for _, text := range []string{
+		"ȺȺȺȺred",          // grows under ToLower: offsets overrun text -> panic
+		"İİİİ crimson",     // shrinks under ToLower: mid-rune split
+		"a KELLY GREEN İ",  // uppercase color word next to a shrinking rune
+		"Ⱥ deep red boots", // adjective handling across a growing rune
+	} {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Errorf("ApplyColorWords panicked on %q: %v", text, r)
+				}
+			}()
+			out := ApplyColorWords([]types.StyledSegment{{Text: text}})
+			// Segments must reassemble to the exact original text (no torn runes,
+			// no dropped/duplicated bytes).
+			var sb strings.Builder
+			for _, s := range out {
+				sb.WriteString(s.Text)
+			}
+			if sb.String() != text {
+				t.Errorf("segments for %q reassemble to %q", text, sb.String())
+			}
+			for _, s := range out {
+				if !utf8.ValidString(s.Text) {
+					t.Errorf("segment %q is not valid UTF-8 (torn rune) from input %q", s.Text, text)
+				}
+			}
+		}()
+	}
+}
+
+// The uppercase color word "RED" must still be recognized and colored.
+func TestColorWords_CaseInsensitiveMatch(t *testing.T) {
+	out := ApplyColorWords([]types.StyledSegment{{Text: "a RED cloak"}})
+	colored := false
+	for _, s := range out {
+		if strings.EqualFold(s.Text, "red") && s.Color != "" {
+			colored = true
+		}
+	}
+	if !colored {
+		t.Errorf("uppercase RED not colored: %+v", out)
+	}
+}
+
+// FuzzApplyColorWords asserts colorword splitting never panics and always
+// preserves the input text exactly (segments reassemble to the original) for
+// arbitrary, possibly non-ASCII, game text.
+func FuzzApplyColorWords(f *testing.F) {
+	for _, s := range []string{
+		"a deep red cloak", "ȺȺȺȺred", "İİİİ crimson", "RAINBOW banner",
+		"gold-tipped arrow", "", "plain text no colors", "𝔯𝔢𝔡 rubies",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		out := ApplyColorWords([]types.StyledSegment{{Text: s}})
+		var sb strings.Builder
+		for _, seg := range out {
+			sb.WriteString(seg.Text)
+		}
+		if sb.String() != s {
+			t.Errorf("segments reassemble to %q, want input %q", sb.String(), s)
+		}
+	})
 }

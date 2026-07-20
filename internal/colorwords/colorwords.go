@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -26,7 +27,11 @@ func ApplyColorWords(segments []types.StyledSegment) []types.StyledSegment {
 // applying the color to matched text including preceding adjectives.
 func splitColorWords(seg types.StyledSegment) []types.StyledSegment {
 	text := seg.Text
-	lower := strings.ToLower(text)
+	// Length-preserving ASCII fold (not strings.ToLower): the color dictionary is
+	// ASCII, and match offsets computed here index into the original text below.
+	// A case fold that changed byte length (Ⱥ, İ) would make those offsets slice
+	// out of range or tear runes. See internal/textutil.ToLowerASCII.
+	lower := textutil.ToLowerASCII(text)
 
 	type match struct {
 		start, end int

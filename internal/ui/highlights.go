@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -276,7 +277,12 @@ func splitSegment(seg types.StyledSegment, highlights []config.HighlightConfig) 
 	}
 
 	text := seg.Text
-	lower := strings.ToLower(text)
+	// Length-preserving ASCII fold (not strings.ToLower): match offsets index
+	// into the original text below, so a case fold that changed byte length
+	// (Ⱥ, İ) would slice out of range or tear runes. Folding the pattern the
+	// same way keeps len(pattern) == len(h.Pattern), so `start + len(pattern)`
+	// is a valid range. See internal/textutil.ToLowerASCII.
+	lower := textutil.ToLowerASCII(text)
 
 	// Find all match ranges.
 	type matchRange struct {
@@ -286,7 +292,7 @@ func splitSegment(seg types.StyledSegment, highlights []config.HighlightConfig) 
 	var matches []matchRange
 
 	for _, h := range highlights {
-		pattern := strings.ToLower(h.Pattern)
+		pattern := textutil.ToLowerASCII(h.Pattern)
 		offset := 0
 		for {
 			idx := strings.Index(lower[offset:], pattern)
@@ -294,7 +300,7 @@ func splitSegment(seg types.StyledSegment, highlights []config.HighlightConfig) 
 				break
 			}
 			start := offset + idx
-			end := start + len(h.Pattern)
+			end := start + len(pattern)
 			matches = append(matches, matchRange{start, end, h.Style})
 			offset = end
 		}
