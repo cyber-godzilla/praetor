@@ -8,6 +8,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/logging"
+	"github.com/cyber-godzilla/praetor/internal/notes"
 	"github.com/cyber-godzilla/praetor/internal/session"
 )
 
@@ -27,6 +28,7 @@ type Deps struct {
 	DesktopNotify *client.DesktopNotifier
 	Clipboard     Clipboard
 	ScriptDirs    []string
+	Notes         *notes.Store
 	Version       string
 	Debug         bool
 
@@ -107,6 +109,8 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		sessLog = nil
 	}
 
+	notesStore := notes.New(filepath.Join(configDir, "notes"))
+
 	return &Deps{
 		Client:        gc,
 		Config:        cfg,
@@ -119,6 +123,7 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		SessionLog:    sessLog,
 		DesktopNotify: client.NewDesktopNotifier(cfg.Notifications.Desktop),
 		ScriptDirs:    scriptDirs,
+		Notes:         notesStore,
 		Version:       version,
 		Debug:         debug,
 		appLog:        appLog,
