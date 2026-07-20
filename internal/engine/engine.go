@@ -93,6 +93,13 @@ func (e *Engine) SetUsername(username string) {
 
 	e.persistStore = NewPersistentStore(e.dataDir, username)
 	e.persistStore.SetSnapshotFunc(func() map[string]interface{} {
+		// Acquire the engine mutex before snapshotting: the debounced flush runs
+		// on a timer goroutine, and the snapshot iterates live Lua tables
+		// (LTable.ForEach) that reactions mutate under e.mu. Without this lock the
+		// two race → "fatal error: concurrent map iteration and map write".
+		// Callers must therefore NOT hold e.mu when triggering a flush (see Close).
+		e.mu.Lock()
+		defer e.mu.Unlock()
 		return e.state.PersistentSnapshot()
 	})
 
@@ -119,11 +126,18 @@ func (e *Engine) PersistentStore() *PersistentStore {
 
 // Close shuts down the engine and Lua VM.
 func (e *Engine) Close() {
+	// Flush persistent state before taking e.mu: the snapshot function acquires
+	// e.mu itself, so flushing under the lock here would deadlock. Grab the store
+	// pointer under a brief lock, then flush without it.
+	e.mu.Lock()
+	ps := e.persistStore
+	e.mu.Unlock()
+	if ps != nil {
+		ps.Flush()
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.persistStore != nil {
-		e.persistStore.Flush()
-	}
 	// Shutdown (not ClearAll): the VM is closing, so mark the manager dead so
 	// no in-flight timer goroutine calls into the closed Lua state.
 	e.timers.Shutdown()
