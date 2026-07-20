@@ -11,6 +11,7 @@
     back = false,
     onclose,
     onsave,
+    guard,
     children,
     footer,
   }: {
@@ -20,6 +21,9 @@
     onclose?: () => void;
     // When provided, the shell renders a "Save" button that calls onsave().
     onsave?: () => void | Promise<void>;
+    // Optional veto: return false to cancel a close/back (e.g. unsaved-changes
+    // prompt). Called before onclose. Absent → always allowed.
+    guard?: () => boolean;
     children: Snippet;
     footer?: Snippet;
   } = $props();
@@ -32,6 +36,7 @@
 
   // The header ✕ exits the overlay entirely.
   function close() {
+    if (guard && !guard()) return;
     onclose?.();
     store.openModal = null;
   }
@@ -39,6 +44,7 @@
   // The footer "Close" discards edits and returns to the parent menu for a
   // submenu (rather than exiting the overlay); standalone modals just close.
   function closeToParent() {
+    if (guard && !guard()) return;
     onclose?.();
     store.openModal = back ? "menu" : null;
   }
@@ -48,6 +54,7 @@
   }
 
   function goBack() {
+    if (guard && !guard()) return;
     onclose?.();
     store.openModal = "menu";
   }

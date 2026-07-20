@@ -13,6 +13,7 @@
   import BookmarksModal from "./modals/BookmarksModal.svelte";
   import RBCalcModal from "./modals/RBCalcModal.svelte";
   import PersistentDataModal from "./modals/PersistentDataModal.svelte";
+  import NotesModal from "./modals/NotesModal.svelte";
   import HelpModal from "./modals/HelpModal.svelte";
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
@@ -105,4 +106,6 @@
   <RBCalcModal />
 {:else if m === "persistent"}
   <PersistentDataModal />
+{:else if m === "notes"}
+  <NotesModal />
 {/if}

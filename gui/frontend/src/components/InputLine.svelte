@@ -4,6 +4,7 @@
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
   import { resolveModeName } from "../lib/modes";
   import { searchBackward, dropLastChar } from "../lib/histsearch";
+  import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
 
   let value = $state("");
   let inputEl: HTMLInputElement;
@@ -46,6 +47,49 @@
     }
   }
 
+  async function handleNotes(rest: string) {
+    const cmd = parseNotesCommand(rest);
+    switch (cmd.kind) {
+      case "open-list":
+        store.notesInitial = { view: "list" };
+        store.openModal = "notes";
+        break;
+      case "new":
+        store.notesInitial = { view: "edit", originalTitle: "", title: cmd.title, body: "" };
+        store.openModal = "notes";
+        break;
+      case "open":
+        try {
+          const n = await api.getNote(cmd.title);
+          store.notesInitial = { view: "edit", originalTitle: n.title, title: n.title, body: n.body };
+          store.openModal = "notes";
+        } catch {
+          store.addToast("Notes", `No note titled "${cmd.title}".`);
+        }
+        break;
+      case "delete":
+        try {
+          await api.deleteNote(cmd.title);
+          store.addToast("Notes", `Deleted "${cmd.title}".`);
+        } catch {
+          store.addToast("Notes", `No note titled "${cmd.title}".`);
+        }
+        break;
+      case "list": {
+        try {
+          const items = await api.listNotes();
+          for (const l of formatNotesList(items)) store.addLocalLine(l);
+        } catch (e) {
+          store.addToast("Notes", String(e));
+        }
+        break;
+      }
+      case "usage":
+        store.addToast("Notes", "Usage: /notes [add|open|delete|list] <title>");
+        break;
+    }
+  }
+
   function pushHistory(line: string) {
     if (line.trim() !== "") {
       history.push(line);
@@ -77,6 +121,11 @@
     // the shared core does not interpret /kudos (it's a UI concern).
     if (lower === "/kudos" || lower.startsWith("/kudos ") || lower.startsWith("/kudos\t")) {
       await handleKudos(trimmed.slice("/kudos".length).trim());
+      pushHistory(line);
+      return;
+    }
+    if (lower === "/notes" || lower.startsWith("/notes ") || lower.startsWith("/notes\t")) {
+      await handleNotes(trimmed.slice("/notes".length).trim());
       pushHistory(line);
       return;
     }

@@ -58,6 +58,13 @@
         store.focusInputRequest++;
         return;
       }
+      // The Notes editor owns Esc while active: step back to the list (the
+      // modal applies its own unsaved-changes guard) instead of closing.
+      if (store.openModal === "notes" && store.notesEditorActive) {
+        e.preventDefault();
+        store.notesBackRequest++;
+        return;
+      }
       e.preventDefault();
       // From a submenu, Esc goes back to the menu (modalEscapeTarget = "menu");
       // from the menu or a standalone modal it closes; with nothing open it

@@ -45,6 +45,7 @@
         { label: "Rank-Bonus Calculator", go: "calc" },
         { label: "Wiki Bookmarks", go: "wiki" },
         { label: "Map Bookmarks", go: "maps" },
+        { label: "Notes", go: "notes" },
         { label: "Help", go: "help" },
       ],
     },
