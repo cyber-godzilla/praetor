@@ -43,6 +43,10 @@
     await api.setHighPriority(v);
     if (store.config?.Commands) store.config.Commands.HighPriority = v;
   }
+
+  const browseScriptDir = api.inWeb()
+    ? undefined
+    : async () => (await api.pickScriptDir()) || null;
 </script>
 
 {#if m === "menu"}
@@ -87,7 +91,7 @@
       : "Directories scanned for Lua modes. Reloads on save."}
     initial={store.config?.Scripts ?? []}
     onsave={saveScriptDirs}
-    onBrowse={async () => (await api.pickScriptDir()) || null}
+    onBrowse={browseScriptDir}
   />
 {:else if m === "priority"}
   <StringListModal

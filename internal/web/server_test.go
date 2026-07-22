@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	appgui "github.com/cyber-godzilla/praetor/internal/gui"
+	"github.com/cyber-godzilla/praetor/internal/notes"
 	"github.com/cyber-godzilla/praetor/internal/session"
 )
 
@@ -44,6 +46,7 @@ func newTestServerWithCredentials(t *testing.T, creds session.CredentialStore) (
 		SessionsDir:   dir,
 		Creds:         creds,
 		DesktopNotify: client.NewDesktopNotifier(cfg.Notifications.Desktop),
+		Notes:         notes.New(filepath.Join(dir, "notes")),
 		Version:       "test",
 	}
 	hub := NewHub(cfg.UI.Scrollback)
@@ -117,6 +120,9 @@ func TestProtectedRoutesRejectUnauthenticatedRequests(t *testing.T) {
 		{http.MethodPut, "/api/v1/settings/echo-typed"},
 		{http.MethodGet, "/api/v1/kudos"},
 		{http.MethodGet, "/api/v1/persistent"},
+		{http.MethodGet, "/api/v1/notes"},
+		{http.MethodPut, "/api/v1/notes"},
+		{http.MethodDelete, "/api/v1/notes/example"},
 		{http.MethodGet, "/api/v1/wiki"},
 		{http.MethodGet, "/api/v1/maps"},
 	}
@@ -302,6 +308,11 @@ func TestServerMobileWebSettings(t *testing.T) {
 			value:     6,
 			matches:   func(ui config.UIConfig) bool { return ui.MobileOutputFontSize == 6 },
 		},
+		{
+			operation: "input-spellcheck",
+			value:     false,
+			matches:   func(ui config.UIConfig) bool { return !ui.InputSpellcheck },
+		},
 	}
 
 	for _, test := range tests {
@@ -340,6 +351,90 @@ func TestServerMobileWebSettings(t *testing.T) {
 				t.Fatalf("broadcast = %#v", message)
 			}
 		})
+	}
+}
+
+func TestServerUpdateCheckSetting(t *testing.T) {
+	srv, handler := newTestServer(t)
+	cookie, csrf := loginRequest(t, handler)
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"http://praetor.test/api/v1/settings/update-check",
+		bytes.NewBufferString(`{"expectedRevision":1,"value":false}`),
+	)
+	req.Host = "praetor.test"
+	req.Header.Set("Origin", "http://praetor.test")
+	req.Header.Set("X-Praetor-CSRF", csrf)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if srv.app.GetConfig().Updates.Check {
+		t.Fatal("update check setting was not applied")
+	}
+}
+
+func TestWebNotesRoundTrip(t *testing.T) {
+	_, handler := newTestServer(t)
+	cookie, csrf := loginRequest(t, handler)
+	request := func(method, path, body string, mutating bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "http://praetor.test"+path, strings.NewReader(body))
+		req.Host = "praetor.test"
+		req.AddCookie(cookie)
+		if mutating {
+			req.Header.Set("Origin", "http://praetor.test")
+			req.Header.Set("X-Praetor-CSRF", csrf)
+			req.Header.Set("Content-Type", "application/json")
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, req)
+		return response
+	}
+
+	saved := request(
+		http.MethodPut,
+		"/api/v1/notes",
+		`{"originalTitle":"","title":"Field Notes","body":"first line"}`,
+		true,
+	)
+	if saved.Code != http.StatusOK {
+		t.Fatalf("save status=%d body=%s", saved.Code, saved.Body.String())
+	}
+
+	listed := request(http.MethodGet, "/api/v1/notes", "", false)
+	var summaries []notes.Summary
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list status=%d body=%s", listed.Code, listed.Body.String())
+	}
+	if err := json.Unmarshal(listed.Body.Bytes(), &summaries); err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 || summaries[0].Title != "Field Notes" {
+		t.Fatalf("notes = %+v", summaries)
+	}
+
+	got := request(http.MethodGet, "/api/v1/notes/Field%20Notes", "", false)
+	var note notes.Note
+	if got.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", got.Code, got.Body.String())
+	}
+	if err := json.Unmarshal(got.Body.Bytes(), &note); err != nil {
+		t.Fatal(err)
+	}
+	if note.Title != "Field Notes" || note.Body != "first line" {
+		t.Fatalf("note = %+v", note)
+	}
+
+	deleted := request(http.MethodDelete, "/api/v1/notes/Field%20Notes", "", true)
+	if deleted.Code != http.StatusOK {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	missing := request(http.MethodGet, "/api/v1/notes/Field%20Notes", "", false)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing status=%d body=%s", missing.Code, missing.Body.String())
 	}
 }
 

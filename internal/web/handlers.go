@@ -261,6 +261,10 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetColorWords)
 	case "hide-ips":
 		return settingValue(raw, s.app.SetHideIPs)
+	case "input-spellcheck":
+		return settingValue(raw, s.app.SetInputSpellcheck)
+	case "update-check":
+		return settingValue(raw, s.app.SetUpdateCheck)
 	case "mobile-show-toolbar":
 		return settingValue(raw, s.app.SetMobileShowToolbar)
 	case "mobile-show-tab-bar":
@@ -439,6 +443,69 @@ func (s *Server) handlePersistentClear(w http.ResponseWriter, r *http.Request, _
 	s.opMu.Unlock()
 	if err != nil {
 		s.writeError(w, http.StatusInternalServerError, "persistent_clear_failed", err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleListNotes(w http.ResponseWriter, _ *http.Request, _ string) {
+	s.opMu.Lock()
+	value, err := s.app.ListNotes()
+	s.opMu.Unlock()
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, "notes_read_failed", "Unable to list notes.")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, value)
+}
+
+func (s *Server) handleGetNote(w http.ResponseWriter, r *http.Request, _ string) {
+	title, err := url.PathUnescape(r.PathValue("title"))
+	if err != nil || strings.TrimSpace(title) == "" || len(title) > 512 {
+		s.writeError(w, http.StatusBadRequest, "invalid_note", "Invalid note title.")
+		return
+	}
+	s.opMu.Lock()
+	value, err := s.app.GetNote(title)
+	s.opMu.Unlock()
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "note_not_found", "Note not found.")
+		return
+	}
+	s.writeJSON(w, http.StatusOK, value)
+}
+
+func (s *Server) handleSaveNote(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		OriginalTitle string `json:"originalTitle"`
+		Title         string `json:"title"`
+		Body          string `json:"body"`
+	}
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.Title) == "" || len(req.Title) > 512 {
+		s.writeError(w, http.StatusBadRequest, "invalid_note", "A valid note title is required.")
+		return
+	}
+	s.opMu.Lock()
+	err := s.app.SaveNote(req.OriginalTitle, req.Title, req.Body)
+	s.opMu.Unlock()
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "note_save_failed", err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleDeleteNote(w http.ResponseWriter, r *http.Request, _ string) {
+	title, err := url.PathUnescape(r.PathValue("title"))
+	if err != nil || strings.TrimSpace(title) == "" || len(title) > 512 {
+		s.writeError(w, http.StatusBadRequest, "invalid_note", "Invalid note title.")
+		return
+	}
+	s.opMu.Lock()
+	err = s.app.DeleteNote(title)
+	s.opMu.Unlock()
+	if err != nil {
+		s.writeError(w, http.StatusNotFound, "note_not_found", "Note not found.")
 		return
 	}
 	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

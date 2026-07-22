@@ -112,6 +112,10 @@ export class WebTransport implements PraetorTransport {
       case "ReloadScripts":
         await this.request("POST", "/api/v1/scripts/reload", {});
         return undefined as T;
+      case "PickScriptDir":
+        // Browser clients cannot open a native picker on the server host. The
+        // web scripts editor accepts server-side paths as text instead.
+        return fallback;
       case "RefreshGraphics":
         await this.request("POST", "/api/v1/graphics/refresh", {});
         return undefined as T;
@@ -160,6 +164,20 @@ export class WebTransport implements PraetorTransport {
       case "ClearPersistentData":
         await this.request("DELETE", "/api/v1/persistent", { keys: args[0] });
         return undefined as T;
+      case "ListNotes":
+        return (await this.request("GET", "/api/v1/notes")) as T;
+      case "GetNote":
+        return (await this.request("GET", `/api/v1/notes/${encodeURIComponent(args[0])}`)) as T;
+      case "SaveNote":
+        await this.request("PUT", "/api/v1/notes", {
+          originalTitle: args[0],
+          title: args[1],
+          body: args[2],
+        });
+        return undefined as T;
+      case "DeleteNote":
+        await this.request("DELETE", `/api/v1/notes/${encodeURIComponent(args[0])}`);
+        return undefined as T;
       case "GetWikiSections":
         return (await this.request("GET", "/api/v1/wiki")) as T;
       case "GetMapSections":
@@ -179,6 +197,10 @@ export class WebTransport implements PraetorTransport {
           current: args[0], desired: args[1], slot: args[2], difficulty: args[3],
           selfTrained: args[4], selfTaught: args[5], healing: args[6],
         })) as T;
+      case "CheckForUpdate":
+        // Startup update checks are intentionally owned by the native shell;
+        // do not repeat them once per connected browser.
+        return fallback;
       default:
         if (settingsOperations[method]) {
           await this.updateSetting(settingsOperations[method], settingPayload(method, args));
@@ -456,6 +478,8 @@ export const settingsOperations: Record<string, string> = {
   SetEchoScript: "echo-script",
   SetColorWords: "color-words",
   SetHideIPs: "hide-ips",
+  SetInputSpellcheck: "input-spellcheck",
+  SetUpdateCheck: "update-check",
   SetMobileShowToolbar: "mobile-show-toolbar",
   SetMobileShowTabBar: "mobile-show-tab-bar",
   SetMobileHideNavigationOnInput: "mobile-hide-navigation-on-input",
@@ -494,6 +518,7 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "CurrentMode",
   "SetMode",
   "ReloadScripts",
+  "PickScriptDir",
   "RefreshGraphics",
   "ClipboardGet",
   "ClipboardSet",
@@ -504,12 +529,17 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "GetPersistentData",
   "ExportPersistentData",
   "ClearPersistentData",
+  "ListNotes",
+  "GetNote",
+  "SaveNote",
+  "DeleteNote",
   "GetWikiSections",
   "GetMapSections",
   "OpenURL",
   "OpenWikiSlug",
   "CalcRankBonus",
   "CalcTrainCost",
+  "CheckForUpdate",
   ...Object.keys(settingsOperations),
 ]);
 

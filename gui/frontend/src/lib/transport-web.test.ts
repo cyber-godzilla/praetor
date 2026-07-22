@@ -29,8 +29,10 @@ describe("web transport operation parity", () => {
     );
   });
 
-  it("maps every mobile web preference to a revisioned setting operation", () => {
+  it("maps shared and mobile preferences to revisioned setting operations", () => {
     expect(settingsOperations).toMatchObject({
+      SetInputSpellcheck: "input-spellcheck",
+      SetUpdateCheck: "update-check",
       SetMobileShowToolbar: "mobile-show-toolbar",
       SetMobileShowTabBar: "mobile-show-tab-bar",
       SetMobileHideNavigationOnInput: "mobile-hide-navigation-on-input",
