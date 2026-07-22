@@ -56,9 +56,9 @@ func (d *Deps) Close() {
 // ensure config exists, load it, set up logging, and wire the client,
 // credential store, session logger, and desktop notifier.
 func Bootstrap(version string, debug bool) (*Deps, error) {
-	configDir := xdgPath("XDG_CONFIG_HOME", ".config", "praetor")
-	dataDir := xdgPath("XDG_DATA_HOME", ".local/share", "praetor")
-	stateDir := xdgPath("XDG_STATE_HOME", ".local/state", "praetor")
+	configDir := appDir("PRAETOR_CONFIG_DIR", "XDG_CONFIG_HOME", ".config", "praetor")
+	dataDir := appDir("PRAETOR_DATA_DIR", "XDG_DATA_HOME", ".local/share", "praetor")
+	stateDir := appDir("PRAETOR_STATE_DIR", "XDG_STATE_HOME", ".local/state", "praetor")
 	sessionsDir := filepath.Join(configDir, "logs")
 
 	logLevel := "info"
@@ -141,6 +141,18 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		Debug:         debug,
 		appLog:        appLog,
 	}, nil
+}
+
+// appDir permits a service deployment to point Praetor at an exact application
+// directory. XDG variables name parent directories, so relying on them alone
+// always appends /praetor and cannot represent an existing direct layout such
+// as /srv/praetor/config. Desktop installs retain the normal XDG behavior when
+// the explicit override is absent.
+func appDir(overrideEnv, xdgEnv, defaultSuffix, appName string) string {
+	if dir := os.Getenv(overrideEnv); dir != "" {
+		return filepath.Clean(dir)
+	}
+	return xdgPath(xdgEnv, defaultSuffix, appName)
 }
 
 // xdgPath returns the XDG directory for the given env var, falling back to

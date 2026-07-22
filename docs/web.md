@@ -201,6 +201,12 @@ $XDG_DATA_HOME/praetor/                    (Lua persistent data)
 $XDG_STATE_HOME/praetor/tec.log            (application log)
 ```
 
+Service deployments that already have exact application directories can set
+`PRAETOR_CONFIG_DIR`, `PRAETOR_DATA_DIR`, and `PRAETOR_STATE_DIR`. Each value
+names the application directory itself; Praetor does not append `/praetor` to
+these overrides. When an override is absent, the corresponding normal XDG path
+above remains in effect.
+
 Changing the logging directory while transcript logging is enabled closes the
 old transcript and starts a new timestamped transcript immediately. Enabling or
 disabling logging also applies immediately in web, Wails, and TUI shells.
