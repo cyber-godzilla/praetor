@@ -61,6 +61,11 @@ func (s *observingCredentialStore) SetAccount(username, password string) error {
 	return nil
 }
 
+func (s *observingCredentialStore) RepairAccounts(username, password string) error {
+	s.accounts = map[string]string{username: password}
+	return nil
+}
+
 func (s *observingCredentialStore) RemoveAccount(username string) error {
 	delete(s.accounts, username)
 	return nil

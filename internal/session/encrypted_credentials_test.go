@@ -154,6 +154,37 @@ func TestEncryptedFileCredentialStoreUsesFreshNonce(t *testing.T) {
 	}
 }
 
+func TestEncryptedFileCredentialStoreRepairAccountsReplacesUnreadableContents(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "credentials.enc")
+	store, err := NewEncryptedFileCredentialStore(path, randomCredentialKey(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAccount("alice", "old-password"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("corrupt encrypted store"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAccount("bob", "must-not-overwrite"); err == nil {
+		t.Fatal("SetAccount overwrote unreadable encrypted contents")
+	}
+	if err := store.RepairAccounts("carol", "new-password"); err != nil {
+		t.Fatalf("RepairAccounts: %v", err)
+	}
+	accounts, err := store.ListAccounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(accounts, ",") != "carol" {
+		t.Fatalf("accounts after repair = %v", accounts)
+	}
+	password, err := store.GetAccount("carol")
+	if err != nil || password != "new-password" {
+		t.Fatalf("repaired password=%q err=%v", password, err)
+	}
+}
+
 func TestEncryptedFileCredentialStoreSerializesConcurrentUpdates(t *testing.T) {
 	store, err := NewEncryptedFileCredentialStore(
 		filepath.Join(t.TempDir(), "credentials.enc"),
@@ -249,5 +280,8 @@ func TestDisabledCredentialStore(t *testing.T) {
 	}
 	if err := store.SetAccount("alice", "password"); !errors.Is(err, ErrCredentialStorageDisabled) {
 		t.Fatalf("SetAccount error = %v", err)
+	}
+	if err := store.RepairAccounts("alice", "password"); !errors.Is(err, ErrCredentialStorageDisabled) {
+		t.Fatalf("RepairAccounts error = %v", err)
 	}
 }

@@ -112,6 +112,10 @@ func (d *DisabledCredentialStore) SetAccount(string, string) error {
 	return ErrCredentialStorageDisabled
 }
 
+func (d *DisabledCredentialStore) RepairAccounts(string, string) error {
+	return ErrCredentialStorageDisabled
+}
+
 func (d *DisabledCredentialStore) RemoveAccount(string) error {
 	return ErrCredentialStorageDisabled
 }

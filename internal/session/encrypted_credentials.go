@@ -101,6 +101,16 @@ func (s *EncryptedFileCredentialStore) SetAccount(username, password string) err
 	return s.saveAccountsLocked(accounts)
 }
 
+// RepairAccounts replaces the encrypted file with a new single-account store
+// without first reading the existing contents. This is the explicit recovery
+// path for a store that became corrupt or unreadable after startup; ordinary
+// SetAccount deliberately refuses to overwrite unreadable data.
+func (s *EncryptedFileCredentialStore) RepairAccounts(username, password string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveAccountsLocked(map[string]string{username: password})
+}
+
 func (s *EncryptedFileCredentialStore) RemoveAccount(username string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
