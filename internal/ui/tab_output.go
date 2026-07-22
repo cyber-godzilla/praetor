@@ -89,14 +89,11 @@ func (o *OutputPane) appendLine(line paneLine) {
 			if o.cachedLines < 0 {
 				o.cachedLines = 0
 			}
-			// scrollPos is a display-row offset, so decrement it by the trimmed
-			// ROW count, not the logical-line count (a wrapped line is >1 row).
-			if o.scrollPos > 0 {
-				o.scrollPos -= trimRows
-				if o.scrollPos < 0 {
-					o.scrollPos = 0
-				}
-			}
+			// scrollPos is bottom-relative (View: end = totalRows - scrollPos), so
+			// trimming rows off the TOP needs no scrollPos adjustment — the same
+			// offset keeps the viewport on the same content. Adjusting here would
+			// fight the append-anchor in View and drift the viewport per trim. The
+			// View clamp handles the edge where the trimmed rows were in view.
 		} else {
 			// Row counts out of sync — full invalidation as fallback. Snap to the
 			// bottom since we can no longer map trimmed lines to rows.

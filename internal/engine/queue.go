@@ -20,7 +20,6 @@ type CommandQueue struct {
 	defaultDelay time.Duration
 	minInterval  time.Duration
 	highPriority map[string]bool
-	lastSendTime time.Time
 
 	// gen counts Clear() calls. A drainer that pops a command (capturing the
 	// generation via DequeueGen) and then sleeps on its delay compares the
@@ -182,18 +181,11 @@ func (q *CommandQueue) Enqueue(command string, delayMs int) {
 }
 
 // Dequeue removes and returns the next command from the queue.
-// Returns false if the queue is empty.
+// Returns false if the queue is empty. Used by tests as the queue-inspection
+// primitive; production uses DequeueGen (which also carries the generation).
 func (q *CommandQueue) Dequeue() (QueuedCommand, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if len(q.items) == 0 {
-		return QueuedCommand{}, false
-	}
-
-	cmd := q.items[0]
-	q.items = q.items[1:]
-	return cmd, true
+	cmd, _, ok := q.DequeueGen()
+	return cmd, ok
 }
 
 // DequeueGen is Dequeue plus the queue generation the command belonged to. A
@@ -232,23 +224,4 @@ func (q *CommandQueue) Len() int {
 // MinInterval returns the minimum interval between sends.
 func (q *CommandQueue) MinInterval() time.Duration {
 	return q.minInterval
-}
-
-// RecordSend records the current time as the last send time.
-func (q *CommandQueue) RecordSend() {
-	q.mu.Lock()
-	q.lastSendTime = time.Now()
-	q.mu.Unlock()
-}
-
-// TimeSinceLastSend returns time elapsed since the last send. If nothing has
-// been sent yet, returns minInterval to allow an immediate first send.
-func (q *CommandQueue) TimeSinceLastSend() time.Duration {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if q.lastSendTime.IsZero() {
-		return q.minInterval
-	}
-	return time.Since(q.lastSendTime)
 }

@@ -20,6 +20,11 @@ type DebugPane struct {
 	exits    *types.Exits         // parsed channel 7
 	lighting *types.LightingLevel // parsed channel 9
 	mapV2    minimap.Minimap      // test renderer
+
+	// lineCount caches len(buildLines()) so ScrollDown's clamp doesn't re-render
+	// the whole pane every tick. Recomputed on content change (UpdateSKOOT); the
+	// count is width-independent (truncate shortens strings, never splits lines).
+	lineCount int
 }
 
 const debugMapRows = 14 // rows for the V2 minimap in debug tab
@@ -28,10 +33,12 @@ const debugMapRows = 14 // rows for the V2 minimap in debug tab
 func NewDebugPane() DebugPane {
 	v2 := minimap.NewMinimap()
 	v2.SetSize(60, debugMapRows)
-	return DebugPane{
+	d := DebugPane{
 		payloads: make(map[int]string),
 		mapV2:    v2,
 	}
+	d.lineCount = len(d.buildLines()) // seed the cache for the no-data state
+	return d
 }
 
 // SetSize updates the pane dimensions.
@@ -81,6 +88,7 @@ func (d *DebugPane) UpdateSKOOT(ev types.SKOOTUpdateEvent) {
 	if ev.Lighting != nil {
 		d.lighting = ev.Lighting
 	}
+	d.lineCount = len(d.buildLines()) // refresh the cached count for the scroll clamp
 }
 
 // View renders the debug data.
@@ -207,9 +215,10 @@ func (d *DebugPane) buildLines() []string {
 	return lines
 }
 
-// debugMaxScroll returns the furthest-down scroll offset for the current content.
+// debugMaxScroll returns the furthest-down scroll offset for the current content,
+// using the cached line count (no re-render on the scroll path).
 func (d *DebugPane) debugMaxScroll() int {
-	m := len(d.buildLines()) - 1
+	m := d.lineCount - 1
 	if m < 0 {
 		return 0
 	}

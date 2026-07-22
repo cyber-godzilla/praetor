@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/atomicfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -343,35 +343,7 @@ func Save(cfg *Config, path string) error {
 		perm = info.Mode().Perm()
 	}
 
-	// The temp file MUST live in the same directory as the target so the rename
-	// is a same-filesystem (atomic) operation, not a cross-device copy.
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".config-*.yaml.tmp")
-	if err != nil {
-		return fmt.Errorf("creating temp config: %w", err)
-	}
-	tmpName := tmp.Name()
-	// Best-effort cleanup if we bail before the rename lands.
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing temp config: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("syncing temp config: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp config: %w", err)
-	}
-	if err := os.Chmod(tmpName, perm); err != nil {
-		return fmt.Errorf("setting config perms: %w", err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replacing config: %w", err)
-	}
-	return nil
+	return atomicfile.Write(path, data, perm)
 }
 
 func Load(path string) (*Config, error) {

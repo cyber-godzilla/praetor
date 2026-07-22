@@ -114,8 +114,7 @@ func (rw *rotatingWriter) Write(p []byte) (int, error) {
 	// so logging resumes once the underlying problem clears, rather than staying
 	// dead until restart.
 	if rw.file == nil && !rw.reopen() {
-		fmt.Fprint(os.Stderr, string(p))
-		return len(p), nil
+		return rw.dropToStderr(p)
 	}
 
 	// Check if rotation is needed.
@@ -126,14 +125,21 @@ func (rw *rotatingWriter) Write(p []byte) (int, error) {
 		// rotate() may have left us degraded (nil file). Don't write to a closed
 		// handle — drop this line to stderr and stay recoverable.
 		if rw.file == nil {
-			fmt.Fprint(os.Stderr, string(p))
-			return len(p), nil
+			return rw.dropToStderr(p)
 		}
 	}
 
 	n, err := rw.file.Write(p)
 	rw.written += int64(n)
 	return n, err
+}
+
+// dropToStderr writes a log line to stderr when the file is unavailable
+// (degraded mode) so the line isn't lost, reporting success so slog doesn't
+// error. Caller holds rw.mu.
+func (rw *rotatingWriter) dropToStderr(p []byte) (int, error) {
+	fmt.Fprint(os.Stderr, string(p))
+	return len(p), nil
 }
 
 // reopen (re)opens the log path, seeding the written counter from the file size.

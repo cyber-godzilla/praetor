@@ -1,13 +1,37 @@
 package session
 
 import (
+	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 )
+
+func TestHTTPLogin_WholeFlowSharesOneDeadline(t *testing.T) {
+	prev := httpLoginTimeout
+	httpLoginTimeout = 200 * time.Millisecond
+	defer func() { httpLoginTimeout = prev }()
+
+	// Each request alone (150ms) is under the budget, but the two together exceed
+	// it — so only a SHARED whole-flow deadline fails the login (with a context
+	// deadline error), not a per-request one.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(150 * time.Millisecond)
+	}))
+	defer srv.Close()
+
+	_, _, err := HTTPLogin(srv.URL, "user", "pass")
+	if err == nil {
+		t.Fatal("expected the shared whole-flow deadline to fail the second request")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v; want a shared-deadline failure (context.DeadlineExceeded)", err)
+	}
+}
 
 func TestHTTPLogin_TimesOutOnHungServer(t *testing.T) {
 	prev := httpLoginTimeout

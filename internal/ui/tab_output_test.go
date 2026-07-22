@@ -30,6 +30,28 @@ func TestOutputPane_ScrollUp_ClampsInsteadOfLatching(t *testing.T) {
 	}
 }
 
+func TestOutputPane_StaysAnchoredAcrossTrims(t *testing.T) {
+	p := NewOutputPane(30) // small cap so appends past cap trigger front-trims
+	p.SetSize(80, 5)
+	for i := 0; i < 30; i++ {
+		p.Append(plainSegment(fmt.Sprintf("line %02d", i)))
+	}
+	p.View()       // rendered before the user scrolls
+	p.ScrollUp(15) // view lines 10..14 (mid-buffer — these survive the trims below)
+	before := p.View()
+
+	// Each append trims the oldest line (00..09), none of which is in view; the
+	// viewport must stay on lines 10..14, not drift toward the newest text.
+	for i := 30; i < 40; i++ {
+		p.Append(plainSegment(fmt.Sprintf("line %02d", i)))
+	}
+	after := p.View()
+
+	if before != after {
+		t.Errorf("viewport drifted across trims while scrolled up:\nbefore=%q\nafter=%q", before, after)
+	}
+}
+
 func TestOutputPane_ScrolledUp_StaysAnchoredOnAppend(t *testing.T) {
 	p := NewOutputPane(1000) // large cap: no trimming, isolates anchoring
 	p.SetSize(80, 5)

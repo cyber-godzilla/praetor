@@ -23,15 +23,27 @@ var scriptTimeout = 2 * time.Second
 
 // callLua invokes a Lua callback with an execution deadline. On expiry the VM
 // aborts the call and returns a context error, which callers log and treat like
-// any other Lua runtime error (they already use Protect'd pcall paths). The
-// context is removed afterward so the deadline never bleeds into the next call.
-// All entries into Lua are serialized under the engine mutex, so setting the
-// context on the shared LState per call is safe.
+// any other Lua runtime error (they already use Protect'd pcall paths).
+//
+// Lua entries NEST: a set_mode from a reaction/condition/timer runs on_stop/
+// on_start via callLua on the same LState. So we save the caller's context and
+// RESTORE it on return rather than unconditionally removing it — an
+// unconditional RemoveContext would nil L.ctx while the outer mainLoopWithContext
+// is still running, and its per-instruction `<-L.ctx.Done()` would then
+// dereference a nil context and panic (dropping everything after the nested
+// call). At the outermost entry prev is nil, so we RemoveContext as before.
 func callLua(L *lua.LState, p lua.P, args ...lua.LValue) error {
+	prev := L.Context()
 	ctx, cancel := context.WithTimeout(context.Background(), scriptTimeout)
 	defer cancel()
 	L.SetContext(ctx)
-	defer L.RemoveContext()
+	defer func() {
+		if prev != nil {
+			L.SetContext(prev)
+		} else {
+			L.RemoveContext()
+		}
+	}()
 	return L.CallByParam(p, args...)
 }
 

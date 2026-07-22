@@ -162,6 +162,35 @@ func TestClient_DrainQueue_DoesNotSendStaleCommandToReconnectedSession(t *testin
 	}
 }
 
+func TestClient_Run_JoinsDrainerBeforeReturning(t *testing.T) {
+	drop := make(chan struct{})
+	srv, wsURL := newDiscServer(t, drop)
+	defer srv.Close()
+
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	runDone := make(chan struct{})
+	go func() { c.Run(); close(runDone) }()
+	waitForConnected(t, c)
+
+	close(drop) // server drops → Run tears down and returns
+
+	select {
+	case <-runDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Run did not return after the drop")
+	}
+
+	// Once Run has returned, this connection's drainer must be fully stopped, so a
+	// command enqueued now stays in the queue — a lingering drainer would race the
+	// reconnect and could pop (and lose) it on the dead session.
+	c.Engine.Queue().Enqueue("orphan", 1)
+	time.Sleep(200 * time.Millisecond)
+	if c.Engine.Queue().Len() == 0 {
+		t.Fatal("a lingering drainer consumed a command after Run returned")
+	}
+}
+
 func TestClient_Disconnect_UserInitiated_EmptyReason(t *testing.T) {
 	// Server holds the connection open; the client closes it via Disconnect.
 	never := make(chan struct{})

@@ -182,28 +182,6 @@ func TestCommandQueue_MinInterval(t *testing.T) {
 	}
 }
 
-func TestCommandQueue_TimeSinceLastSend_NoSendYet(t *testing.T) {
-	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
-
-	// Before any send, TimeSinceLastSend should return minInterval to allow immediate first send
-	elapsed := q.TimeSinceLastSend()
-	if elapsed != 300*time.Millisecond {
-		t.Errorf("TimeSinceLastSend() before any send = %v, want %v (minInterval)", elapsed, 300*time.Millisecond)
-	}
-}
-
-func TestCommandQueue_RecordSendAndTimeSince(t *testing.T) {
-	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
-
-	q.RecordSend()
-
-	// Immediately after RecordSend, time since should be very small
-	elapsed := q.TimeSinceLastSend()
-	if elapsed > 50*time.Millisecond {
-		t.Errorf("TimeSinceLastSend() immediately after RecordSend = %v, expected < 50ms", elapsed)
-	}
-}
-
 func TestCommandQueue_FullDropIsObservable(t *testing.T) {
 	q := NewCommandQueue(2, 900*time.Millisecond, 300*time.Millisecond, nil)
 

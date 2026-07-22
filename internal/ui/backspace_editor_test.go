@@ -19,3 +19,15 @@ func TestHighlightsEditor_BackspaceOverMultibyte(t *testing.T) {
 		t.Errorf("editBuf after backspace = %q, want %q", hm.editBuf, "caf")
 	}
 }
+
+func TestPriorityCmdsEditor_BackspaceOverMultibyte(t *testing.T) {
+	s := NewPriorityCmdsScreen(nil)
+	s.adding = true
+	s.addBuf = "café"
+
+	s, _ = s.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+
+	if s.addBuf != "caf" {
+		t.Errorf("addBuf after backspace = %q, want %q", s.addBuf, "caf")
+	}
+}

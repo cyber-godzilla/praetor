@@ -286,7 +286,8 @@ func applyHighlights(segments []types.StyledSegment, highlights []config.Highlig
 
 	// Walk segments, splitting each at the span boundaries that fall inside it.
 	var result []types.StyledSegment
-	pos := 0 // byte offset of the current segment's start within text
+	pos := 0     // byte offset of the current segment's start within text
+	spanIdx := 0 // monotonic cursor into spans (cur only ever advances)
 	for _, seg := range segments {
 		segStart := pos
 		segEnd := pos + len(seg.Text)
@@ -299,7 +300,7 @@ func applyHighlights(segments []types.StyledSegment, highlights []config.Highlig
 
 		cur := segStart
 		for cur < segEnd {
-			sp := nextSpanOverlapping(spans, cur, segEnd)
+			sp := nextSpanOverlapping(spans, &spanIdx, cur, segEnd)
 			if sp == nil {
 				result = append(result, sliceStyled(seg, text[cur:segEnd]))
 				break
@@ -365,13 +366,19 @@ func overlapsAny(spans []highlightSpan, start, end int) bool {
 	return false
 }
 
-// nextSpanOverlapping returns the first span (spans are sorted by start) that
-// overlaps [lo, hi), or nil if none do.
-func nextSpanOverlapping(spans []highlightSpan, lo, hi int) *highlightSpan {
-	for i := range spans {
-		if spans[i].end > lo && spans[i].start < hi {
-			return &spans[i]
-		}
+// nextSpanOverlapping returns the first span at or after *from that overlaps
+// [lo, hi), or nil if none do. It advances *from past spans that end at or
+// before lo — since the walk's cursor is monotonic, those can never overlap
+// again — making the whole walk O(segments + spans) instead of O(segments ×
+// spans). Spans are sorted by start; a span whose start is >= hi (and all after
+// it) can't overlap [lo, hi). It never advances past a span still in play (one
+// straddling into the next segment has end > lo).
+func nextSpanOverlapping(spans []highlightSpan, from *int, lo, hi int) *highlightSpan {
+	for *from < len(spans) && spans[*from].end <= lo {
+		*from++
+	}
+	if *from < len(spans) && spans[*from].start < hi {
+		return &spans[*from]
 	}
 	return nil
 }

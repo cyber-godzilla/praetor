@@ -200,8 +200,15 @@ func (c *Client) Run() {
 	// the reset above, mislabeling a user logout as a dropped connection.
 	c.emit(types.ConnectedEvent{})
 
+	// The listener and drainer are joined at teardown (below) so no goroutine from
+	// this connection can outlive it — a lingering drainer sharing the queue with
+	// a reconnected session could otherwise consume and lose its commands.
+	var wg sync.WaitGroup
+
 	// Listen for Lua-initiated mode changes and forward them as events.
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		for {
 			select {
 			case mc, ok := <-c.Engine.ModeChanges():
@@ -219,7 +226,11 @@ func (c *Client) Run() {
 	// One long-lived drainer owns command sending for this connection: it paces
 	// min-interval locally, preserves FIFO order, and drains on enqueue (so timer
 	// sends go out on an idle link). It stops when done closes.
-	go c.drainLoop(sess, done)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c.drainLoop(sess, done)
+	}()
 
 	for line := range sess.Lines() {
 		c.processLine(line)
@@ -238,6 +249,11 @@ func (c *Client) Run() {
 		c.cancelRun = nil
 	}
 	c.cancelMu.Unlock()
+
+	// Join the listener + drainer before finalizing: once Run returns, the shell
+	// may reconnect and start a new Run on the shared queue, so this connection's
+	// goroutines must be fully stopped first.
+	wg.Wait()
 
 	c.Engine.Queue().Clear()
 

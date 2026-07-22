@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -45,14 +46,21 @@ func BuildAuthMessages(username, passCookie, secret string) []string {
 // pass=... headers. The cookie jar captures these across the redirect.
 func HTTPLogin(loginURL, username, password string) (userCookie, passCookie string, err error) {
 	jar, _ := cookiejar.New(nil)
-	client := &http.Client{
-		Jar:     jar,
-		Timeout: httpLoginTimeout,
-	}
+	client := &http.Client{Jar: jar}
+
+	// One deadline for the WHOLE two-step flow (not per-request): threading a
+	// single context through both requests means a server that trickles just
+	// under a per-request budget on both can't stretch login to ~2x the timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), httpLoginTimeout)
+	defer cancel()
 
 	// Step 1: GET the login page to pick up the biscuit cookie. Drain and close
 	// the body so the persistent connection is reused instead of leaked.
-	getResp, err := client.Get(loginURL)
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, loginURL, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("HTTP login: building request: %w", err)
+	}
+	getResp, err := client.Do(getReq)
 	if err != nil {
 		return "", "", fmt.Errorf("HTTP login: fetching login page: %w", err)
 	}
@@ -66,7 +74,12 @@ func HTTPLogin(loginURL, username, password string) (userCookie, passCookie stri
 	form.Set("uname", username)
 	form.Set("pwd", password)
 
-	resp, err := client.Post(loginURL, "application/x-www-form-urlencoded", strings.NewReader(form.Encode()))
+	postReq, err := http.NewRequestWithContext(ctx, http.MethodPost, loginURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", "", fmt.Errorf("HTTP login: building request: %w", err)
+	}
+	postReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(postReq)
 	if err != nil {
 		return "", "", fmt.Errorf("HTTP login: posting credentials: %w", err)
 	}

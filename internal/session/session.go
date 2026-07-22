@@ -213,7 +213,7 @@ func (s *Session) pingLoop() {
 				s.mu.Unlock()
 				return
 			}
-			err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(writeWait))
+			err := s.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(s.writeWait))
 			s.mu.Unlock()
 			if err != nil {
 				return // write failed; readLoop will also error out and close the session

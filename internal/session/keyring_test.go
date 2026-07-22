@@ -42,6 +42,30 @@ func TestKeyringStore_CorruptBlobDoesNotClobber(t *testing.T) {
 	}
 }
 
+func TestKeyringStore_RepairRecoversFromCorrupt(t *testing.T) {
+	keyring.MockInit()
+	if err := keyring.Set(keyringService, keyringAccountKey, `{corrupt`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	k := &KeyringStore{}
+
+	// The ordinary write still refuses (anti-clobber intact).
+	if err := k.SetAccount("alice", "a"); err == nil {
+		t.Fatal("SetAccount on a corrupt blob should still error")
+	}
+	// Explicit repair overwrites and restores usability.
+	if err := k.RepairAccounts("alice", "a"); err != nil {
+		t.Fatalf("RepairAccounts: %v", err)
+	}
+	names, err := k.ListAccounts()
+	if err != nil {
+		t.Fatalf("ListAccounts after repair: %v", err)
+	}
+	if len(names) != 1 || names[0] != "alice" {
+		t.Fatalf("accounts after repair = %v, want [alice]", names)
+	}
+}
+
 func TestKeyringStore_ValidBlobRoundTrips(t *testing.T) {
 	keyring.MockInit()
 	k := &KeyringStore{}

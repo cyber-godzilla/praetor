@@ -1812,14 +1812,14 @@ func padLines(text string, width, height int) string {
 }
 
 // visibleWidth returns the cell width of a styled string, skipping ANSI
-// escape sequences. Each non-escape rune is counted as one cell.
+// escape sequences. ASCII takes a zero-cost one-cell fast path; non-ASCII runes
+// use their terminal cell width via runeCellWidth (CJK/emoji = 2, combining = 0),
+// so wrap and padding agree with the terminal.
 //
-// We use this instead of lipgloss.Width / ansi.StringWidth on render
-// hot paths: those functions invoke uax29 grapheme-cluster tables on
-// every call, which dominated CPU in profiling. Praetor's game text is
-// overwhelmingly ASCII with a small set of single-cell Unicode glyphs
-// (HR rules, lighting icons, compass arrows), so one-cell-per-rune is
-// accurate enough for padding decisions.
+// We use this instead of lipgloss.Width / ansi.StringWidth on render hot paths:
+// those functions invoke uax29 grapheme-cluster tables on every call, which
+// dominated CPU in profiling. Praetor's game text is overwhelmingly ASCII, so
+// the fast path keeps the common case cheap while wide runes stay correct.
 func visibleWidth(s string) int {
 	width := 0
 	i := 0

@@ -23,12 +23,27 @@ export interface CompiledHighlight {
 // four configurable highlight styles so a search never masquerades as loot.
 export const SEARCH_STYLE = { bg: "#7f5fb0", fg: "#ffffff" };
 
+// foldAscii lowercases only ASCII A-Z, leaving every other code unit untouched.
+// It is LENGTH-PRESERVING (unlike String.prototype.toLowerCase, which can grow a
+// string — e.g. 'İ' → 'i̇'), so match offsets found in the folded string remain
+// valid indexes into the original text. Mirrors Go's textutil.ToLowerASCII, which
+// the highlight matcher relies on for exactly this reason. Highlighting is
+// case-insensitive for ASCII only (matches the Go side).
+export function foldAscii(s: string): string {
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    out += c >= 65 && c <= 90 ? String.fromCharCode(c + 32) : s[i];
+  }
+  return out;
+}
+
 export function compileHighlights(rules: HighlightConfig[] | null | undefined): CompiledHighlight[] {
   return (rules ?? [])
     .filter((r) => r.Active && r.Pattern)
     .map((r) => {
       const c = STYLE_COLORS[r.Style] ?? STYLE_COLORS.gold;
-      return { pattern: r.Pattern.toLowerCase(), bg: c.bg, fg: c.fg };
+      return { pattern: foldAscii(r.Pattern), bg: c.bg, fg: c.fg };
     });
 }
 
@@ -49,7 +64,7 @@ export function applyHighlights(segments: Segment[], highlights: CompiledHighlig
 
   // Segment texts concatenate to the original line by construction.
   const text = segments.map((s) => s.text).join("");
-  const spans = findHighlightSpans(text.toLowerCase(), highlights);
+  const spans = findHighlightSpans(foldAscii(text), highlights);
   if (spans.length === 0) return segments;
 
   const out: Segment[] = [];

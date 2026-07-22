@@ -41,6 +41,20 @@ describe("applyHighlights", () => {
     expect(out.map((s) => s.text).join("")).toBe("gold ring");
   });
 
+  it("keeps highlight offsets correct with a length-changing lowercase char", () => {
+    // 'İ' (U+0130) grows to two UTF-16 units under JS toLowerCase(); matching on
+    // that would shift every following offset and tear the highlight. A
+    // length-preserving fold keeps 'gold ring' landing exactly on 'gold ring'.
+    const segs: Segment[] = [{ text: "İ a gold ring" }];
+    const out = applyHighlights(segs, compileHighlights(rules(["gold ring", "gold"])));
+    const highlighted = out
+      .filter((s) => s.bg === "#e8a838")
+      .map((s) => s.text)
+      .join("");
+    expect(highlighted).toBe("gold ring");
+    expect(out.map((s) => s.text).join("")).toBe("İ a gold ring");
+  });
+
   it("gives an earlier-configured pattern precedence on overlap", () => {
     const segs: Segment[] = [{ text: "gold ring" }];
     const out = applyHighlights(segs, compileHighlights(rules(["gold ring", "red"], ["gold", "green"])));

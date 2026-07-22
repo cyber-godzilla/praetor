@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/cyber-godzilla/praetor/internal/atomicfile"
 )
 
 const persistentFileName = "persistent_state.json"
@@ -96,34 +98,8 @@ func (ps *PersistentStore) Save(data map[string]interface{}) error {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	// Atomic write: temp file in the same dir, fsync, rename over the target, so
-	// a crash mid-write can't truncate the shared multi-account file.
-	tmp, err := os.CreateTemp(ps.dataDir, ".persist-*.json.tmp")
-	if err != nil {
-		return fmt.Errorf("creating temp persistent state: %w", err)
-	}
-	tmpName := tmp.Name()
-	defer func() { _ = os.Remove(tmpName) }()
-
-	if _, err := tmp.Write(out); err != nil {
-		tmp.Close()
-		return fmt.Errorf("writing temp persistent state: %w", err)
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return fmt.Errorf("syncing temp persistent state: %w", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("closing temp persistent state: %w", err)
-	}
-	if err := os.Chmod(tmpName, 0644); err != nil {
-		return fmt.Errorf("setting persistent state perms: %w", err)
-	}
-	if err := os.Rename(tmpName, filePath); err != nil {
-		return fmt.Errorf("replacing persistent state: %w", err)
-	}
-
-	return nil
+	// Atomic write so a crash can't truncate the shared multi-account file.
+	return atomicfile.Write(filePath, out, 0644)
 }
 
 // MarkDirty signals that persistent state has changed and should be flushed.
