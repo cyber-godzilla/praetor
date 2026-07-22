@@ -55,9 +55,10 @@ cd gui && make deps && make build   # produces gui/build/bin/praetor
 cd ..
 make web                            # produces ./praetor-web
 PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web --listen 127.0.0.1:8787
+# Open https://127.0.0.1:8787/ and expect a warning for the self-signed certificate.
 ```
 
-On first launch, Praetor creates a default config at `~/.config/praetor/config.yaml` and a scripts directory at `~/.config/praetor/scripts/`.
+On first launch, Praetor creates a default config at `~/.config/praetor/config.yaml` and a scripts directory at `~/.config/praetor/scripts/`. The first `praetor-web` launch also creates a persistent self-signed certificate under `~/.local/state/praetor/tls/`. Open the web client with HTTPS; the automatic certificate encrypts the connection but produces a browser trust warning.
 
 ## Installation
 
@@ -160,19 +161,19 @@ make clean    # Remove built binaries
 
 `praetor-web` owns one shared TEC connection. Every browser that knows the preshared web password is an equally authorized operator: commands, login/logout, modes, settings, script reloads, credentials, and persistent-data actions affect that shared process. Signing out of the web UI affects only the requesting browser; disconnecting the game affects all browsers.
 
-The password is read only from `PRAETOR_WEB_PASSWORD` at startup and is mandatory. The default listener is loopback-only:
+The password is read only from `PRAETOR_WEB_PASSWORD` at startup and is mandatory. The default listener is loopback-only and uses an automatically generated, persistent self-signed TLS certificate:
 
 ```bash
 PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web
 ```
 
-To listen directly on a trusted private LAN, explicitly bind a private interface:
+To listen directly on a trusted private LAN, explicitly bind a private interface; the listener still uses automatic HTTPS:
 
 ```bash
 PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web --listen 0.0.0.0:8787
 ```
 
-Direct LAN mode is plaintext HTTP: the web password, TEC credentials, commands, and game text can be observed by anything able to inspect that network path. Do not expose it to the public Internet. See [Web mode operations and security](docs/web.md) for HTTPS reverse-proxy setup, firewall guidance, password rotation, systemd user-service setup, keyring behavior, and backups.
+The self-signed fallback encrypts traffic but is not expected to be trusted by browsers. Use `--tls-cert` with `--tls-key` to override it with a trusted pair. Plaintext HTTP requires the explicit `--insecure-http` option and exposes the web password, TEC credentials, commands, and game text to the network path. Do not expose the service to the public Internet. See [Web mode operations and security](docs/web.md) for certificate behavior, HTTPS reverse-proxy setup, firewall guidance, password rotation, systemd user-service setup, keyring behavior, and backups.
 
 ### Login
 

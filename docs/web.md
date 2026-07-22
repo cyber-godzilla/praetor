@@ -22,12 +22,21 @@ PRAETOR_WEB_PASSWORD='choose-a-long-random-password' \
 Available startup options are:
 
 ```text
---listen address   HTTP listener (default 127.0.0.1:8787)
---debug            include debug protocol events
---tls-cert path    serve HTTPS with this certificate (requires --tls-key)
---tls-key path     serve HTTPS with this private key (requires --tls-cert)
---version          print the version and exit
+--listen address    web listener (default 127.0.0.1:8787)
+--debug             include debug protocol events
+--tls-cert path     TLS certificate-file override (requires --tls-key)
+--tls-key path      TLS private-key-file override (requires --tls-cert)
+--insecure-http     disable default TLS and serve plaintext HTTP
+--version           print the version and exit
 ```
+
+HTTPS is the default. When neither TLS file is supplied, Praetor creates and
+reuses a basic self-signed certificate under its state directory. Supplying
+both TLS files overrides that automatic pair. Plaintext HTTP is available only
+through the explicitly named `--insecure-http` option. A partial certificate
+pair or a combination of certificate files and `--insecure-http` fails startup.
+Open the default listener at `https://127.0.0.1:8787/`; a browser warning is
+expected for the automatic self-signed certificate.
 
 `PRAETOR_WEB_PASSWORD` must be present and non-empty. Praetor derives its
 verifier before binding the listener and removes the variable from its own
@@ -50,19 +59,31 @@ ldd praetor-web-linux-amd64   # expected to report that it is not dynamically li
 
 ## Security boundary
 
-The default listener is deliberately loopback-only. To expose plaintext HTTP
-on a trusted private LAN, bind a private interface and restrict the port at the
-host/router firewall:
+The default listener is deliberately loopback-only and uses the automatically
+generated self-signed TLS certificate. To listen on a trusted private LAN, bind
+a private interface and restrict the port at the host/router firewall:
 
 ```sh
 PRAETOR_WEB_PASSWORD='choose-a-long-random-password' \
   ./praetor-web --listen 192.168.1.20:8787
 ```
 
-Plain HTTP exposes the web password, TEC login credentials, commands, and game
-text to anything able to inspect the network path. The preshared-password mode
-is not suitable for direct Internet exposure. Prefer loopback plus HTTPS, even
-on a wireless LAN.
+That connection is encrypted, but a browser will warn because the automatic
+certificate is self-signed. Accepting an unverified certificate warning does
+not authenticate the server against an active attacker. Use a certificate
+trusted by the client devices, or put a trusted HTTPS reverse proxy in front of
+Praetor, when authenticated TLS is required. The preshared-password mode is not
+suitable for direct Internet exposure.
+
+Plaintext is an explicit compatibility/development override:
+
+```sh
+PRAETOR_WEB_PASSWORD='choose-a-long-random-password' \
+  ./praetor-web --listen 127.0.0.1:8787 --insecure-http
+```
+
+`--insecure-http` exposes the web password, TEC login credentials, commands,
+and game text to anything able to inspect the network path. Avoid it on a LAN.
 
 The server provides the following application-level protections:
 
@@ -80,11 +101,41 @@ The server provides the following application-level protections:
 No forwarded host or scheme header is trusted. A reverse proxy should preserve
 the original `Host` header and must not rewrite the browser-facing Origin.
 
-## Direct HTTPS
+## Automatic self-signed HTTPS
+
+On first startup without certificate overrides, Praetor creates:
+
+```text
+<state>/tls/praetor-web-self-signed.crt
+<state>/tls/praetor-web-self-signed.key
+```
+
+The TLS directory and key are private to the service user. The certificate is
+an ECDSA server certificate valid for five years and is renewed during a later
+startup when fewer than 30 days remain. Praetor reuses the pair between
+restarts, logs its SHA-256 fingerprint, and requires TLS 1.2 or newer.
+
+When generated, the certificate automatically includes `localhost`, loopback
+addresses, a concrete host or IP from `--listen`, and the machine hostname when
+available. No SAN argument is required. These inferred names reduce avoidable
+hostname errors, but do not make the self-signed certificate trusted. The
+automatic certificate is intended to prevent default cleartext transport, not
+to replace a certificate authority.
+
+Praetor refuses to use a partial or malformed automatic pair, a symlink in
+place of either file, or a private key accessible by group/other users. To
+intentionally regenerate it, stop Praetor and remove both automatic files. A
+new fingerprint will be produced on the next startup.
+
+The state directory must be persistent in a service or container. An ephemeral
+state directory produces a different certificate and browser warning after
+each restart.
+
+## Trusted certificate override
 
 Use a certificate trusted by the phones and computers that will open the
-client. For example, `mkcert` can issue a private-LAN certificate after its CA
-has been installed on those devices:
+client by supplying both override paths. For example, `mkcert` can issue a
+private-LAN certificate after its CA has been installed on those devices:
 
 ```sh
 mkcert -cert-file praetor.pem -key-file praetor-key.pem \
@@ -96,20 +147,20 @@ PRAETOR_WEB_PASSWORD='choose-a-long-random-password' \
 
 Open `https://praetor.home.arpa:8787/`. HTTPS makes the session cookie Secure
 and enables browser features such as native notifications and the Clipboard
-API.
+API. Praetor validates that the supplied certificate and key form a usable
+pair before starting the listener and does not create automatic TLS files in
+this mode.
 
 ## HTTPS with Caddy
 
 Praetor deliberately does not trust `X-Forwarded-Proto`; trusting arbitrary
-forwarded headers would weaken same-Origin and Secure-cookie handling. Run the
-loopback hop with TLS as well, then let Caddy present its LAN-trusted
-certificate. The backend certificate can be a separate local/self-signed
-certificate because the hop never leaves the host:
+forwarded headers would weaken same-Origin and Secure-cookie handling. The
+default automatic certificate encrypts the loopback backend hop while Caddy
+presents its LAN-trusted certificate:
 
 ```sh
 PRAETOR_WEB_PASSWORD='choose-a-long-random-password' \
-  ./praetor-web --listen 127.0.0.1:8787 \
-  --tls-cert backend.pem --tls-key backend-key.pem
+  ./praetor-web --listen 127.0.0.1:8787
 ```
 
 An internal-CA Caddy configuration is:
@@ -125,11 +176,13 @@ praetor.home.arpa {
 }
 ```
 
-`tls_insecure_skip_verify` is limited here to the loopback backend hop; never
-use that setting for a remote upstream. Point the LAN DNS name at the host and
-install/trust Caddy's local root CA on each browser device. Caddy handles the
-WebSocket upgrade automatically. Keep port 8787 inaccessible from other hosts;
-expose only the proxy's HTTPS port.
+`tls_insecure_skip_verify` is limited here to the loopback connection to the
+automatic self-signed backend; never use that setting for a remote upstream.
+An operator-provided backend certificate trusted by Caddy is stronger and can
+be selected with `--tls-cert` and `--tls-key`. Point the LAN DNS name at the
+host and install/trust Caddy's local root CA on each browser device. Caddy
+handles the WebSocket upgrade automatically. Keep port 8787 inaccessible from
+other hosts; expose only the proxy's HTTPS port.
 Browser-native notifications and the Clipboard API generally require this
 secure-context deployment (loopback is also treated as secure by browsers).
 
@@ -194,21 +247,125 @@ Run `praetor-web` as the ordinary OS user that owns the Praetor profile. Script
 and transcript paths shown in a remote browser refer to the **server host**, not
 the phone or desktop running that browser.
 
-The process uses the normal XDG locations:
+Praetor resolves its config, data, and state directories independently at
+startup. An exact Praetor override wins over the corresponding XDG parent; if
+neither is set, the normal home-directory fallback is used:
+
+| Purpose | Exact application-directory override | XDG parent fallback | Home-directory fallback |
+|---|---|---|---|
+| Config | `PRAETOR_CONFIG_DIR` | `$XDG_CONFIG_HOME/praetor` | `~/.config/praetor` |
+| Persistent Lua data | `PRAETOR_DATA_DIR` | `$XDG_DATA_HOME/praetor` | `~/.local/share/praetor` |
+| Application state | `PRAETOR_STATE_DIR` | `$XDG_STATE_HOME/praetor` | `~/.local/state/praetor` |
+
+The exact `PRAETOR_*_DIR` values name the application directory itself;
+Praetor does not append `/praetor`. The XDG variables name parent directories,
+so Praetor does append `/praetor` to them. Setting one exact override does not
+change how the other two directories are resolved.
+
+The resulting profile contains these files and directories:
+
+| Data | Resolved location |
+|---|---|
+| Shared configuration | `<config>/config.yaml` |
+| Default scripts | `<config>/scripts/` |
+| Default session transcripts | `<config>/logs/` |
+| Notes and exports | `<config>/notes/` and `<config>/exports/` |
+| Lua persistent state | `<data>/persistent_state.json` |
+| Application log | `<state>/tec.log` |
+| Default encrypted credential file | `<state>/credentials/credentials.enc` |
+| Automatic self-signed TLS pair | `<state>/tls/praetor-web-self-signed.{crt,key}` |
+
+If `config.yaml` does not exist, Praetor creates the config directory, default
+script directory, and a default configuration. A service user therefore needs
+write access to the resolved profile directories.
+
+### Environment variables
+
+These are all of the environment-variable inputs used specifically by the web
+startup and its shared GUI bootstrap:
+
+| Variable | Requirement and effect |
+|---|---|
+| `PRAETOR_WEB_PASSWORD` | Required and non-empty. Authenticates browsers. Read and removed from Praetor's environment before the listener binds. |
+| `PRAETOR_CONFIG_DIR` | Optional exact config application directory. Takes precedence over `XDG_CONFIG_HOME`. |
+| `PRAETOR_DATA_DIR` | Optional exact persistent-data application directory. Takes precedence over `XDG_DATA_HOME`. |
+| `PRAETOR_STATE_DIR` | Optional exact application-state directory. Takes precedence over `XDG_STATE_HOME`. |
+| `XDG_CONFIG_HOME` | Optional config parent used when `PRAETOR_CONFIG_DIR` is unset; `/praetor` is appended. |
+| `XDG_DATA_HOME` | Optional data parent used when `PRAETOR_DATA_DIR` is unset; `/praetor` is appended. |
+| `XDG_STATE_HOME` | Optional state parent used when `PRAETOR_STATE_DIR` is unset; `/praetor` is appended. |
+| `PRAETOR_CREDENTIALS_KEY` | Required only when `credentials.backend` is `encrypted_file` and `credentials.encrypted_file.key_env` retains its default. Must decode from base64 to exactly 32 bytes. |
+
+`credentials.encrypted_file.key_env` may name a different environment variable;
+that configured variable replaces `PRAETOR_CREDENTIALS_KEY` for key delivery.
+Praetor reads it once and removes it from its environment after initializing
+the credential store.
+
+Directory overrides, credential backend selection, secret variables, listener
+arguments, and TLS arguments are startup inputs and require a process restart
+to change. Paths inside `config.yaml` for script directories, the encrypted
+credential file, and session transcripts support `~/` and `$ENV_VAR`
+expansion.
+
+### Generic persistent service profile
+
+The web binary does not have a separate configuration schema: it reads the
+same complete `config.yaml` as the TUI and Wails applications. The
+[configuration reference](configuration.md) documents every shared field. A
+supervisor, container runtime, init system, or direct shell launch can use a
+split persistent layout such as:
 
 ```text
-$XDG_CONFIG_HOME/praetor/config.yaml       (default ~/.config/praetor)
-$XDG_CONFIG_HOME/praetor/scripts/
-$XDG_CONFIG_HOME/praetor/logs/             (default session transcripts)
-$XDG_DATA_HOME/praetor/                    (Lua persistent data)
-$XDG_STATE_HOME/praetor/tec.log            (application log)
+/srv/praetor/
+├── config/
+│   ├── config.yaml
+│   └── notes/
+├── data/
+├── state/
+│   ├── credentials/
+│   └── tls/                     # generated self-signed certificate and key
+├── scripts/
+└── session-logs/
 ```
 
-Service deployments that already have exact application directories can set
-`PRAETOR_CONFIG_DIR`, `PRAETOR_DATA_DIR`, and `PRAETOR_STATE_DIR`. Each value
-names the application directory itself; Praetor does not append `/praetor` to
-these overrides. When an override is absent, the corresponding normal XDG path
-above remains in effect.
+Pass the non-secret directories and startup secrets through that environment's
+normal configuration and secret facilities:
+
+```text
+PRAETOR_CONFIG_DIR=/srv/praetor/config
+PRAETOR_DATA_DIR=/srv/praetor/data
+PRAETOR_STATE_DIR=/srv/praetor/state
+PRAETOR_WEB_PASSWORD=<independent-long-random-browser-password>
+PRAETOR_CREDENTIALS_KEY=<base64-encoded-32-byte-key>
+```
+
+Do not commit the last two values or place them directly in a service command
+line. `PRAETOR_CREDENTIALS_KEY` can be omitted when account persistence is
+disabled or a usable OS keyring is selected. The matching deployment-specific
+portion of `/srv/praetor/config/config.yaml` is:
+
+```yaml
+credentials:
+  backend: encrypted_file
+  encrypted_file:
+    path: /srv/praetor/state/credentials/credentials.enc
+    key_env: PRAETOR_CREDENTIALS_KEY
+
+scripts:
+  - /srv/praetor/scripts
+
+logging:
+  app:
+    level: info
+    max_size_mb: 5
+  session:
+    enabled: true
+    path: /srv/praetor/session-logs
+```
+
+All omitted settings retain their shared defaults and can be managed through
+the authenticated web Settings UI where exposed. Keep one writable profile per
+process: multiple Praetor processes must not share these directories or try to
+own the same TEC session.
 
 Changing the logging directory while transcript logging is enabled closes the
 old transcript and starts a new timestamped transcript immediately. Enabling or
@@ -216,15 +373,9 @@ disabling logging also applies immediately in web, Wails, and TUI shells.
 
 Desktop installs default to the operating-system keyring. A headless service
 normally cannot access or unlock a desktop keyring session, so it should select
-the encrypted-file backend explicitly:
-
-```yaml
-credentials:
-  backend: encrypted_file
-  encrypted_file:
-    path: ""                       # state/credentials/credentials.enc
-    key_env: PRAETOR_CREDENTIALS_KEY
-```
+the encrypted-file backend explicitly, as in the generic service configuration
+above. An empty `credentials.encrypted_file.path` uses
+`<state>/credentials/credentials.enc`.
 
 Supply an independent base64-encoded 32-byte key through the service secret
 manager:
@@ -233,8 +384,8 @@ manager:
 openssl rand -base64 32
 ```
 
-Praetor removes `PRAETOR_CREDENTIALS_KEY` from its own environment after
-initializing the store. The encrypted account map uses a versioned
+Praetor removes the configured credential-key variable from its own environment
+after initializing the store. The encrypted account map uses a versioned
 AES-256-GCM envelope, a fresh nonce for every write, authenticated decryption,
 and atomic mode-0600 replacement. Missing, malformed, or incorrect keys fail
 startup. The application never falls back to a plaintext credential file or
@@ -254,7 +405,12 @@ the encrypted-file backend, back up `credentials.enc` and its secret-manager
 key separately; neither is useful without the other. Losing or rotating the
 key without re-encrypting the file makes saved accounts unrecoverable, but does
 not affect scripts, configuration, logs, or interactive TEC login. Only one
-Praetor process should use a given XDG profile at a time.
+Praetor process should use a given resolved profile at a time.
+
+The automatic TLS pair can be regenerated because browsers are not expected to
+trust it by default. Back up both files together only if retaining its stable
+fingerprint or an existing browser exception matters; never back up or copy the
+private key without protecting it as a secret.
 
 ## systemd user service
 
@@ -275,9 +431,10 @@ systemctl --user daemon-reload
 systemctl --user enable --now praetor-web.service
 ```
 
-The supplied unit binds to loopback for local-only HTTP. For the Caddy setup
-above, override `ExecStart` to add the two backend TLS flags. To use direct,
-plaintext LAN mode, create an override and choose a specific private address:
+The supplied unit binds to loopback and uses automatic self-signed HTTPS. It can
+be used as the encrypted backend for the Caddy setup above without an
+`ExecStart` override. To listen directly on a private LAN, create an override
+and choose a specific private address:
 
 ```sh
 systemctl --user edit praetor-web.service
@@ -288,6 +445,11 @@ systemctl --user edit praetor-web.service
 ExecStart=
 ExecStart=%h/.local/bin/praetor-web --listen 192.168.1.20:8787
 ```
+
+That direct listener still uses automatic self-signed HTTPS. Plaintext requires
+adding `--insecure-http` deliberately. To use an operator-managed certificate,
+add both `--tls-cert` and `--tls-key` paths instead; the service user must be
+able to read them.
 
 After changing the password file, restart the service:
 
@@ -300,16 +462,3 @@ systemctl --user restart praetor-web.service
 `GET /healthz` is intentionally unauthenticated and returns only process
 liveness. It does not reveal the version, account names, TEC state, or game
 text.
-
-Before relying on a LAN deployment, verify:
-
-1. a wrong password, missing cookie, wrong Origin, and missing CSRF token cannot
-   read or mutate state;
-2. a desktop and phone can join at different times and converge on the same
-   output, gauges, map, compass, mode, and settings;
-3. alternating commands are observed in server order;
-4. signing one browser out leaves the other browser and TEC connected;
-5. a shared-game disconnect is clearly confirmed and reaches every browser;
-6. sleep/wake or network changes produce a browser resnapshot, not a TEC
-   reconnect; and
-7. application/session logs contain neither web nor TEC passwords.

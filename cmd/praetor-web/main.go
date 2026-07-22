@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,15 +23,17 @@ import (
 	versioninfo "github.com/cyber-godzilla/praetor/internal/version"
 	webapp "github.com/cyber-godzilla/praetor/internal/web"
 	"github.com/cyber-godzilla/praetor/internal/webassets"
+	"github.com/cyber-godzilla/praetor/internal/webtls"
 )
 
 var version = ""
 
 func main() {
-	listenAddr := flag.String("listen", "127.0.0.1:8787", "HTTP listen address")
+	listenAddr := flag.String("listen", "127.0.0.1:8787", "Web listen address")
 	debug := flag.Bool("debug", false, "Enable debug events and logging")
-	tlsCert := flag.String("tls-cert", "", "TLS certificate file (requires --tls-key)")
-	tlsKey := flag.String("tls-key", "", "TLS private-key file (requires --tls-cert)")
+	tlsCert := flag.String("tls-cert", "", "TLS certificate file override (requires --tls-key)")
+	tlsKey := flag.String("tls-key", "", "TLS private-key file override (requires --tls-cert)")
+	insecureHTTP := flag.Bool("insecure-http", false, "Disable default TLS and serve plaintext HTTP")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -41,10 +44,10 @@ func main() {
 		fmt.Printf("praetor-web %s\n", version)
 		return
 	}
-	if (*tlsCert == "") != (*tlsKey == "") {
-		log.Fatal("--tls-cert and --tls-key must be provided together")
+	tlsMode, err := resolveTLSMode(*tlsCert, *tlsKey, *insecureHTTP)
+	if err != nil {
+		log.Fatal(err)
 	}
-	useTLS := *tlsCert != ""
 
 	auth, err := authFromEnvironment()
 	if err != nil {
@@ -65,6 +68,27 @@ func main() {
 	}
 	defer deps.Close()
 
+	certificateFile := *tlsCert
+	privateKeyFile := *tlsKey
+	useTLS := tlsMode != tlsModeInsecureHTTP
+	if tlsMode == tlsModeAutomatic {
+		material, err := webtls.Ensure(deps.StateDir, *listenAddr)
+		if err != nil {
+			log.Fatalf("automatic TLS: %v", err)
+		}
+		certificateFile = material.CertificateFile
+		privateKeyFile = material.PrivateKeyFile
+		if material.Generated {
+			log.Printf("generated automatic self-signed TLS certificate %s", material.CertificateFile)
+		}
+		log.Printf("WARNING: using an automatically generated self-signed TLS certificate; traffic is encrypted, but browsers will not trust the server unless the certificate is accepted explicitly")
+		log.Printf("automatic TLS SHA-256 fingerprint: %s", material.Fingerprint)
+	} else if tlsMode == tlsModeExplicit {
+		if _, err := tls.LoadX509KeyPair(certificateFile, privateKeyFile); err != nil {
+			log.Fatalf("loading TLS certificate override: %v", err)
+		}
+	}
+
 	hub := webapp.NewHub(deps.Config.UI.Scrollback)
 	deps.DesktopNotify.SetSink(client.NotificationSinkFunc(func(title, message string) {
 		hub.Emit(appgui.EventChannel, []appgui.WireEvent{{
@@ -82,8 +106,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("listen %s: %v", *listenAddr, err)
 	}
-	if !isLoopbackListener(listener.Addr()) && !useTLS {
-		log.Printf("WARNING: serving Praetor over plaintext HTTP on %s; passwords, commands, and game text are visible to the local network path", listener.Addr())
+	if !useTLS {
+		log.Printf("WARNING: --insecure-http is serving Praetor over plaintext HTTP on %s; passwords, commands, and game text are visible to the network path", listener.Addr())
+		if !isLoopbackListener(listener.Addr()) {
+			log.Printf("WARNING: plaintext HTTP is bound to a non-loopback address")
+		}
 	}
 
 	httpServer := &http.Server{
@@ -94,6 +121,9 @@ func main() {
 		IdleTimeout:       90 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
+	if useTLS {
+		httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -103,7 +133,7 @@ func main() {
 		}
 		log.Printf("Praetor web listening on %s://%s", scheme, listener.Addr())
 		if useTLS {
-			errCh <- httpServer.ServeTLS(listener, *tlsCert, *tlsKey)
+			errCh <- httpServer.ServeTLS(listener, certificateFile, privateKeyFile)
 			return
 		}
 		errCh <- httpServer.Serve(listener)
@@ -127,6 +157,30 @@ func main() {
 		log.Printf("web shutdown: %v", err)
 	}
 	app.Disconnect()
+}
+
+type tlsMode uint8
+
+const (
+	tlsModeAutomatic tlsMode = iota
+	tlsModeExplicit
+	tlsModeInsecureHTTP
+)
+
+func resolveTLSMode(certificateFile, privateKeyFile string, insecureHTTP bool) (tlsMode, error) {
+	if (certificateFile == "") != (privateKeyFile == "") {
+		return 0, errors.New("--tls-cert and --tls-key must be provided together")
+	}
+	if insecureHTTP && certificateFile != "" {
+		return 0, errors.New("--insecure-http cannot be combined with --tls-cert or --tls-key")
+	}
+	if insecureHTTP {
+		return tlsModeInsecureHTTP, nil
+	}
+	if certificateFile != "" {
+		return tlsModeExplicit, nil
+	}
+	return tlsModeAutomatic, nil
 }
 
 func authFromEnvironment() (*webapp.AuthManager, error) {

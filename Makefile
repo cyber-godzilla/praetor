@@ -31,7 +31,7 @@ web-dev: web-assets
 	go run -ldflags "-X main.version=$(VERSION)" ./cmd/praetor-web/ --listen $(WEB_LISTEN)
 
 web-check: web-assets
-	go test -race ./internal/web ./internal/gui ./cmd/praetor-web -count=1
+	go test -race ./internal/web ./internal/webtls ./internal/gui ./cmd/praetor-web -count=1
 	cd gui/frontend && npm test
 
 web-linux-amd64: web-assets

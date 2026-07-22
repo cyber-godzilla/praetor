@@ -256,6 +256,7 @@ Toggleable in the GUI under Settings → "Check for updates on startup".
 | App logs | `~/.local/state/praetor/tec.log` |
 | Persistent state | `~/.local/share/praetor/persistent_state.json` |
 | Credentials | System keyring, or an explicitly configured encrypted file under the state directory |
+| Automatic web TLS | `~/.local/state/praetor/tls/praetor-web-self-signed.{crt,key}` |
 
 ## How the config file is written
 

@@ -6,6 +6,7 @@ on:
     paths:
       - "cmd/praetor-web/**"
       - "internal/web/**"
+      - "internal/webtls/**"
       - "internal/webassets/**"
       - "internal/gui/**"
       - "internal/client/**"
@@ -17,6 +18,7 @@ on:
     paths:
       - "cmd/praetor-web/**"
       - "internal/web/**"
+      - "internal/webtls/**"
       - "internal/webassets/**"
       - "internal/gui/**"
       - "internal/client/**"
