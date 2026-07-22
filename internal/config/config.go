@@ -219,6 +219,13 @@ type UIConfig struct {
 	// command input (red squiggles under misspelled words while composing says
 	// and emotes). Engine support varies by platform webview.
 	InputSpellcheck bool `yaml:"input_spellcheck"`
+	// Mobile web presentation settings are persisted with the shared UI config,
+	// but the native Wails and TUI shells deliberately ignore them.
+	MobileOutputFontSize        int  `yaml:"mobile_output_font_size"`
+	MobileShowToolbar           bool `yaml:"mobile_show_toolbar"`
+	MobileShowTabBar            bool `yaml:"mobile_show_tab_bar"`
+	MobileHideNavigationOnInput bool `yaml:"mobile_hide_navigation_on_input"`
+	MobileLowercaseFirstLetter  bool `yaml:"mobile_lowercase_first_letter"`
 	// NumpadNavigation controls the GUI numpad-walking behavior:
 	//   "numlock" — move when NumLock is off; type digits when on (default)
 	//   "always"  — numpad always sends movement (needed on macOS, which has
@@ -271,22 +278,25 @@ func Defaults() *Config {
 		},
 		Scripts: []string{},
 		UI: UIConfig{
-			DisplayMode:      "sidebar",
-			DefaultTab:       "all",
-			Scrollback:       5000,
-			SidebarWidth:     40,
-			MinimapScale:     1.0,
-			MinimapHeight:    12,
-			CompassScale:     1.0,
-			OutputFontSize:   14,
-			CRTScanlines:     true,
-			CRTRoll:          true,
-			CRTBloom:         true,
-			QuickCycleModes:  []string{"disable"},
-			EchoTyped:        true,
-			EchoScript:       true,
-			InputSpellcheck:  true,
-			NumpadNavigation: "numlock",
+			DisplayMode:          "sidebar",
+			DefaultTab:           "all",
+			Scrollback:           5000,
+			SidebarWidth:         40,
+			MinimapScale:         1.0,
+			MinimapHeight:        12,
+			CompassScale:         1.0,
+			OutputFontSize:       14,
+			CRTScanlines:         true,
+			CRTRoll:              true,
+			CRTBloom:             true,
+			QuickCycleModes:      []string{"disable"},
+			EchoTyped:            true,
+			EchoScript:           true,
+			InputSpellcheck:      true,
+			MobileOutputFontSize: 14,
+			MobileShowToolbar:    true,
+			MobileShowTabBar:     true,
+			NumpadNavigation:     "numlock",
 		},
 		Highlights: []HighlightConfig{},
 		Kudos: KudosConfig{
@@ -360,12 +370,39 @@ func Load(path string) (*Config, error) {
 
 	migrateLegacyEcho(cfg, data)
 	migrateLegacyDisplay(cfg, data)
+	migrateMobileOutputFontSize(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// migrateMobileOutputFontSize preserves the pre-split behavior for existing
+// configurations. Before this field existed, mobile and desktop web output
+// both used output_font_size; copy that value only when the mobile key is
+// absent. Once saved, the two values remain independent.
+func migrateMobileOutputFontSize(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	ui, ok := raw["ui"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if _, exists := ui["mobile_output_font_size"]; !exists {
+		// Match the validation that output_font_size received before the split,
+		// including its fallback for legacy values below the desktop minimum.
+		size := cfg.UI.OutputFontSize
+		if size < 8 {
+			size = 14
+		} else if size > 40 {
+			size = 40
+		}
+		cfg.UI.MobileOutputFontSize = size
+	}
 }
 
 // migrateLegacyEcho copies the deprecated ui.echo_commands value into the
@@ -504,6 +541,11 @@ func (c *Config) Validate() error {
 		c.UI.OutputFontSize = 14
 	} else if c.UI.OutputFontSize > 40 {
 		c.UI.OutputFontSize = 40
+	}
+	if c.UI.MobileOutputFontSize < 6 {
+		c.UI.MobileOutputFontSize = 6
+	} else if c.UI.MobileOutputFontSize > 40 {
+		c.UI.MobileOutputFontSize = 40
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}

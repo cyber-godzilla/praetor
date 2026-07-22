@@ -51,8 +51,15 @@
 
   const conn = $derived(
     store.connState === "connected"
-      ? { text: "● CONNECTED", cls: "ok" }
-      : { text: "○ " + (store.connReason || "DISCONNECTED").toUpperCase(), cls: "bad" },
+      ? { indicator: "●", label: "CONNECTED", cls: "ok" }
+      : {
+          indicator: "○",
+          label: (store.connReason || "DISCONNECTED").toUpperCase(),
+          cls: "bad",
+        },
+  );
+  const showMobileMenu = $derived(
+    api.inWeb() && store.config?.UI?.MobileShowTabBar === false,
   );
 </script>
 
@@ -72,7 +79,18 @@
     <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting} tabindex="-1" disabled={!store.transportReady}>☀ {lighting.text}</button>
   {/if}
   <span class="spacer"></span>
-  <span class="conn {conn.cls}">{conn.text}</span>
+  <span class="conn {conn.cls}" role="status" title={conn.label} aria-label={conn.label}>
+    <span aria-hidden="true">{conn.indicator}</span><span class="conn-label"> {conn.label}</span>
+  </span>
+  {#if showMobileMenu}
+    <button
+      class="mobile-menu-btn"
+      title="Menu"
+      aria-label="Open menu"
+      onclick={() => (store.openModal = "menu")}
+      tabindex="-1"
+    >☰</button>
+  {/if}
 </div>
 
 <style>
@@ -139,22 +157,44 @@
   .conn.bad {
     color: var(--red);
   }
+  .mobile-menu-btn {
+    display: none;
+  }
 
   @media (max-width: 899px) {
     .statusbar {
-      gap: 12px;
-      padding: 5px 8px;
+      min-height: 28px;
+      gap: 10px;
+      padding: 2px 8px;
       scrollbar-width: none;
     }
     .statusbar::-webkit-scrollbar {
       display: none;
     }
     .bars {
-      gap: 10px;
+      gap: 8px;
     }
     .bar,
     .lighting {
-      min-height: 44px;
+      line-height: 1.25;
+    }
+    .conn.ok .conn-label {
+      display: none;
+    }
+    .mobile-menu-btn {
+      align-self: stretch;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 32px;
+      min-width: 32px;
+      padding: 0 7px;
+      border: 0;
+      border-left: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--fg-dim);
+      font: inherit;
+      font-size: 15px;
     }
   }
 

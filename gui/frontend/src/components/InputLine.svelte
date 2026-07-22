@@ -1,8 +1,14 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
+  import {
+    lowercaseFirstCommandLetter,
+    MOBILE_COMMAND_QUERY,
+    MOBILE_LAYOUT_QUERY,
+    outerPageHasVerticalDrift,
+  } from "../lib/mobile";
   import { resolveModeName } from "../lib/modes";
   import { searchBackward, dropLastChar } from "../lib/histsearch";
   import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
@@ -25,12 +31,146 @@
   // likely dragging out a text selection. Sticky-focus stands down until release
   // so it can't clear the selection mid-drag.
   let pointerDown = false;
+  let mobileToolPointerDown = false;
+  let mobileToolReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+  const MOBILE_KEYBOARD_DEBOUNCE_MS = 140;
+  const MOBILE_KEYBOARD_FALLBACK_MS = 360;
+  const MOBILE_KEYBOARD_OBSERVE_MS = 1200;
+  let keyboardDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyboardFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyboardObserveTimer: ReturnType<typeof setTimeout> | undefined;
+  let observedVisualViewport: VisualViewport | null = null;
 
   // Desktop keeps a sticky command cursor. Touch-sized/coarse-pointer clients
   // only focus after an explicit tap so the software keyboard does not reopen
   // after every command or modal interaction.
   function stickyFocusEnabled(): boolean {
-    return !window.matchMedia("(max-width: 899px), (pointer: coarse)").matches;
+    return !window.matchMedia(MOBILE_COMMAND_QUERY).matches;
+  }
+
+  function mobileWebInput(): boolean {
+    return api.inWeb() && window.matchMedia(MOBILE_COMMAND_QUERY).matches;
+  }
+
+  function mobileWebLayout(): boolean {
+    return api.inWeb() && window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
+  }
+
+  // Opening a software keyboard can pan the browser's outer viewport after the
+  // mobile dock has disappeared and App has resized to visualViewport.height.
+  // Correct that browser-owned scroll only after the keyboard/layout settles;
+  // the OutputPane's own scrollTop is intentionally never read or changed here.
+  function restoreOuterPageTopIfShifted() {
+    if (!mobileWebLayout() || document.activeElement !== inputEl) return;
+
+    const scrollingElement = document.scrollingElement;
+    if (
+      !outerPageHasVerticalDrift({
+        windowY: window.scrollY,
+        scrollingElementTop: scrollingElement?.scrollTop ?? 0,
+        documentElementTop: document.documentElement.scrollTop,
+        bodyTop: document.body.scrollTop,
+        visualViewportOffsetTop: window.visualViewport?.offsetTop ?? 0,
+      })
+    ) {
+      return;
+    }
+
+    // Some mobile engines expose the keyboard pan through window.scrollY,
+    // while others retain it on the root/body scrolling element. Clear each
+    // representation so the session output remains aligned with the screen top.
+    window.scrollTo(0, 0);
+    if (scrollingElement) scrollingElement.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
+  function scheduleKeyboardViewportCorrection() {
+    if (keyboardDebounceTimer !== undefined) clearTimeout(keyboardDebounceTimer);
+    keyboardDebounceTimer = setTimeout(() => {
+      keyboardDebounceTimer = undefined;
+      restoreOuterPageTopIfShifted();
+    }, MOBILE_KEYBOARD_DEBOUNCE_MS);
+  }
+
+  function stopKeyboardViewportCorrection() {
+    if (observedVisualViewport) {
+      observedVisualViewport.removeEventListener("resize", scheduleKeyboardViewportCorrection);
+      observedVisualViewport.removeEventListener("scroll", scheduleKeyboardViewportCorrection);
+      observedVisualViewport = null;
+    }
+    if (keyboardDebounceTimer !== undefined) clearTimeout(keyboardDebounceTimer);
+    if (keyboardFallbackTimer !== undefined) clearTimeout(keyboardFallbackTimer);
+    if (keyboardObserveTimer !== undefined) clearTimeout(keyboardObserveTimer);
+    keyboardDebounceTimer = undefined;
+    keyboardFallbackTimer = undefined;
+    keyboardObserveTimer = undefined;
+  }
+
+  function startKeyboardViewportCorrection() {
+    stopKeyboardViewportCorrection();
+    if (!mobileWebLayout()) return;
+
+    observedVisualViewport = window.visualViewport;
+    observedVisualViewport?.addEventListener("resize", scheduleKeyboardViewportCorrection);
+    observedVisualViewport?.addEventListener("scroll", scheduleKeyboardViewportCorrection);
+
+    // A delayed fallback covers browsers that animate the keyboard without
+    // dispatching VisualViewport events. The final check closes this bounded
+    // observation window after slower keyboard animations have completed.
+    keyboardFallbackTimer = setTimeout(() => {
+      keyboardFallbackTimer = undefined;
+      restoreOuterPageTopIfShifted();
+    }, MOBILE_KEYBOARD_FALLBACK_MS);
+    keyboardObserveTimer = setTimeout(() => {
+      restoreOuterPageTopIfShifted();
+      stopKeyboardViewportCorrection();
+    }, MOBILE_KEYBOARD_OBSERVE_MS);
+
+    // Focusing also removes the optional map/compass dock. Check again after
+    // Svelte has committed that shorter layout and the browser has painted it;
+    // this catches page drift caused by the dock collapse independently of the
+    // later keyboard animation.
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        if (document.activeElement === inputEl && mobileWebLayout()) {
+          scheduleKeyboardViewportCorrection();
+        }
+      });
+    });
+  }
+
+  function normalizeMobileCommand(input: string): string {
+    if (!mobileWebInput() || !store.config?.UI?.MobileLowercaseFirstLetter) return input;
+    return lowercaseFirstCommandLetter(input);
+  }
+
+  function onInput(e: Event) {
+    // Paste and IME commits accept the current reverse-history match before
+    // applying mobile capitalization normalization.
+    if (store.histSearchActive) rsAccept();
+    const target = e.currentTarget as HTMLInputElement;
+    const original = target.value;
+    const normalized = normalizeMobileCommand(original);
+    value = normalized;
+    if (normalized === original) return;
+
+    // Lowercasing can change UTF-16 length for a small number of Unicode
+    // characters. Keep the native selection aligned instead of jumping to the
+    // end after correcting the software keyboard's capitalization.
+    const delta = normalized.length - original.length;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    let changedAt = 0;
+    while (changedAt < original.length && original[changedAt] === normalized[changedAt]) {
+      changedAt++;
+    }
+    const adjust = (position: number) =>
+      position > changedAt ? position + delta : position;
+    target.value = normalized;
+    if (start !== null && end !== null) {
+      target.setSelectionRange(Math.max(0, adjust(start)), Math.max(0, adjust(end)));
+    }
   }
 
   async function handleKudos(rest: string) {
@@ -109,7 +249,8 @@
   }
 
   async function submitOnce() {
-    const line = value;
+    const line = normalizeMobileCommand(value);
+    if (line !== value) value = line;
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
 
@@ -351,6 +492,38 @@
     if (!store.openModal && !otherTextFieldActive() && stickyFocusEnabled()) inputEl?.focus();
   }
 
+  function onPointerDown(e: PointerEvent) {
+    pointerDown = true;
+    const target = e.target as HTMLElement | null;
+    mobileToolPointerDown = !!target?.closest("[data-mobile-tools]");
+  }
+
+  function onPointerUp() {
+    pointerDown = false;
+    if (!mobileToolPointerDown) return;
+    mobileToolPointerDown = false;
+    // `click` follows `pointerup`; defer cleanup so the tool can open its modal
+    // before restoring navigation changes the dock's geometry.
+    mobileToolReleaseTimer = setTimeout(() => {
+      if (!store.openModal && document.activeElement !== inputEl) {
+        store.mobileCommandInputActive = false;
+      }
+    }, 0);
+  }
+
+  function onPointerCancel() {
+    pointerDown = false;
+    mobileToolPointerDown = false;
+    if (document.activeElement !== inputEl) store.mobileCommandInputActive = false;
+  }
+
+  function onWindowBlur() {
+    pointerDown = false;
+    mobileToolPointerDown = false;
+    stopKeyboardViewportCorrection();
+    store.mobileCommandInputActive = false;
+  }
+
   // Webview window-focus events are unreliable, so treat a click anywhere in the
   // app as a signal to return the cursor to the input — unless it landed on a
   // text field or modal, or the user is selecting text (so copying still works).
@@ -375,7 +548,20 @@
   // back. Modals are exempt so their fields keep focus. This is why Tab and
   // Shift+Tab cycle tabs (handled in GameView) rather than moving the focus
   // ring through the UI.
-  function onBlur() {
+  function onFocus() {
+    store.mobileCommandInputActive = mobileWebLayout();
+    startKeyboardViewportCorrection();
+  }
+
+  function onBlur(e: FocusEvent) {
+    stopKeyboardViewportCorrection();
+    const next = e.relatedTarget as HTMLElement | null;
+    // Keep the compact dock stable until a focusable mobile tool has received
+    // its click. The tool handler clears this flag after dispatch, preventing
+    // the hidden map from reappearing and moving the target mid-tap.
+    if (!mobileToolPointerDown && !next?.closest("[data-mobile-tools]")) {
+      store.mobileCommandInputActive = false;
+    }
     // Defer to the next frame: the blur fires before the browser settles which
     // element/selection the click landed on. Then only reclaim focus if the user
     // isn't selecting text (see shouldRefocusInput) — otherwise Ctrl+C / the
@@ -396,15 +582,21 @@
       }
     });
   }
+
+  onDestroy(() => {
+    if (mobileToolReleaseTimer !== undefined) clearTimeout(mobileToolReleaseTimer);
+    stopKeyboardViewportCorrection();
+    store.mobileCommandInputActive = false;
+  });
 </script>
 
 <svelte:window
   onfocus={onWindowFocus}
   onclick={refocusFromClick}
-  onpointerdown={() => (pointerDown = true)}
-  onpointerup={() => (pointerDown = false)}
-  onpointercancel={() => (pointerDown = false)}
-  onblur={() => (pointerDown = false)}
+  onpointerdown={onPointerDown}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerCancel}
+  onblur={onWindowBlur}
 />
 
 <div class="inputwrap">
@@ -421,14 +613,12 @@
       bind:this={inputEl}
       bind:value
       onkeydown={onKeydown}
-      oninput={() => {
-        // Direct edits that bypass rsKeydown (paste, IME commit) implicitly
-        // accept whatever is now in the field and end the search.
-        if (store.histSearchActive) rsAccept();
-      }}
+      oninput={onInput}
+      onfocus={onFocus}
       onblur={onBlur}
       spellcheck={store.config?.UI?.InputSpellcheck ?? true}
       autocomplete="off"
+      autocapitalize={api.inWeb() && (store.config?.UI?.MobileLowercaseFirstLetter ?? false) ? "none" : "sentences"}
       disabled={!store.transportReady || submitting}
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     />

@@ -225,6 +225,78 @@ func TestServerRevisionedSettingBroadcast(t *testing.T) {
 	}
 }
 
+func TestServerMobileWebSettings(t *testing.T) {
+	tests := []struct {
+		operation string
+		value     any
+		matches   func(config.UIConfig) bool
+	}{
+		{
+			operation: "mobile-show-toolbar",
+			value:     false,
+			matches:   func(ui config.UIConfig) bool { return !ui.MobileShowToolbar },
+		},
+		{
+			operation: "mobile-show-tab-bar",
+			value:     false,
+			matches:   func(ui config.UIConfig) bool { return !ui.MobileShowTabBar },
+		},
+		{
+			operation: "mobile-hide-navigation-on-input",
+			value:     true,
+			matches:   func(ui config.UIConfig) bool { return ui.MobileHideNavigationOnInput },
+		},
+		{
+			operation: "mobile-lowercase-first-letter",
+			value:     true,
+			matches:   func(ui config.UIConfig) bool { return ui.MobileLowercaseFirstLetter },
+		},
+		{
+			operation: "mobile-output-font-size",
+			value:     6,
+			matches:   func(ui config.UIConfig) bool { return ui.MobileOutputFontSize == 6 },
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.operation, func(t *testing.T) {
+			srv, handler := newTestServer(t)
+			cookie, csrf := loginRequest(t, handler)
+			sub, _ := srv.hub.Subscribe()
+			defer srv.hub.Unsubscribe(sub.ID)
+
+			value, err := json.Marshal(test.value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body := fmt.Sprintf(`{"expectedRevision":1,"value":%s}`, value)
+			req := httptest.NewRequest(
+				http.MethodPut,
+				"http://praetor.test/api/v1/settings/"+test.operation,
+				bytes.NewBufferString(body),
+			)
+			req.Host = "praetor.test"
+			req.Header.Set("Origin", "http://praetor.test")
+			req.Header.Set("X-Praetor-CSRF", csrf)
+			req.Header.Set("Content-Type", "application/json")
+			req.AddCookie(cookie)
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if !test.matches(srv.app.GetConfig().UI) {
+				t.Fatalf("setting was not applied: %+v", srv.app.GetConfig().UI)
+			}
+			message := <-sub.Messages
+			if message.Type != "config" || message.Revision != 2 {
+				t.Fatalf("broadcast = %#v", message)
+			}
+		})
+	}
+}
+
 func TestConcurrentSettingWritesAllowOneRevisionWinner(t *testing.T) {
 	_, handler := newTestServer(t)
 	cookie, csrf := loginRequest(t, handler)

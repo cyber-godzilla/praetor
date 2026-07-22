@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 // Node and provides this built-in for the source-level parity contract.
 // @ts-expect-error node:fs types are test-runner-only
 import { readFileSync } from "node:fs";
-import { WEB_SUPPORTED_METHODS, WebTransport } from "./transport-web";
+import { settingsOperations, WEB_SUPPORTED_METHODS, WebTransport } from "./transport-web";
 import { Kind } from "./types";
 
 describe("web transport operation parity", () => {
@@ -23,6 +23,16 @@ describe("web transport operation parity", () => {
     await expect(transport.invoke("FutureWailsOnlyMethod", undefined)).rejects.toThrow(
       "No web transport operation",
     );
+  });
+
+  it("maps every mobile web preference to a revisioned setting operation", () => {
+    expect(settingsOperations).toMatchObject({
+      SetMobileShowToolbar: "mobile-show-toolbar",
+      SetMobileShowTabBar: "mobile-show-tab-bar",
+      SetMobileHideNavigationOnInput: "mobile-hide-navigation-on-input",
+      SetMobileLowercaseFirstLetter: "mobile-lowercase-first-letter",
+      SetMobileOutputFontSize: "mobile-output-font-size",
+    });
   });
 
   it("installs a snapshot before ordered live events and rejects a gap", () => {

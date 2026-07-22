@@ -56,10 +56,26 @@ ui:
   echo_script_commands: true      # Echo commands sent by Lua scripts
   hide_ips: false                 # Scramble IP addresses in text
   input_spellcheck: true          # GUI: spellcheck the command input (webview native)
+  mobile_output_font_size: 14     # Web: output size for mobile-width layouts
+  mobile_show_toolbar: true       # Web: show Actions / Modes / Menu on mobile
+  mobile_show_tab_bar: true       # Web: show the tab selector on mobile
+  mobile_hide_navigation_on_input: false # Web: hide map/compass while typing
+  mobile_lowercase_first_letter: false   # Web: counter keyboard capitalization
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
-All UI toggles are available via the Esc menu and saved automatically.
+The web Settings modal keeps desktop and mobile output sizes independent. The
+mobile size accepts values from 6 through 40 CSS pixels; desktop output retains
+its existing 8 through 40 range. Existing configurations without
+`mobile_output_font_size` inherit their current `output_font_size` once, so an
+upgrade does not unexpectedly change text size. The remaining `mobile_*`
+fields are checkboxes. Mobile settings affect only the browser mobile layout;
+the TUI and native Wails UI ignore them. The toolbar and tab selector default
+to visible, while navigation hiding and command normalization default to
+disabled. When the tab selector is hidden, its Menu button moves to the far
+right of the mobile status row.
+
+All other UI toggles are available via the Esc menu and saved automatically.
 
 ### Custom Tabs
 

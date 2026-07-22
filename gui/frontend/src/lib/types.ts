@@ -197,6 +197,11 @@ export interface UIConfig {
   EchoScript: boolean;
   HideIPs: boolean;
   InputSpellcheck: boolean;
+  MobileOutputFontSize: number;
+  MobileShowToolbar: boolean;
+  MobileShowTabBar: boolean;
+  MobileHideNavigationOnInput: boolean;
+  MobileLowercaseFirstLetter: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
   import type { Tab, Line } from "../lib/store.svelte";
   import { store } from "../lib/store.svelte";
   import type { Segment } from "../lib/types";
@@ -14,12 +14,31 @@
     thumbMetrics,
     scrollDeltaForThumbDrag,
   } from "../lib/scroll";
+  import * as api from "../lib/bridge";
+  import { MOBILE_LAYOUT_QUERY, outputFontSizeForLayout } from "../lib/mobile";
 
   let { tab }: { tab: Tab } = $props();
 
   const highlights = $derived(compileHighlights(store.config?.Highlights));
   const hideIPs = $derived(!!store.config?.UI?.HideIPs);
-  const fontSize = $derived(store.config?.UI?.OutputFontSize || 14);
+  const desktopFontSize = $derived(store.config?.UI?.OutputFontSize || 14);
+  const mobileFontSize = $derived(store.config?.UI?.MobileOutputFontSize || desktopFontSize);
+  let mobileWebLayout = $state(
+    typeof window !== "undefined" && api.inWeb() && window.matchMedia(MOBILE_LAYOUT_QUERY).matches,
+  );
+  const fontSize = $derived(
+    outputFontSizeForLayout(desktopFontSize, mobileFontSize, mobileWebLayout),
+  );
+
+  onMount(() => {
+    const query = window.matchMedia(MOBILE_LAYOUT_QUERY);
+    const updateLayout = () => {
+      mobileWebLayout = api.inWeb() && query.matches;
+    };
+    updateLayout();
+    query.addEventListener("change", updateLayout);
+    return () => query.removeEventListener("change", updateLayout);
+  });
 
   let viewport: HTMLDivElement;
   let contentEl: HTMLDivElement;

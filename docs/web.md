@@ -152,6 +152,39 @@ All authenticated browsers are equally authorized. Do not share the web
 password with someone who should not be able to send commands, alter settings,
 manage stored TEC accounts, or clear persistent state.
 
+## Mobile browser preferences
+
+The web Settings modal includes five preferences for the responsive mobile layout:
+
+- **Show Actions / Modes / Menu row on mobile** controls the three-button row
+  beneath the map and compass. It is enabled by default.
+- **Show tab selector on mobile** controls the All/Metrics/custom-tab row. It
+  is enabled by default. When disabled, the Menu button moves to the far right
+  of the compact HP/status row so settings remain reachable. The normal
+  connected state uses only its green indicator on mobile; disconnected/error
+  text remains visible so an abnormal connection state is not hidden.
+- **Hide map and compass while command input is active** removes the navigation
+  region while the mobile command field has focus, leaving more room for game
+  text and the software keyboard. The region returns when input focus leaves.
+  While the keyboard opens, the client also waits for the mobile visual viewport
+  to settle and returns the outer browser page to the top if the browser panned
+  it. This does not change the session output pane's scrollback position.
+- **Lowercase the first command letter on mobile** requests that the software
+  keyboard not capitalize commands and also normalizes the first cased letter
+  as a browser-side fallback. Leading spaces, punctuation, numbers, and slash
+  prefixes are preserved; the remainder of the command is not changed.
+- **Mobile output text size** controls game-output text independently from the
+  desktop output size. It accepts values down to 6 CSS pixels for denser phone
+  scrollback. Existing configurations initially inherit their desktop value.
+
+These are shared server settings: saving them in one authenticated browser
+persists them in `config.yaml` and broadcasts the updated configuration to the
+other connected browsers. The toolbar and navigation options apply to the web
+frontend's mobile-width layout, including the independent output size.
+First-letter normalization also applies to a
+coarse-pointer web device whose viewport is wider than the mobile breakpoint.
+These mobile-layout preferences do not affect the TUI or native Wails layout.
+
 ## Files, keyring, logs, and backups
 
 Run `praetor-web` as the ordinary OS user that owns the Praetor profile. Script

@@ -246,6 +246,16 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetColorWords)
 	case "hide-ips":
 		return settingValue(raw, s.app.SetHideIPs)
+	case "mobile-show-toolbar":
+		return settingValue(raw, s.app.SetMobileShowToolbar)
+	case "mobile-show-tab-bar":
+		return settingValue(raw, s.app.SetMobileShowTabBar)
+	case "mobile-hide-navigation-on-input":
+		return settingValue(raw, s.app.SetMobileHideNavigationOnInput)
+	case "mobile-lowercase-first-letter":
+		return settingValue(raw, s.app.SetMobileLowercaseFirstLetter)
+	case "mobile-output-font-size":
+		return settingValue(raw, s.app.SetMobileOutputFontSize)
 	case "session-logging":
 		return settingValue(raw, s.app.SetSessionLogging)
 	case "log-path":

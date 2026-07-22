@@ -274,6 +274,42 @@ func TestSetActionSets(t *testing.T) {
 	}
 }
 
+func TestMobileWebSettingsPersist(t *testing.T) {
+	dir := t.TempDir()
+	deps := &Deps{
+		Config:     config.Defaults(),
+		ConfigPath: filepath.Join(dir, "config.yaml"),
+	}
+	a := NewGuiApp(deps, &captureEmitter{})
+
+	if err := a.SetMobileShowToolbar(false); err != nil {
+		t.Fatalf("SetMobileShowToolbar: %v", err)
+	}
+	if err := a.SetMobileShowTabBar(false); err != nil {
+		t.Fatalf("SetMobileShowTabBar: %v", err)
+	}
+	if err := a.SetMobileHideNavigationOnInput(true); err != nil {
+		t.Fatalf("SetMobileHideNavigationOnInput: %v", err)
+	}
+	if err := a.SetMobileLowercaseFirstLetter(true); err != nil {
+		t.Fatalf("SetMobileLowercaseFirstLetter: %v", err)
+	}
+	if err := a.SetMobileOutputFontSize(6); err != nil {
+		t.Fatalf("SetMobileOutputFontSize: %v", err)
+	}
+
+	got, err := config.Load(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.UI.MobileShowToolbar || got.UI.MobileShowTabBar || !got.UI.MobileHideNavigationOnInput || !got.UI.MobileLowercaseFirstLetter {
+		t.Fatalf("persisted mobile web settings are wrong: %+v", got.UI)
+	}
+	if got.UI.MobileOutputFontSize != 6 {
+		t.Fatalf("persisted mobile font size = %d, want 6", got.UI.MobileOutputFontSize)
+	}
+}
+
 func TestGetConfigReturnsDeepSnapshot(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Scripts = []string{"one"}
@@ -293,17 +329,18 @@ func TestSettingsRejectInvalidWebValues(t *testing.T) {
 	cfg := config.Defaults()
 	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
 	for name, err := range map[string]error{
-		"display": app.SetDisplayMode("floating"),
-		"numpad":  app.SetNumpadNavigation("sometimes"),
-		"minimap": app.SetMinimapScale(0),
-		"compass": app.SetCompassScale(9),
-		"font":    app.SetOutputFontSize(200),
+		"display":     app.SetDisplayMode("floating"),
+		"numpad":      app.SetNumpadNavigation("sometimes"),
+		"minimap":     app.SetMinimapScale(0),
+		"compass":     app.SetCompassScale(9),
+		"font":        app.SetOutputFontSize(200),
+		"mobile font": app.SetMobileOutputFontSize(5),
 	} {
 		if err == nil {
 			t.Errorf("%s invalid value was accepted", name)
 		}
 	}
-	if cfg.UI.DisplayMode != "sidebar" || cfg.UI.MinimapScale != 1 || cfg.UI.CompassScale != 1 {
+	if cfg.UI.DisplayMode != "sidebar" || cfg.UI.MinimapScale != 1 || cfg.UI.CompassScale != 1 || cfg.UI.MobileOutputFontSize != 14 {
 		t.Fatalf("invalid settings mutated config: %#v", cfg.UI)
 	}
 }

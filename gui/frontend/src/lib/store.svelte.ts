@@ -135,6 +135,9 @@ class AppStore {
 
   // UI chrome
   sidebarOpen = $state(true);
+  // Ephemeral focus signal shared only between InputLine and the mobile dock.
+  // It is never persisted or projected to another browser.
+  mobileCommandInputActive = $state(false);
   // Collapsed state of the sidebar's accordion sections. Session-only (resets to
   // all-expanded on restart); held here rather than in Frame so it survives an
   // Alt+S sidebar unmount/remount.
@@ -325,6 +328,7 @@ class AppStore {
     this.compass = "";
     this.connReason = "";
     this.expandAllSuppressed = false;
+    this.mobileCommandInputActive = false;
     this.openModal = null;
     this.contextMenuOpen = false;
     this.actionSetIndex = 0;

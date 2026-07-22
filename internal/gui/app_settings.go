@@ -90,6 +90,54 @@ func (a *GuiApp) SetUpdateCheck(v bool) error {
 	return a.save()
 }
 
+// SetMobileShowToolbar controls the Actions / Modes / Menu row in the mobile
+// web dock. Native shells persist the shared value but do not apply it.
+func (a *GuiApp) SetMobileShowToolbar(v bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().UI.MobileShowToolbar = v
+	return a.save()
+}
+
+// SetMobileShowTabBar controls the tab selector in the mobile-width web
+// layout. When hidden, the web frontend keeps Menu available in the status bar.
+func (a *GuiApp) SetMobileShowTabBar(v bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().UI.MobileShowTabBar = v
+	return a.save()
+}
+
+// SetMobileHideNavigationOnInput controls whether the mobile web map and
+// compass are hidden while the command field owns focus.
+func (a *GuiApp) SetMobileHideNavigationOnInput(v bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().UI.MobileHideNavigationOnInput = v
+	return a.save()
+}
+
+// SetMobileLowercaseFirstLetter controls the mobile web command-input
+// safeguard for software keyboards that capitalize each new command.
+func (a *GuiApp) SetMobileLowercaseFirstLetter(v bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().UI.MobileLowercaseFirstLetter = v
+	return a.save()
+}
+
+// SetMobileOutputFontSize persists the game-output size used by mobile-width
+// web layouts. Desktop web and native Wails continue to use OutputFontSize.
+func (a *GuiApp) SetMobileOutputFontSize(px int) error {
+	if px < 6 || px > 40 {
+		return fmt.Errorf("mobile output font size must be between 6 and 40")
+	}
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().UI.MobileOutputFontSize = px
+	return a.save()
+}
+
 // SetSessionLogging toggles transcript logging.
 func (a *GuiApp) SetSessionLogging(v bool) error {
 	a.configMu.Lock()

@@ -1,14 +1,18 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
+  import * as api from "../lib/bridge";
 
   const tabs = $derived(store.tabs.filter((t) => t.visible));
+  const hideOnMobile = $derived(
+    api.inWeb() && store.config?.UI?.MobileShowTabBar === false,
+  );
 
   function select(name: string) {
     store.selectTab(store.tabs.findIndex((t) => t.name === name));
   }
 </script>
 
-<div class="tabbar">
+<div class="tabbar" class:hide-on-mobile={hideOnMobile}>
   {#each tabs as tab (tab.name)}
     <button
       class="tab"
@@ -69,6 +73,9 @@
   }
 
   @media (max-width: 899px) {
+    .tabbar.hide-on-mobile {
+      display: none;
+    }
     .tabbar {
       scrollbar-width: none;
     }

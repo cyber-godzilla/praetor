@@ -91,6 +91,16 @@ export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefin
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
+export const setMobileShowToolbar = (v: boolean) =>
+  call<void>("SetMobileShowToolbar", undefined, v);
+export const setMobileShowTabBar = (v: boolean) =>
+  call<void>("SetMobileShowTabBar", undefined, v);
+export const setMobileHideNavigationOnInput = (v: boolean) =>
+  call<void>("SetMobileHideNavigationOnInput", undefined, v);
+export const setMobileLowercaseFirstLetter = (v: boolean) =>
+  call<void>("SetMobileLowercaseFirstLetter", undefined, v);
+export const setMobileOutputFontSize = (px: number) =>
+  call<void>("SetMobileOutputFontSize", undefined, px);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);

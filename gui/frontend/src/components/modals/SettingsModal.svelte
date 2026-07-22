@@ -4,7 +4,8 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
 
-  const FONT_SIZES = [11, 12, 13, 14, 16, 18, 20, 24];
+  const DESKTOP_FONT_SIZES = [11, 12, 13, 14, 16, 18, 20, 24];
+  const MOBILE_FONT_SIZES = [6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24];
 
   // Buffered draft: edit locally, apply on Save, discard on Cancel (like the
   // Highlights editor).
@@ -15,11 +16,16 @@
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
+  let mobileShowToolbar = $state(seed?.UI?.MobileShowToolbar ?? true);
+  let mobileShowTabBar = $state(seed?.UI?.MobileShowTabBar ?? true);
+  let mobileHideNavigationOnInput = $state(seed?.UI?.MobileHideNavigationOnInput ?? false);
+  let mobileLowercaseFirstLetter = $state(seed?.UI?.MobileLowercaseFirstLetter ?? false);
   let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
   let logPath = $state(seed?.Logging?.Session?.Path ?? "");
   let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
   let compassScale = $state(seed?.UI?.CompassScale ?? 1);
   let fontSize = $state(seed?.UI?.OutputFontSize || 14);
+  let mobileFontSize = $state(seed?.UI?.MobileOutputFontSize || seed?.UI?.OutputFontSize || 14);
   let numpadNav = $state(seed?.UI?.NumpadNavigation ?? "numlock");
 
   async function save() {
@@ -32,8 +38,15 @@
       await api.setHideIPs(hideIPs);
       await api.setInputSpellcheck(inputSpellcheck);
       await api.setUpdateCheck(updateCheck);
-      await api.setSessionLogging(sessionLogging);
+      if (api.inWeb()) {
+        await api.setMobileShowToolbar(mobileShowToolbar);
+        await api.setMobileShowTabBar(mobileShowTabBar);
+        await api.setMobileHideNavigationOnInput(mobileHideNavigationOnInput);
+        await api.setMobileLowercaseFirstLetter(mobileLowercaseFirstLetter);
+        await api.setMobileOutputFontSize(mobileFontSize);
+      }
       await api.setLogPath(logPath);
+      await api.setSessionLogging(sessionLogging);
       await api.setMinimapScale(minimapScale);
       await api.setCompassScale(compassScale);
       await api.setOutputFontSize(fontSize);
@@ -45,6 +58,11 @@
           ColorWords: colorWords,
           HideIPs: hideIPs,
           InputSpellcheck: inputSpellcheck,
+          MobileShowToolbar: mobileShowToolbar,
+          MobileShowTabBar: mobileShowTabBar,
+          MobileHideNavigationOnInput: mobileHideNavigationOnInput,
+          MobileLowercaseFirstLetter: mobileLowercaseFirstLetter,
+          MobileOutputFontSize: mobileFontSize,
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
@@ -81,9 +99,9 @@
       <input type="number" min="0.5" max="3" step="0.1" bind:value={compassScale} />
     </div>
     <div class="field">
-      <span>Output text size</span>
+      <span>{api.inWeb() ? "Desktop output text size" : "Output text size"}</span>
       <div class="sizes">
-        {#each FONT_SIZES as sz (sz)}
+        {#each DESKTOP_FONT_SIZES as sz (sz)}
           <button class="sz" class:active={fontSize === sz} onclick={() => (fontSize = sz)}>{sz}</button>
         {/each}
       </div>
@@ -100,6 +118,23 @@
       <span>{api.inWeb() ? "Log path on server host (blank = default)" : "Log path (blank = default)"}</span>
       <input type="text" bind:value={logPath} />
     </div>
+    {#if api.inWeb()}
+      <fieldset class="mobile-settings">
+        <legend>Mobile web</legend>
+        <label class="t"><span>Show Actions / Modes / Menu row on mobile</span><input type="checkbox" bind:checked={mobileShowToolbar} /></label>
+        <label class="t"><span>Show tab selector on mobile</span><input type="checkbox" bind:checked={mobileShowTabBar} /></label>
+        <label class="t"><span>Hide map and compass while command input is active</span><input type="checkbox" bind:checked={mobileHideNavigationOnInput} /></label>
+        <label class="t"><span>Lowercase the first command letter on mobile</span><input type="checkbox" bind:checked={mobileLowercaseFirstLetter} /></label>
+        <div class="field mobile-font-size">
+          <span>Mobile output text size</span>
+          <div class="sizes">
+            {#each MOBILE_FONT_SIZES as sz (sz)}
+              <button class="sz" class:active={mobileFontSize === sz} onclick={() => (mobileFontSize = sz)}>{sz}</button>
+            {/each}
+          </div>
+        </div>
+      </fieldset>
+    {/if}
   </div>
 
 </Modal>
@@ -114,10 +149,29 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     padding: 9px 4px;
     font-size: 14px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
+  }
+  .t input {
+    flex: 0 0 auto;
+  }
+  .mobile-settings {
+    margin: 8px 0 0;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+  .mobile-settings legend {
+    padding: 0 4px 4px;
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .mobile-font-size {
+    padding-bottom: 2px;
   }
   .field {
     display: flex;
