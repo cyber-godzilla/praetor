@@ -6,7 +6,28 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
+
+func TestHTTPLogin_TimesOutOnHungServer(t *testing.T) {
+	prev := httpLoginTimeout
+	httpLoginTimeout = 200 * time.Millisecond
+	defer func() { httpLoginTimeout = prev }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(2 * time.Second) // hang well past the timeout
+	}))
+	defer srv.Close()
+
+	start := time.Now()
+	_, _, err := HTTPLogin(srv.URL, "user", "pass")
+	if err == nil {
+		t.Fatal("expected a timeout error from a hung login server")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("HTTPLogin took %v; the client timeout was not applied", elapsed)
+	}
+}
 
 func TestComputeHash_MatchesMD5(t *testing.T) {
 	username := "testuser"

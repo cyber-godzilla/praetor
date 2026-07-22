@@ -424,6 +424,102 @@ func TestSession_PongResetsDeadline(t *testing.T) {
 	}
 }
 
+func TestSession_Connect_SecondCallErrors(t *testing.T) {
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		conn.ReadMessage()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	})
+	defer srv.Close()
+
+	s := New()
+	defer s.Close()
+	if err := s.Connect(wsURL, nil); err != nil {
+		t.Fatalf("first Connect: %v", err)
+	}
+	if err := s.Connect(wsURL, nil); err != ErrAlreadyConnected {
+		t.Fatalf("second Connect = %v, want ErrAlreadyConnected", err)
+	}
+	if !s.IsConnected() {
+		t.Error("first connection should be unaffected by the rejected second Connect")
+	}
+}
+
+func TestSession_ConnClosedOnInvoluntaryDisconnect(t *testing.T) {
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		conn.ReadMessage() // ident
+		conn.Close()       // server-side drop (involuntary disconnect)
+	})
+	defer srv.Close()
+
+	s := New()
+	if err := s.Connect(wsURL, nil); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	select {
+	case <-s.Done():
+		// readLoop detected the drop
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for Done after involuntary disconnect")
+	}
+
+	// readLoop's cleanup must close the underlying conn rather than leak the fd.
+	// Closing an already-closed net.Conn errors; a leaked (still-open) conn
+	// returns nil on its first close.
+	s.mu.Lock()
+	conn := s.conn
+	s.mu.Unlock()
+	if conn == nil {
+		t.Fatal("conn is nil after disconnect")
+	}
+	if err := conn.Close(); err == nil {
+		t.Fatal("underlying conn was not closed by readLoop (fd leak)")
+	}
+}
+
+func TestSession_SendWriteDeadlineUnblocks(t *testing.T) {
+	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
+		// Read the ident, then stop reading: the peer's receive window fills and
+		// a client write with no deadline would block forever holding s.mu.
+		conn.ReadMessage()
+		select {}
+	})
+	defer srv.Close()
+
+	s := New()
+	s.writeWait = 200 * time.Millisecond
+
+	if err := s.Connect(wsURL, nil); err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		payload := strings.Repeat("x", 64*1024)
+		for i := 0; i < 4096; i++ {
+			if err := s.Send(payload); err != nil {
+				errCh <- err
+				return
+			}
+		}
+		errCh <- nil
+	}()
+
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("expected Send to fail once the peer stops reading")
+		}
+		s.Close()
+	case <-time.After(5 * time.Second):
+		t.Fatal("Send blocked past the write deadline (no deadline set on data writes)")
+	}
+}
+
 func TestSession_CloseIdempotent(t *testing.T) {
 	srv, wsURL := newTestServer(t, func(conn *websocket.Conn) {
 		defer conn.Close()

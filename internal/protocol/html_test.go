@@ -63,6 +63,46 @@ func TestParseHTML_FontColor(t *testing.T) {
 	}
 }
 
+func TestParseHTML_UppercaseAttributeKeys(t *testing.T) {
+	r := ParseHTML(`<FONT COLOR="#FF0000">red</FONT>`)
+	if len(r.Segments) != 1 {
+		t.Fatalf("expected 1 segment, got %d", len(r.Segments))
+	}
+	if r.Segments[0].Color != "#FF0000" {
+		t.Errorf("uppercase COLOR attribute dropped: color = %q", r.Segments[0].Color)
+	}
+}
+
+func TestParseHTML_SelfClosingAndUppercaseHR(t *testing.T) {
+	for _, in := range []string{"<hr/>", "<HR>", "<hr />"} {
+		r := ParseHTML("a" + in + "b")
+		hasHR := false
+		for _, s := range r.Segments {
+			if s.IsHR {
+				hasHR = true
+			}
+		}
+		if !hasHR {
+			t.Errorf("%q did not produce an IsHR segment", in)
+		}
+	}
+}
+
+func TestParseHTML_BrIsVoidNoStylePollution(t *testing.T) {
+	// A bare <br> must not pollute the style stack: the following font color
+	// applies cleanly.
+	r := ParseHTML(`x<br><font color="#00FF00">green</font>`)
+	found := false
+	for _, s := range r.Segments {
+		if s.Text == "green" && s.Color == "#00FF00" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("<br> polluted subsequent styling: %+v", r.Segments)
+	}
+}
+
 func TestParseHTML_XchCmd_Underline(t *testing.T) {
 	result := ParseHTML("<xch_cmd>clickable</xch_cmd>")
 	if result.Text != "clickable" {
@@ -287,5 +327,30 @@ func TestBrightenIfDark(t *testing.T) {
 	// An already-bright color is returned unchanged.
 	if got := brightenIfDark("#ffcc00"); got != "#ffcc00" {
 		t.Errorf("brightenIfDark(#ffcc00) = %q, want unchanged", got)
+	}
+}
+
+// resolveColor must always yield a well-formed color so a server-supplied font
+// attribute can't smuggle extra CSS declarations into the GUI's inline style
+// (e.g. `#0;position:fixed;inset:0;background:url(http://evil)`).
+func TestResolveColor_NormalizesAndRejectsInjection(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"#aabbcc", "#aabbcc"},
+		{"#AABBCC", "#AABBCC"},            // case preserved
+		{"#abc", "#aabbcc"},               // short form expanded
+		{"#ABC", "#AABBCC"},               // short form expanded, case preserved
+		{"#000000", "#000000"},            // valid; black-handling is brightenIfDark's job
+		{"red", "#ff0000"},                // named allowlist
+		{"WHITE", "#ffffff"},              // named, case-insensitive
+		{"#0;position:fixed;inset:0", ""}, // injection: fails closed
+		{"red;position:fixed", ""},        // not a valid name
+		{"#12345", ""},                    // wrong length
+		{"#gggggg", ""},                   // non-hex digits
+		{"url(http://evil)", ""},          // arbitrary garbage
+	}
+	for _, tc := range cases {
+		if got := resolveColor(tc.in); got != tc.want {
+			t.Errorf("resolveColor(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }

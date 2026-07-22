@@ -79,3 +79,28 @@ func TestRouteText_NormalText_ExcludeOnlyTab_Unaffected(t *testing.T) {
 		t.Error("normal text should route to exclude-only tab")
 	}
 }
+
+func TestHandleEvent_MenuOpenDefersWithoutDroppingBatchText(t *testing.T) {
+	a := App{
+		tabs:      buildTestTabs(nil, false),
+		activeTab: 0,
+		unread:    []bool{false, false},
+	}
+	msg := EventMsg{Events: []types.Event{
+		types.GameTextEvent{Text: "before menu", Styled: plainSegment("before menu")},
+		types.WikiOpenMenuEvent{},
+		types.GameTextEvent{Text: "after menu", Styled: plainSegment("after menu")},
+	}}
+
+	model, _ := a.handleEvent(msg)
+
+	// Both texts must reach the All pane — the text queued after the menu event
+	// in the same batch was previously discarded by the mid-loop return.
+	if got := len(a.tabs[0].Pane.lines); got != 2 {
+		t.Fatalf("All pane has %d lines, want 2 (text after the menu event was dropped)", got)
+	}
+	// The deferred menu still opens.
+	if got := model.(App).state; got != stateWikiMenu {
+		t.Errorf("state = %v, want stateWikiMenu (menu was not opened)", got)
+	}
+}

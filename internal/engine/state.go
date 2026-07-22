@@ -281,19 +281,23 @@ func (ms *ModeState) PersistentKeys() []string {
 // ClearPersistentKey removes persistence and the value for a single key.
 func (ms *ModeState) ClearPersistentKey(key string) {
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 	delete(ms.persistentKeys, key)
 	delete(ms.values, key)
+	ms.mu.Unlock()
+	// Mark dirty so the explicit Flush the UIs run persists the deletion;
+	// otherwise the cleared key resurrects from disk on the next launch.
+	ms.notifyPersistDirty()
 }
 
 // ClearAllPersistent removes all persistent keys and their values.
 func (ms *ModeState) ClearAllPersistent() {
 	ms.mu.Lock()
-	defer ms.mu.Unlock()
 	for key := range ms.persistentKeys {
 		delete(ms.values, key)
 	}
 	ms.persistentKeys = make(map[string]bool)
+	ms.mu.Unlock()
+	ms.notifyPersistDirty()
 }
 
 // PersistentSnapshot returns all persistent key/value pairs as Go types for JSON serialization.

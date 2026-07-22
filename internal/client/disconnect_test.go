@@ -125,17 +125,25 @@ func TestClient_DrainQueue_DoesNotSendStaleCommandToReconnectedSession(t *testin
 
 	c := newDiscTestClient(t)
 	connectTestSession(t, c, urlA)
+	sessA := c.Session
 
-	// Enqueue a command with enough delay to span the reassignment below.
+	// Start the connection's drainer bound to session A, then enqueue a command
+	// whose delay spans the reassignment below.
+	stop := make(chan struct{})
+	defer close(stop)
 	c.Engine.Queue().Enqueue("stale-cmd", 300)
-	c.drainQueue()
+	go c.drainLoop(sessA, stop)
 
-	// Mimic a reconnect racing with the still-sleeping drain goroutine: swap
-	// c.Session to a brand-new session connected to server B.
-	c.Session = session.New()
-	if err := c.Session.Connect(urlB, nil); err != nil {
+	// Give the drainer time to pop the command and start sleeping on its delay.
+	time.Sleep(50 * time.Millisecond)
+
+	// Mimic a reconnect racing with the still-sleeping drainer: swap the Session
+	// pointer to a brand-new session connected to server B.
+	nb := session.New()
+	if err := nb.Connect(urlB, nil); err != nil {
 		t.Fatalf("connect B: %v", err)
 	}
+	c.setSession(nb)
 
 	select {
 	case cmd := <-recvA:

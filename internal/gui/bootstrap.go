@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +28,7 @@ type Deps struct {
 	SessionLog    *client.SessionLogger
 	DesktopNotify *client.DesktopNotifier
 	Clipboard     Clipboard
+	Dialogs       Dialogs
 	ScriptDirs    []string
 	Notes         *notes.Store
 	Version       string
@@ -35,8 +37,13 @@ type Deps struct {
 	appLog *logging.Logger
 }
 
-// Close releases resources held by Deps (log files, session log).
+// Close releases resources held by Deps (engine, log files, session log).
 func (d *Deps) Close() {
+	// Close the engine first: it flushes persistent state synchronously, so the
+	// last few seconds of state (within the 5s debounce window) survive a quit.
+	if d.Client != nil && d.Client.Engine != nil {
+		d.Client.Engine.Close()
+	}
 	if d.SessionLog != nil {
 		d.SessionLog.Close()
 	}
@@ -79,6 +86,9 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	cfg, err := config.Load(cfgFile)
 	if err != nil {
 		return nil, err
+	}
+	for _, w := range cfg.TransportWarnings() {
+		log.Printf("[CONFIG] %s", w)
 	}
 
 	scriptDirs := make([]string, 0, len(cfg.Scripts))

@@ -22,23 +22,23 @@ func (a *GuiApp) GetKudos() config.KudosConfig { return a.cfg().Kudos }
 
 // SetKudos replaces the kudos configuration.
 func (a *GuiApp) SetKudos(k config.KudosConfig) error {
-	a.cfg().Kudos = k
-	return a.save()
+	return a.withConfig(func() { a.cfg().Kudos = k })
 }
 
 // AddKudosFavorite adds a favorite if not present. Returns true if added.
 func (a *GuiApp) AddKudosFavorite(name string) (bool, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.cfg().Kudos.HasFavorite(name) {
 		return false, nil
 	}
 	a.cfg().Kudos.AddFavorite(name)
-	return true, a.save()
+	return true, config.Save(a.cfg(), a.deps.ConfigPath)
 }
 
 // AddKudosQueue queues a kudos for the named character.
 func (a *GuiApp) AddKudosQueue(name, message string) error {
-	a.cfg().Kudos.AddQueueEntry(name, message)
-	return a.save()
+	return a.withConfig(func() { a.cfg().Kudos.AddQueueEntry(name, message) })
 }
 
 // ---------------------------------------------------------------------------

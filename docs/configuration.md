@@ -134,6 +134,38 @@ logging:
 
 Log settings are available via Esc → Game Logs and Esc → Log Location.
 
+### What the app log records at each level
+
+The app log level controls how much detail `tec.log` captures:
+
+- **`info` (default)** — lifecycle and operational messages (connect/disconnect,
+  auth results, mode changes, errors). The game transcript and your typed input
+  are **not** recorded here, so the app log is not a second hidden transcript.
+- **`debug`** — everything at `info` plus the full received/sent traffic
+  (`[RECV:*]`/`[SEND:*]`). Use this only when diagnosing a problem: it includes
+  everything you type, which can contain an accidental password paste. Handshake
+  `SECRET` lines are always redacted.
+- **`warn`/`error`** — progressively quieter; note these hide the operational
+  `info` messages that are useful for support.
+
+The **session transcript** (Esc → Game Logs) is the user-controlled game log and
+is unaffected by the app log level — it records exactly as configured.
+
+## Transport security
+
+The default `server.protocol: ws` and the game's `login_url` determine whether
+traffic is encrypted:
+
+- `ws://` sends the session cookies, the MD5 handshake, and all game traffic in
+  the clear; an `http://` login URL POSTs your password unencrypted.
+- `wss://` (and an `https://` login URL) are fully supported and recommended
+  **if the game server offers TLS**.
+
+praetor logs a startup warning for each cleartext setting but does not force a
+change — the shipped default is `ws://` because the server may not support TLS.
+Switch `server.protocol` to `wss` (and `login_url` to `https://…`) if the server
+accepts it.
+
 ## Updates
 
 ```yaml
@@ -158,3 +190,21 @@ Toggleable in the GUI under Settings → "Check for updates on startup".
 | App logs | `~/.local/state/praetor/tec.log` |
 | Persistent state | `~/.local/share/praetor/persistent_state.json` |
 | Credentials | System keyring |
+
+## How the config file is written
+
+The GUI and TUI save `config.yaml` **atomically**: the new content is written to
+a temporary file in the same directory and then renamed over the original, so a
+crash or power loss mid-save never leaves a truncated file that fails to load.
+The file's permissions are preserved across saves.
+
+Two caveats:
+
+- **Comments and unknown keys are not preserved.** A UI-triggered save marshals
+  the known settings and rewrites the file, so hand-written comments and any
+  keys praetor doesn't recognize are dropped. Edit `config.yaml` by hand only
+  while the app is closed if you want to keep comments.
+- **Multi-instance play is last-writer-wins.** Running one instance per
+  character is supported, but if two instances save the shared `config.yaml`,
+  the last save wins. The atomic write guarantees the file is never *torn*, only
+  that the later writer's version replaces the earlier one.

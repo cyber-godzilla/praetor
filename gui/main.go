@@ -57,6 +57,20 @@ func (c *wailsClipboard) GetText() (string, error) {
 	return wailsruntime.ClipboardGetText(c.ctx)
 }
 
+// wailsDialogs implements gui.Dialogs via the Wails runtime. The context is
+// captured at startup (same as wailsEmitter/wailsClipboard).
+type wailsDialogs struct {
+	ctx context.Context
+}
+
+func (d *wailsDialogs) PickDirectory(title, defaultDir string) (string, error) {
+	// A cancelled dialog returns ("", nil), which the facade treats as no change.
+	return wailsruntime.OpenDirectoryDialog(d.ctx, wailsruntime.OpenDialogOptions{
+		Title:            title,
+		DefaultDirectory: defaultDir,
+	})
+}
+
 func (c *wailsClipboard) SetText(text string) error {
 	return wailsruntime.ClipboardSetText(c.ctx, text)
 }
@@ -108,6 +122,7 @@ func main() {
 			// clipboard can read/write.
 			emitter.ctx = ctx
 			deps.Clipboard = &wailsClipboard{ctx: ctx}
+			deps.Dialogs = &wailsDialogs{ctx: ctx}
 		},
 		Bind: []any{
 			app,

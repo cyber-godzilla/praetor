@@ -27,13 +27,17 @@ func NewQuickCycle(modes []string) QuickCycle {
 	}
 }
 
-// Next returns the next mode in the cycle and advances the index.
+// Next returns the mode at the current cursor and then advances. Post-increment
+// so a fresh cycle over [a, b, c] yields a, b, c, a… — a pre-increment skipped
+// the first configured mode until a full lap. (The GUI cycles by syncing to the
+// live engine mode; the TUI keeps its own independent cursor.)
 func (qc *QuickCycle) Next() string {
 	if len(qc.modes) == 0 {
 		return "disable"
 	}
+	m := qc.modes[qc.index]
 	qc.index = (qc.index + 1) % len(qc.modes)
-	return qc.modes[qc.index]
+	return m
 }
 
 // Current returns the current mode in the cycle without advancing.

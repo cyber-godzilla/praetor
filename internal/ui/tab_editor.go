@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 )
 
 // MenuTabsMsg opens the tab manager.
@@ -192,7 +193,7 @@ func (te TabEditor) updateAddRule(msg tea.KeyMsg) (TabEditor, tea.Cmd) {
 		te.mode = temEdit
 	case tea.KeyBackspace:
 		if len(te.inputBuf) > 0 {
-			te.inputBuf = te.inputBuf[:len(te.inputBuf)-1]
+			te.inputBuf = textutil.TrimLastRune(te.inputBuf)
 		}
 	case tea.KeyRunes:
 		te.inputBuf += string(msg.Runes)
@@ -222,7 +223,7 @@ func (te TabEditor) updateNewTab(msg tea.KeyMsg) (TabEditor, tea.Cmd) {
 		}
 	case tea.KeyBackspace:
 		if len(te.inputBuf) > 0 {
-			te.inputBuf = te.inputBuf[:len(te.inputBuf)-1]
+			te.inputBuf = textutil.TrimLastRune(te.inputBuf)
 		}
 	case tea.KeyRunes:
 		te.inputBuf += string(msg.Runes)

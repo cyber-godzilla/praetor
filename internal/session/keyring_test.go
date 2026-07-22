@@ -2,7 +2,72 @@ package session
 
 import (
 	"testing"
+
+	"github.com/zalando/go-keyring"
 )
+
+func TestKeyringStore_CorruptBlobDoesNotClobber(t *testing.T) {
+	keyring.MockInit()
+
+	// Seed a valid multi-account blob, then corrupt it (truncation/garbage).
+	if err := keyring.Set(keyringService, keyringAccountKey, `{"alice":"a","bob":"b"}`); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := keyring.Set(keyringService, keyringAccountKey, `{corrupt`); err != nil {
+		t.Fatalf("corrupt: %v", err)
+	}
+
+	k := &KeyringStore{}
+
+	// A corrupt blob must surface as an error, not silently read as "no accounts".
+	if _, err := k.ListAccounts(); err == nil {
+		t.Fatal("ListAccounts on a corrupt blob returned nil error")
+	}
+
+	// Writes must refuse rather than overwrite (which would destroy alice+bob).
+	if err := k.SetAccount("carol", "c"); err == nil {
+		t.Fatal("SetAccount on a corrupt blob succeeded; it clobbered stored accounts")
+	}
+	if err := k.RemoveAccount("alice"); err == nil {
+		t.Fatal("RemoveAccount on a corrupt blob succeeded; it could delete the entry")
+	}
+
+	// The blob must be exactly as left — never overwritten or deleted.
+	raw, err := keyring.Get(keyringService, keyringAccountKey)
+	if err != nil {
+		t.Fatalf("blob was deleted or unreadable: %v", err)
+	}
+	if raw != `{corrupt` {
+		t.Fatalf("blob was overwritten: %q", raw)
+	}
+}
+
+func TestKeyringStore_ValidBlobRoundTrips(t *testing.T) {
+	keyring.MockInit()
+	k := &KeyringStore{}
+
+	if err := k.SetAccount("alice", "pa"); err != nil {
+		t.Fatalf("SetAccount alice: %v", err)
+	}
+	if err := k.SetAccount("bob", "pb"); err != nil {
+		t.Fatalf("SetAccount bob: %v", err)
+	}
+
+	// Removing one account must leave the other intact.
+	if err := k.RemoveAccount("alice"); err != nil {
+		t.Fatalf("RemoveAccount alice: %v", err)
+	}
+	names, err := k.ListAccounts()
+	if err != nil {
+		t.Fatalf("ListAccounts: %v", err)
+	}
+	if len(names) != 1 || names[0] != "bob" {
+		t.Fatalf("accounts = %v, want [bob]", names)
+	}
+	if pass, err := k.GetAccount("bob"); err != nil || pass != "pb" {
+		t.Fatalf("GetAccount bob = %q,%v want pb,nil", pass, err)
+	}
+}
 
 func TestMockCredentialStore_SetAndGetAccount(t *testing.T) {
 	store := &MockCredentialStore{}

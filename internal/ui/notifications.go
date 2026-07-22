@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 )
 
 // NotificationSettingsCloseMsg is sent when the notification settings screen is dismissed.
@@ -247,7 +248,7 @@ func (s NotificationSettingsScreen) updateEditing(msg tea.KeyMsg) (NotificationS
 
 	case tea.KeyBackspace:
 		if len(s.editBuf) > 0 {
-			s.editBuf = s.editBuf[:len(s.editBuf)-1]
+			s.editBuf = textutil.TrimLastRune(s.editBuf)
 		}
 		return s, nil
 

@@ -593,3 +593,21 @@ func FuzzApplyColorWords(f *testing.F) {
 		}
 	})
 }
+
+// BenchmarkApplyColorWords records the per-line cost the optimization concern is
+// about (0/1/3 color words in a representative say-line).
+func BenchmarkApplyColorWords(b *testing.B) {
+	lines := []string{
+		"The merchant nods and turns away without a word to anyone here.",
+		"You see a gold ring lying on the ground near the fountain.",
+		"A crimson banner, a silver chalice, and a golden crown adorn the hall.",
+	}
+	segs := make([][]types.StyledSegment, len(lines))
+	for i, l := range lines {
+		segs[i] = []types.StyledSegment{{Text: l}}
+	}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = ApplyColorWords(segs[i%len(segs)])
+	}
+}

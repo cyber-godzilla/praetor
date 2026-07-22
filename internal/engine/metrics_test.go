@@ -2,9 +2,33 @@ package engine
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
+
+func TestMetrics_HistoryCappedKeepsMostRecent(t *testing.T) {
+	m := NewMetrics()
+	total := maxMetricsHistory + 20
+	for i := 0; i < total; i++ {
+		// Each StartSession ends the previous session and appends it to history.
+		m.StartSession(fmt.Sprintf("mode-%d", i))
+	}
+	m.EndSession() // flush the final current session into history
+
+	h := m.History()
+	if len(h) != maxMetricsHistory {
+		t.Fatalf("history length = %d, want %d (capped)", len(h), maxMetricsHistory)
+	}
+	// The newest session must be retained.
+	if want := fmt.Sprintf("mode-%d", total-1); h[len(h)-1].Mode != want {
+		t.Errorf("newest history mode = %q, want %q", h[len(h)-1].Mode, want)
+	}
+	// The oldest sessions must have been evicted first.
+	if h[0].Mode == "mode-0" {
+		t.Error("oldest session was not evicted from a full history")
+	}
+}
 
 func TestMetrics_TrackAndInc(t *testing.T) {
 	m := NewMetrics()

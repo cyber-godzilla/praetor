@@ -19,6 +19,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
+	"github.com/cyber-godzilla/praetor/internal/kitty"
 	"github.com/cyber-godzilla/praetor/internal/logging"
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
@@ -709,6 +710,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("loading config: %v", err)
 	}
+	for _, w := range cfg.TransportWarnings() {
+		log.Printf("[CONFIG] %s", w)
+	}
 
 	// Build script directories list, expanding ~ and env vars.
 	scriptDirs := make([]string, 0, len(cfg.Scripts))
@@ -759,10 +763,25 @@ func main() {
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
+	// Snapshot the kudos-queue length before the bridge goroutine starts. The
+	// login prompt is one-time and only needs the count at login, so reading it
+	// once here removes the shared cross-goroutine read of cfg.Kudos that raced
+	// the Bubbletea Update loop's mutations of the same struct.
+	initialKudosQueue := len(cfg.Kudos.Queue)
+
 	// Bridge game events to the Bubbletea program. We drain all available
 	// events from the channel into a single batch so Bubbletea renders once
 	// per burst instead of once per line.
 	go func() {
+		// A panic in this goroutine is outside Bubbletea's recover; without this
+		// the process would die with the terminal left in raw/alt-screen mode and
+		// Kitty images still on screen. Quit cleanly so Bubbletea tears down.
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[BRIDGE] panic: %v", r)
+				p.Quit()
+			}
+		}()
 		var kudosPromptShown bool
 		for event := range gc.Events() {
 			batch := []types.Event{event}
@@ -794,10 +813,9 @@ func main() {
 					if e.Fatigue != nil {
 						desktopNotify.CheckFatigue(*e.Fatigue)
 					}
-					if shouldShowKudosPrompt(kudosPromptShown, len(cfg.Kudos.Queue), len(e.Rooms)) {
+					if shouldShowKudosPrompt(kudosPromptShown, initialKudosQueue, len(e.Rooms)) {
 						kudosPromptShown = true
-						queueLen := len(cfg.Kudos.Queue)
-						p.Send(ui.KudosLoginPromptMsg{Count: queueLen})
+						p.Send(ui.KudosLoginPromptMsg{Count: initialKudosQueue})
 					}
 				case types.ModeChangeEvent:
 					desktopNotify.Prune()
@@ -810,6 +828,14 @@ func main() {
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
+
+	// Retire the engine on exit: this flushes persistent state synchronously so
+	// the last few seconds of state (inside the 5s debounce window) aren't lost.
+	gc.Engine.Close()
+
+	// Clear any Kitty graphics the alt-screen teardown may not have removed
+	// (partial protocol implementations); harmless where already clean.
+	fmt.Fprint(os.Stdout, kitty.DeleteAll())
 
 	if pprofDir != "" {
 		dumpPprofProfiles(pprofDir)

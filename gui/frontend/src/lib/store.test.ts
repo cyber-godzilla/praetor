@@ -83,6 +83,29 @@ describe("store connection routing", () => {
     store.apply([{ kind: Kind.Status, status: { mode: "craft" } }]);
     expect(store.mode).toBe("craft");
   });
+
+  it("caps scrollback with a batched front-trim (never far above cap, newest kept)", () => {
+    store.config = { UI: { Scrollback: 50 } } as any;
+    store.rebuildTabs([]);
+    store.apply(conn("connected"));
+
+    for (let i = 0; i < 500; i++) {
+      store.apply([
+        {
+          kind: Kind.Text,
+          text: { text: `line ${i}`, segments: [{ text: `line ${i}` }], isEcho: false, timestamp: 0 },
+        },
+      ]);
+    }
+
+    const all = store.tabs.find((t) => t.kind === "all")!;
+    // Bounded by cap + one trim chunk, and never below cap once past it.
+    expect(all.lines.length).toBeLessThanOrEqual(50 + 256);
+    expect(all.lines.length).toBeGreaterThanOrEqual(50);
+    // The most recent line is always retained.
+    const last = all.lines[all.lines.length - 1];
+    expect(last.segments[0].text).toBe("line 499");
+  });
 });
 
 describe("addLocalLine", () => {

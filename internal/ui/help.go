@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 )
 
 // HelpSearchMsg is sent when the user submits a help search query.
@@ -91,7 +92,7 @@ func (h HelpScreen) updateSearch(msg tea.KeyMsg) (HelpScreen, tea.Cmd) {
 
 	case tea.KeyBackspace:
 		if len(h.searchBuf) > 0 {
-			h.searchBuf = h.searchBuf[:len(h.searchBuf)-1]
+			h.searchBuf = textutil.TrimLastRune(h.searchBuf)
 		}
 		return h, nil
 

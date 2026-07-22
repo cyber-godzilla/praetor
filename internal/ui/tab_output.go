@@ -89,21 +89,24 @@ func (o *OutputPane) appendLine(line paneLine) {
 			if o.cachedLines < 0 {
 				o.cachedLines = 0
 			}
+			// scrollPos is a display-row offset, so decrement it by the trimmed
+			// ROW count, not the logical-line count (a wrapped line is >1 row).
+			if o.scrollPos > 0 {
+				o.scrollPos -= trimRows
+				if o.scrollPos < 0 {
+					o.scrollPos = 0
+				}
+			}
 		} else {
-			// Row counts out of sync — full invalidation as fallback.
+			// Row counts out of sync — full invalidation as fallback. Snap to the
+			// bottom since we can no longer map trimmed lines to rows.
 			o.cachedRows = nil
 			o.rowCounts = nil
 			o.cachedLines = 0
+			o.scrollPos = 0
 		}
 		// Trimming shifts row indices; joined-string cache is stale.
 		o.joinedCache = ""
-
-		if o.scrollPos > 0 {
-			o.scrollPos -= excess
-			if o.scrollPos < 0 {
-				o.scrollPos = 0
-			}
-		}
 	}
 }
 
@@ -122,10 +125,25 @@ func (o *OutputPane) SetExpanded(expanded bool) {
 	o.joinedCache = ""
 }
 
-// ScrollUp scrolls up by n display rows.
+// maxScroll returns the furthest-up scroll offset the current row cache allows.
+// It is only accurate once View has rendered the cache; View also clamps
+// authoritatively, so a stale value here is corrected on the next render.
+func (o *OutputPane) maxScroll() int {
+	m := len(o.cachedRows) - o.height
+	if m < 0 {
+		return 0
+	}
+	return m
+}
+
+// ScrollUp scrolls up by n display rows, clamped so the position can't latch far
+// above the top (which made subsequent wheel-downs appear dead until the excess
+// was scrolled back off). View re-clamps against the freshest cache.
 func (o *OutputPane) ScrollUp(n int) {
 	o.scrollPos += n
-	// Cap is handled in View — we just let it go high and clamp later.
+	if m := o.maxScroll(); o.scrollPos > m {
+		o.scrollPos = m
+	}
 }
 
 // ScrollDown scrolls down by n display rows. Scrolling past 0 snaps to bottom.
@@ -170,6 +188,7 @@ func (o *OutputPane) View() string {
 
 	// Render only lines added since the last call.
 	if o.cachedLines < len(o.lines) {
+		rowsBefore := len(o.cachedRows)
 		for _, line := range o.lines[o.cachedLines:] {
 			var segments []types.StyledSegment
 			if line.placeholder != nil && !o.expanded {
@@ -184,19 +203,26 @@ func (o *OutputPane) View() string {
 		}
 		o.cachedLines = len(o.lines)
 		o.joinedCache = ""
+
+		// Anchor on append: while scrolled up, push the position down by the
+		// number of newly rendered rows so the viewport stays on the same content
+		// instead of sliding toward newer text as it arrives.
+		if o.scrollPos > 0 {
+			o.scrollPos += len(o.cachedRows) - rowsBefore
+		}
 	}
 
 	totalRows := len(o.cachedRows)
 
-	// Clamp scrollPos.
+	// Clamp scrollPos, writing the clamp back so an over-scroll doesn't latch.
 	maxScroll := totalRows - o.height
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	scrollPos := o.scrollPos
-	if scrollPos > maxScroll {
-		scrollPos = maxScroll
+	if o.scrollPos > maxScroll {
+		o.scrollPos = maxScroll
 	}
+	scrollPos := o.scrollPos
 
 	// Calculate visible window from the bottom.
 	end := totalRows - scrollPos
@@ -274,7 +300,10 @@ func renderSegments(segments []types.StyledSegment, maxWidth int) string {
 			lastSpace = i
 			lastSpaceCol = col
 		}
-		col++
+		// Advance by the rune's terminal cell width (shared with visibleWidth) so
+		// wrap columns and pad widths agree; a wide glyph counts as 2 cells. The
+		// wrap recompute below stays correct because a space is always 1 cell.
+		col += runeCellWidth(r)
 		if col > maxWidth {
 			if lastSpace > 0 && lastSpaceCol > 0 {
 				// Wrap at the last whitespace: the newline replaces the space.
@@ -283,9 +312,10 @@ func renderSegments(segments []types.StyledSegment, maxWidth int) string {
 				col = col - lastSpaceCol - 1
 				lastSpace = -1
 			} else {
-				// No whitespace found — hard break at current position.
+				// No whitespace found — hard break at current position. The
+				// current rune starts the new line, so seed col with its width.
 				wrapPoints = append(wrapPoints, i)
-				col = 1
+				col = runeCellWidth(r)
 				lastSpace = -1
 			}
 		}

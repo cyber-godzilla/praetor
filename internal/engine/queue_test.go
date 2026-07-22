@@ -204,6 +204,96 @@ func TestCommandQueue_RecordSendAndTimeSince(t *testing.T) {
 	}
 }
 
+func TestCommandQueue_FullDropIsObservable(t *testing.T) {
+	q := NewCommandQueue(2, 900*time.Millisecond, 300*time.Millisecond, nil)
+
+	q.Enqueue("a", 0)
+	q.Enqueue("b", 0)
+	q.Enqueue("c", 0) // full: dropped
+
+	if q.Len() != 2 {
+		t.Fatalf("Len() = %d, want 2", q.Len())
+	}
+	if q.Dropped() != 1 {
+		t.Errorf("Dropped() = %d, want 1 after a full-queue drop", q.Dropped())
+	}
+}
+
+func TestCommandQueue_DuplicateDropIsObservable(t *testing.T) {
+	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
+
+	q.Enqueue("look", 0)
+	q.Enqueue("look", 0) // duplicate: dropped
+
+	if q.Dropped() != 1 {
+		t.Errorf("Dropped() = %d, want 1 after a duplicate drop", q.Dropped())
+	}
+}
+
+func TestCommandQueue_HighPriorityEvictsWhenFull(t *testing.T) {
+	q := NewCommandQueue(2, 900*time.Millisecond, 300*time.Millisecond, []string{"flee"})
+
+	q.Enqueue("look", 0)
+	q.Enqueue("north", 0) // queue full with normal commands
+	q.Enqueue("flee", 0)  // emergency: must be admitted by evicting a normal
+
+	if q.Len() != 2 {
+		t.Fatalf("Len() = %d, want 2", q.Len())
+	}
+	// flee jumps to the front; the newest normal command (north) is evicted.
+	cmd, _ := q.Dequeue()
+	if cmd.Command != "flee" {
+		t.Fatalf("front = %q, want flee (emergency command was dropped instead of admitted)", cmd.Command)
+	}
+	cmd, _ = q.Dequeue()
+	if cmd.Command != "look" {
+		t.Errorf("second = %q, want look (north should have been the evicted one)", cmd.Command)
+	}
+	if q.Dropped() != 1 {
+		t.Errorf("Dropped() = %d, want 1 (the evicted normal command)", q.Dropped())
+	}
+}
+
+func TestCommandQueue_NotifySignalsOnEnqueue(t *testing.T) {
+	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
+
+	// A fresh queue has not signalled yet.
+	select {
+	case <-q.Notify():
+		t.Fatal("Notify() fired before any enqueue")
+	default:
+	}
+
+	q.Enqueue("look", 0)
+
+	select {
+	case <-q.Notify():
+		// expected: enqueue woke a waiter
+	case <-time.After(time.Second):
+		t.Fatal("Notify() did not fire after Enqueue")
+	}
+}
+
+func TestCommandQueue_GenerationBumpsOnClear(t *testing.T) {
+	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
+
+	q.Enqueue("look", 0)
+	_, gen, ok := q.DequeueGen()
+	if !ok {
+		t.Fatal("DequeueGen returned false")
+	}
+
+	if q.Generation() != gen {
+		t.Fatalf("Generation() = %d, want %d (unchanged before Clear)", q.Generation(), gen)
+	}
+
+	q.Clear()
+
+	if q.Generation() == gen {
+		t.Fatal("Generation() did not advance after Clear; a mid-delay command could not be recalled")
+	}
+}
+
 func TestCommandQueue_DequeueEmptyQueue(t *testing.T) {
 	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
 

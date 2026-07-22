@@ -240,6 +240,26 @@ func TestInterpretSkoot_LightingPitchBlack(t *testing.T) {
 
 // --- Minimap rooms (channel 6) ---
 
+func TestInterpretSkoot_SkipsNonFiniteAndOutOfRangeRooms(t *testing.T) {
+	// Valid room, then NaN brightness, Inf brightness, huge x, and huge size —
+	// only the valid room survives; the payload is not rejected wholesale.
+	payload := "1,2,3,#fff,25," +
+		"4,5,3,#fff,NaN," +
+		"6,7,3,#fff,Inf," +
+		"999999,5,3,#fff,25," +
+		"8,9,99999,#fff,25"
+	ev := InterpretSkoot(6, payload)
+	if ev == nil {
+		t.Fatal("payload was rejected entirely; one bad room should not blank the map")
+	}
+	if len(ev.Rooms) != 1 {
+		t.Fatalf("rooms = %d, want 1 (bad entries skipped)", len(ev.Rooms))
+	}
+	if ev.Rooms[0].X != 1 || ev.Rooms[0].Brightness != 25 {
+		t.Errorf("kept the wrong room: %+v", ev.Rooms[0])
+	}
+}
+
 func TestInterpretSkoot_MinimapRooms(t *testing.T) {
 	ev := InterpretSkoot(6, "0,0,10,#ff0000,19.56,0,-10,10,#ffffff,37.8")
 	if ev == nil {

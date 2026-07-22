@@ -68,13 +68,21 @@ func (ps *PersistentStore) Load() (map[string]interface{}, error) {
 func (ps *PersistentStore) Save(data map[string]interface{}) error {
 	filePath := filepath.Join(ps.dataDir, persistentFileName)
 
-	var allUsers map[string]map[string]interface{}
+	allUsers := make(map[string]map[string]interface{})
 	raw, err := os.ReadFile(filePath)
 	if err == nil {
-		json.Unmarshal(raw, &allUsers) //nolint:errcheck
-	}
-	if allUsers == nil {
-		allUsers = make(map[string]map[string]interface{})
+		if uerr := json.Unmarshal(raw, &allUsers); uerr != nil {
+			// The existing file is corrupt. Merging from empty would drop every
+			// other account's persistent data on this write, so refuse — but
+			// preserve the original bytes in a .corrupt sidecar for recovery.
+			sidecar := filePath + ".corrupt"
+			if _, statErr := os.Stat(sidecar); os.IsNotExist(statErr) {
+				_ = os.WriteFile(sidecar, raw, 0644)
+			}
+			return fmt.Errorf("persistent state file corrupt (preserved at %s): %w", sidecar, uerr)
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("reading persistent state: %w", err)
 	}
 
 	allUsers[ps.username] = data
@@ -88,8 +96,31 @@ func (ps *PersistentStore) Save(data map[string]interface{}) error {
 		return fmt.Errorf("creating data dir: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, out, 0644); err != nil {
-		return fmt.Errorf("writing persistent state: %w", err)
+	// Atomic write: temp file in the same dir, fsync, rename over the target, so
+	// a crash mid-write can't truncate the shared multi-account file.
+	tmp, err := os.CreateTemp(ps.dataDir, ".persist-*.json.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp persistent state: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(out); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing temp persistent state: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("syncing temp persistent state: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp persistent state: %w", err)
+	}
+	if err := os.Chmod(tmpName, 0644); err != nil {
+		return fmt.Errorf("setting persistent state perms: %w", err)
+	}
+	if err := os.Rename(tmpName, filePath); err != nil {
+		return fmt.Errorf("replacing persistent state: %w", err)
 	}
 
 	return nil

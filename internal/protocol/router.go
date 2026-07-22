@@ -1,11 +1,21 @@
 package protocol
 
-import "strings"
+import (
+	"bytes"
+	"log"
+	"strings"
+)
+
+// maxPartialSize caps the un-terminated remainder the LineBuffer will hold. It
+// is orders of magnitude above any real game line; a server that never sends
+// \r\n would otherwise grow the buffer without bound (an OOM vector).
+const maxPartialSize = 1 << 20 // 1 MiB
 
 // LineBuffer accumulates partial WebSocket frames and splits on \r\n,
-// returning complete lines.
+// returning complete lines. Framing is byte-level, so a UTF-8 rune split across
+// two frames reassembles correctly.
 type LineBuffer struct {
-	partial string
+	partial []byte
 }
 
 // NewLineBuffer creates a new LineBuffer.
@@ -15,16 +25,25 @@ func NewLineBuffer() *LineBuffer {
 
 // Write appends data to the internal buffer and returns any complete lines
 // (terminated by \r\n). Trailing partial data is buffered for subsequent calls.
+// If the buffered remainder ever exceeds maxPartialSize with no terminator, it
+// is flushed as a single line (rather than dropped, so game text is never
+// silently lost) — this can split a multi-byte rune at the flush point in the
+// pathological >1 MiB-line case.
 func (lb *LineBuffer) Write(data []byte) []string {
-	lb.partial += string(data)
+	lb.partial = append(lb.partial, data...)
 	var lines []string
 	for {
-		idx := strings.Index(lb.partial, "\r\n")
+		idx := bytes.Index(lb.partial, []byte("\r\n"))
 		if idx < 0 {
 			break
 		}
-		lines = append(lines, lb.partial[:idx])
+		lines = append(lines, string(lb.partial[:idx]))
 		lb.partial = lb.partial[idx+2:]
+	}
+	if len(lb.partial) > maxPartialSize {
+		log.Printf("[PROTOCOL] flushing oversized partial line (%d bytes, no CRLF)", len(lb.partial))
+		lines = append(lines, string(lb.partial))
+		lb.partial = nil // release the large backing array
 	}
 	return lines
 }

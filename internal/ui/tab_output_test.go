@@ -1,11 +1,56 @@
 package ui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
+
+func TestOutputPane_ScrollUp_ClampsInsteadOfLatching(t *testing.T) {
+	p := NewOutputPane(1000)
+	p.SetSize(80, 5)
+	for i := 0; i < 20; i++ {
+		p.Append(plainSegment(fmt.Sprintf("line %d", i)))
+	}
+	p.View() // populate the row cache
+
+	p.ScrollUp(1000) // scroll far past the top
+	p.View()
+
+	// 20 rows, height 5 → maxScroll 15. The stored position must be clamped, not
+	// latched at 1000 (which makes wheel-down appear dead for hundreds of ticks).
+	if p.scrollPos != 15 {
+		t.Fatalf("scrollPos after over-scroll = %d, want 15 (clamped, not latched)", p.scrollPos)
+	}
+	p.ScrollDown(1)
+	if p.scrollPos != 14 {
+		t.Fatalf("ScrollDown did not move immediately: scrollPos = %d, want 14", p.scrollPos)
+	}
+}
+
+func TestOutputPane_ScrolledUp_StaysAnchoredOnAppend(t *testing.T) {
+	p := NewOutputPane(1000) // large cap: no trimming, isolates anchoring
+	p.SetSize(80, 5)
+	for i := 0; i < 30; i++ {
+		p.Append(plainSegment(fmt.Sprintf("line %d", i)))
+	}
+	p.View() // pane is rendered before the user scrolls (as it is every frame)
+	p.ScrollUp(10)
+	before := p.View()
+
+	// Text arriving below the viewport must not slide it toward newer content —
+	// you lose your place exactly when the game is noisy.
+	for i := 30; i < 80; i++ {
+		p.Append(plainSegment(fmt.Sprintf("line %d", i)))
+	}
+	after := p.View()
+
+	if before != after {
+		t.Errorf("viewport shifted while scrolled up during appends:\nbefore=%q\nafter=%q", before, after)
+	}
+}
 
 func plainSegment(text string) []types.StyledSegment {
 	return []types.StyledSegment{{Text: text}}
@@ -150,5 +195,21 @@ func TestOutputPane_AppendKeepsExistingMaxLinesBehavior(t *testing.T) {
 	}
 	if !strings.Contains(out, "line 2") || !strings.Contains(out, "line 3") {
 		t.Errorf("expected line 2 and line 3 to remain, got %q", out)
+	}
+}
+
+// BenchmarkOutputPane_FullRewrap measures a worst-case width-change re-wrap of a
+// full 5000-line scrollback (the cost the resize-rewrap concern is about).
+func BenchmarkOutputPane_FullRewrap(b *testing.B) {
+	p := NewOutputPane(5000)
+	p.SetSize(80, 40)
+	for i := 0; i < 5000; i++ {
+		p.Append(plainSegment("The quick brown fox jumps over the lazy dog and then keeps going a while."))
+	}
+	widths := []int{80, 79}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		p.SetSize(widths[i%2], 40) // width change invalidates the row cache
+		_ = p.View()               // forces a full re-wrap of all 5000 lines
 	}
 }

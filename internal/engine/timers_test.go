@@ -12,12 +12,76 @@ func newTestTimerManager(t *testing.T) (*TimerManager, *lua.LState, *sync.Mutex)
 	t.Helper()
 	L := lua.NewState()
 	mu := &sync.Mutex{}
-	tm := NewTimerManager(L, mu)
+	tm := NewTimerManager(L, mu, new(uint64))
 	t.Cleanup(func() {
 		tm.ClearAll()
 		L.Close()
 	})
 	return tm, L, mu
+}
+
+// A timer that fires while a mode switch is in flight (holding luaMu) must be
+// dropped once the switch bumps the generation, rather than executing old-mode
+// Lua against the new mode. This reproduces that race deterministically: the
+// test holds luaMu (as setModeLocked would) across the generation bump.
+func TestTimerManager_TimeoutDroppedAfterGenerationBump(t *testing.T) {
+	L := lua.NewState()
+	defer L.Close()
+	mu := &sync.Mutex{}
+	var gen uint64
+	tm := NewTimerManager(L, mu, &gen)
+	defer tm.ClearAll()
+
+	ran := make(chan struct{}, 1)
+
+	mu.Lock() // stand in for setModeLocked holding e.mu across the switch
+	cb := L.NewFunction(func(*lua.LState) int {
+		ran <- struct{}{}
+		return 0
+	})
+	tm.SetTimeout(cb, 10) // armed at generation 0
+
+	// Let the timer fire and block on luaMu, then advance the generation (the
+	// switch) before releasing the lock.
+	time.Sleep(60 * time.Millisecond)
+	gen++
+	mu.Unlock()
+
+	select {
+	case <-ran:
+		t.Fatal("timeout callback ran after the mode-switch generation bump")
+	case <-time.After(200 * time.Millisecond):
+		// expected: recalled
+	}
+}
+
+func TestTimerManager_IntervalStopsAfterGenerationBump(t *testing.T) {
+	L := lua.NewState()
+	defer L.Close()
+	mu := &sync.Mutex{}
+	var gen uint64
+	tm := NewTimerManager(L, mu, &gen)
+	defer tm.ClearAll()
+
+	ran := make(chan struct{}, 8)
+
+	mu.Lock()
+	cb := L.NewFunction(func(*lua.LState) int {
+		ran <- struct{}{}
+		return 0
+	})
+	tm.SetInterval(cb, 10) // armed at generation 0
+
+	time.Sleep(60 * time.Millisecond)
+	gen++
+	mu.Unlock()
+
+	select {
+	case <-ran:
+		t.Fatal("interval callback ran after the mode-switch generation bump")
+	case <-time.After(200 * time.Millisecond):
+		// expected: the interval goroutine exits instead of firing
+	}
 }
 
 func TestSetTimeout(t *testing.T) {

@@ -7,7 +7,9 @@
 - **Desktop GUI (primary)** — a [Wails](https://wails.io) application (Go backend + Svelte frontend) shipped as the `praetor` binary. This is the main application most users run.
 - **Terminal client (secondary)** — a Bubbletea/Lipgloss TUI shipped as the `praetor-tui` binary, for users who prefer a terminal or run headless/over SSH.
 
-Both shells are thin: all game logic — authentication, game interaction, automation via Lua scripting, minimap/compass rendering, config, and protocol handling — lives in the UI-agnostic core under `internal/`, so the two clients stay in lockstep.
+Both shells are thin: all game logic — authentication, game interaction, automation via Lua scripting, minimap/compass rendering, config, and protocol handling — lives in the UI-agnostic core under `internal/`, so the two clients share behavior at the core.
+
+**Client policy (core lockstep, frozen TUI shell):** Shared-core changes (`internal/` outside `internal/ui`) must keep **both** clients building and tested — `make check` covers the TUI, so every core change is verified against it. New **shell-level** features (GUI or TUI chrome, key bindings, modals) are **GUI-first**; the terminal client is feature-frozen, so porting a shell feature to the TUI is optional and demand-driven, not required. "Frozen" does **not** mean abandoned: TUI bugs still get fixed. Recent GUI-only shell features (numpad navigation, input spellcheck, Ctrl+F/Ctrl+R search, the update toast, the script-directory picker) reflect this policy.
 
 **Repository:** `github.com/cyber-godzilla/praetor`
 
@@ -138,9 +140,18 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 - Default: `~/.config/praetor/scripts/`
 - Hot reload via Esc → Reload Scripts — clears `package.loaded` cache so lib changes take effect
 - Timer support: `set_timeout(fn, ms)`, `set_interval(fn, ms)`, `clear_timer(id)` — auto-cancel on mode switch
+- **Execution deadline:** every entry into Lua (reaction action/condition, timer callback, on_start/on_stop, delayed action) is bounded by a 2s deadline (`scriptTimeout` in `engine/lua.go`). A runaway script (`while true do end`) aborts with a logged error and the engine keeps processing — it no longer wedges the whole pipeline. **Not yet sandboxed:** the full stdlib (`os`, `io`) is still exposed; curated shims / a per-directory trust flag are a planned follow-up (`state.persist` already removes the need for `io` in normal scripts).
 - Pattern matching in Go (substring + wildcard→regex), Lua only called on match
 - Action functions receive the matched text as first argument: `action = function(text)`
 - Mode names are resolved case-insensitively for `/mode`, `/sm`, and `set_mode` (the canonical stored name is used for `currentMode`, metrics, and events).
+- **Mode switch order:** the outgoing mode's pending queue is cleared *before* its `on_stop` runs, so `on_stop`'s own `send()`s (sheathe/stand cleanup) survive into the new mode instead of being wiped. Timers/state clear after `on_stop`.
+
+### Command Queue & Drainer
+
+- A single long-lived drainer goroutine per connection owns all sending (started/stopped with the connection lifecycle). Because it is the only sender, `min_interval` pacing is race-free and enqueue order is preserved across differing per-command delays. It drains on enqueue (a timer's `send()` goes out on an idle link) and drops a command a mode switch retired mid-delay (queue generation check).
+- The queue clears on both connect and disconnect, so commands the engine queues while offline never burst onto the next login.
+- Admission drops are observable (logged at warn, rate-limited; counted via `Dropped()`). A full queue drops a normal command, but a `high_priority` command instead **evicts** the newest normal command so emergency commands (stand/flee) aren't lost. Duplicate commands already queued are dropped.
+- Lifecycle events (connect/disconnect/mode change) are delivered guaranteed (never dropped under a text flood); bulk events (text/SKOOT/status) stay droppable. The engine's mode-change channel coalesces (latest mode wins).
 
 ### Lua API
 
@@ -211,6 +222,8 @@ With **NumLock OFF**, the numpad drives movement (NumLock ON types digits as usu
 | − | down | + | up | | |
 
 NumLock state is read from `e.key` (the digit/decimal keys report a navigation value like `ArrowUp` when NumLock is off), because WebKitGTK does not report NumLock via `getModifierState`. Numpad `+`/`−` always report `+`/`−` regardless of NumLock, so they always send up/down — type `+`/`−` from the main row.
+
+Held numpad movement keys **repeat** their command (hold to keep walking) — this is intentional. Held Enter in the command input, by contrast, does **not** repeat (guarded via `e.repeat` in InputLine) so it can't auto-fire blank/duplicate lines.
 
 Behavior is set by `ui.numpad_navigation` (Settings → Numpad navigation):
 

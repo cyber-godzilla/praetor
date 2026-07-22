@@ -84,6 +84,7 @@
     hint="Directories scanned for Lua modes. Reloads on save."
     initial={store.config?.Scripts ?? []}
     onsave={saveScriptDirs}
+    onBrowse={async () => (await api.pickScriptDir()) || null}
   />
 {:else if m === "priority"}
   <StringListModal

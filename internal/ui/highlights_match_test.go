@@ -41,6 +41,47 @@ func TestApplyHighlights_CaseFoldingRunesNoPanic(t *testing.T) {
 	}
 }
 
+// A highlight pattern must match across segment boundaries: colorwords splits a
+// line like "a gold ring" into separate styled segments ("gold" on its own), and
+// loot patterns very often contain color words. Per-segment matching silently
+// broke this — the feature's core use case.
+func TestApplyHighlights_MatchesAcrossSegmentBoundary(t *testing.T) {
+	segs := []types.StyledSegment{
+		{Text: "gold", Color: "#ffd700"}, // colorword segment
+		{Text: " ring"},
+	}
+	hl := []config.HighlightConfig{{Pattern: "gold ring", Style: "gold", Active: true}}
+	out := applyHighlights(segs, hl)
+
+	var hlText, all strings.Builder
+	for _, s := range out {
+		all.WriteString(s.Text)
+		if s.Color == "highlight:gold" {
+			hlText.WriteString(s.Text)
+		}
+	}
+	if hlText.String() != "gold ring" {
+		t.Errorf("cross-segment highlight covered %q, want %q", hlText.String(), "gold ring")
+	}
+	if all.String() != "gold ring" {
+		t.Errorf("segments reassemble to %q, want %q", all.String(), "gold ring")
+	}
+}
+
+func TestApplyHighlights_FirstConfiguredWinsOnOverlap(t *testing.T) {
+	segs := []types.StyledSegment{{Text: "gold ring"}}
+	hl := []config.HighlightConfig{
+		{Pattern: "gold ring", Style: "red", Active: true}, // configured first
+		{Pattern: "gold", Style: "green", Active: true},    // overlaps, configured later
+	}
+	out := applyHighlights(segs, hl)
+	for _, s := range out {
+		if s.Color == "highlight:green" {
+			t.Errorf("later-configured highlight won an overlap: %+v", out)
+		}
+	}
+}
+
 // A lowercase pattern must still match uppercase text and vice versa, with the
 // highlighted run landing on the right characters even after a length-changing
 // rune shifts byte positions.

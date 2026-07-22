@@ -115,19 +115,34 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 			tagContent := input[i+1 : i+end]
 			i = i + end + 1
 
-			// Self-closing tags like <br/>
-			if strings.HasSuffix(tagContent, "/") {
-				// Nothing to push/pop, just skip.
-				continue
+			// Tag name for void/hr checks: strip a self-closing "/" and any
+			// attributes, lowercased. This makes <hr>, <HR>, <hr/>, <hr /> all
+			// yield a rule, and catches void elements regardless of the "/" form.
+			bareName := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(tagContent), "/"))
+			if sp := strings.IndexByte(bareName, ' '); sp >= 0 {
+				bareName = bareName[:sp]
 			}
+			bareName = strings.ToLower(bareName)
 
-			// Handle <hr> as a horizontal rule segment.
-			if strings.EqualFold(strings.TrimSpace(tagContent), "hr") {
+			// <hr> in any form → horizontal rule segment.
+			if bareName == "hr" {
 				flushSeg()
 				segments = append(segments, types.StyledSegment{
 					IsHR: true,
 				})
 				result.HasHR = true
+				continue
+			}
+
+			// Void elements (br, img, input, …) never push onto the style stack —
+			// a bare <br> previously left a dangling open-tag entry. br is a no-op
+			// (TEC frames lines with \r\n; </pre>/hr carry the visible breaks).
+			if voidElements[bareName] {
+				continue
+			}
+
+			// Any other self-closing tag like <foo/>: skip without push/pop.
+			if strings.HasSuffix(tagContent, "/") {
 				continue
 			}
 
@@ -258,7 +273,9 @@ func parseTag(raw string) (string, map[string]string) {
 		if eqIdx < 0 {
 			break
 		}
-		key := strings.TrimSpace(rest[:eqIdx])
+		// Fold attribute keys so <FONT COLOR=…> matches attrs["color"] — tag names
+		// are already lowercased but keys were not, silently dropping styling.
+		key := strings.ToLower(strings.TrimSpace(rest[:eqIdx]))
 		rest = rest[eqIdx+1:]
 		rest = strings.TrimSpace(rest)
 		if len(rest) == 0 {
@@ -343,17 +360,59 @@ var namedColors = map[string]string{
 	"yellowgreen":      "#9acd32",
 }
 
-// resolveColor converts a color attribute value to a hex color string.
-// Handles both "#RRGGBB" hex format and named colors.
+// resolveColor converts a color attribute value to a strict hex color string.
+// It accepts "#RGB"/"#RRGGBB" hex (normalized to lowercase #RRGGBB) and a named
+// color from the allowlist; anything else returns "" (rendered unstyled). This
+// is the choke point that guarantees Segment.Color is always well-formed, so a
+// server-supplied font attribute can't smuggle extra CSS declarations into the
+// GUI's inline style attribute (CSS injection).
 func resolveColor(c string) string {
 	if strings.HasPrefix(c, "#") {
-		return c
+		return normalizeHexColor(c)
 	}
 	name := strings.ToLower(strings.TrimSpace(c))
 	if hex, ok := namedColors[name]; ok {
 		return hex
 	}
 	return ""
+}
+
+// normalizeHexColor validates a "#RGB"/"#RRGGBB" value and returns it as a
+// "#RRGGBB" hex color (original case preserved), or "" if it is not strictly a
+// hex color.
+func normalizeHexColor(c string) string {
+	raw := strings.TrimPrefix(c, "#")
+	switch len(raw) {
+	case 3:
+		out := []byte{'#', raw[0], raw[0], raw[1], raw[1], raw[2], raw[2]}
+		for i := 1; i < len(out); i++ {
+			if !isHexDigit(out[i]) {
+				return ""
+			}
+		}
+		return string(out)
+	case 6:
+		for i := 0; i < 6; i++ {
+			if !isHexDigit(raw[i]) {
+				return ""
+			}
+		}
+		return "#" + raw
+	default:
+		return ""
+	}
+}
+
+// voidElements are HTML elements that carry no content and must never be pushed
+// onto the style stack (they have no closing tag).
+var voidElements = map[string]bool{
+	"br": true, "img": true, "input": true, "meta": true, "link": true,
+	"area": true, "base": true, "col": true, "embed": true, "source": true,
+	"track": true, "wbr": true,
+}
+
+func isHexDigit(b byte) bool {
+	return (b >= '0' && b <= '9') || (b >= 'a' && b <= 'f') || (b >= 'A' && b <= 'F')
 }
 
 // brightenIfDark checks if a hex color is too dark for a dark terminal

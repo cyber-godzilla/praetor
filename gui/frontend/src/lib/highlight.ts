@@ -32,65 +32,100 @@ export function compileHighlights(rules: HighlightConfig[] | null | undefined): 
     });
 }
 
-// applyHighlights splits each segment at case-insensitive substring matches,
-// tagging matched runs with the highlight background/foreground. Non-matched
-// text keeps its original styling. Returns a new segment array.
+interface HSpan {
+  start: number;
+  end: number;
+  fg: string;
+  bg: string;
+}
+
+// applyHighlights matches highlight patterns against the WHOLE line first, then
+// splits the segment list at match edges. Matching per-segment (as before) meant
+// a pattern spanning a colorword/style boundary — "gold ring", where colorwords
+// puts "gold" in its own segment — never matched, silently breaking the
+// feature's core loot use case. Mirrors internal/ui/highlights.go.
 export function applyHighlights(segments: Segment[], highlights: CompiledHighlight[]): Segment[] {
   if (highlights.length === 0) return segments;
+
+  // Segment texts concatenate to the original line by construction.
+  const text = segments.map((s) => s.text).join("");
+  const spans = findHighlightSpans(text.toLowerCase(), highlights);
+  if (spans.length === 0) return segments;
+
   const out: Segment[] = [];
+  let pos = 0; // offset of the current segment's start within text
   for (const seg of segments) {
+    const segStart = pos;
+    const segEnd = pos + seg.text.length;
+    pos = segEnd;
     if (seg.isHR || !seg.text) {
       out.push(seg);
       continue;
     }
-    out.push(...splitSegment(seg, highlights));
+    let cur = segStart;
+    while (cur < segEnd) {
+      const sp = nextSpanOverlapping(spans, cur, segEnd);
+      if (!sp) {
+        out.push({ ...seg, text: text.slice(cur, segEnd) });
+        break;
+      }
+      if (sp.start > cur) {
+        out.push({ ...seg, text: text.slice(cur, sp.start) });
+        cur = sp.start;
+      }
+      const end = Math.min(sp.end, segEnd); // span may continue into the next segment
+      out.push({ ...seg, text: text.slice(cur, end), color: sp.fg, bg: sp.bg });
+      cur = end;
+    }
   }
   return out;
 }
 
-function splitSegment(seg: Segment, highlights: CompiledHighlight[]): Segment[] {
-  const text = seg.text;
-  const lower = text.toLowerCase();
-  const result: Segment[] = [];
-  let i = 0;
-  while (i < text.length) {
-    // Find the earliest match at or after i across all patterns.
-    let best = -1;
-    let bestLen = 0;
-    let bestHl: CompiledHighlight | null = null;
-    for (const hl of highlights) {
-      const idx = lower.indexOf(hl.pattern, i);
-      if (idx !== -1 && (best === -1 || idx < best)) {
-        best = idx;
-        bestLen = hl.pattern.length;
-        bestHl = hl;
+// findHighlightSpans returns non-overlapping match spans over the full (lowered)
+// line, in config-order precedence: an earlier-configured pattern's match wins
+// over a later one that would overlap it.
+function findHighlightSpans(lower: string, highlights: CompiledHighlight[]): HSpan[] {
+  const accepted: HSpan[] = [];
+  for (const hl of highlights) {
+    if (!hl.pattern) continue;
+    let offset = 0;
+    for (;;) {
+      const idx = lower.indexOf(hl.pattern, offset);
+      if (idx === -1) break;
+      const start = idx;
+      const end = idx + hl.pattern.length;
+      offset = end;
+      if (!accepted.some((s) => start < s.end && end > s.start)) {
+        accepted.push({ start, end, fg: hl.fg, bg: hl.bg });
       }
     }
-    if (best === -1 || !bestHl) {
-      result.push({ ...seg, text: text.slice(i) });
-      break;
-    }
-    if (best > i) {
-      result.push({ ...seg, text: text.slice(i, best) });
-    }
-    result.push({
-      ...seg,
-      text: text.slice(best, best + bestLen),
-      color: bestHl.fg,
-      bg: bestHl.bg,
-    });
-    i = best + bestLen;
   }
-  return result;
+  accepted.sort((a, b) => a.start - b.start);
+  return accepted;
+}
+
+function nextSpanOverlapping(spans: HSpan[], lo: number, hi: number): HSpan | null {
+  for (const s of spans) {
+    if (s.end > lo && s.start < hi) return s;
+  }
+  return null;
 }
 
 // IP masking: replace dotted-quad IPs with a masked form, mirroring hide_ips.
-const IP_RE = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+// Matches any dotted-decimal sequence of 2+ octets; the replacer masks only
+// true 4-octet quads, so a 5+-octet sequence (1.2.3.4.5) is left whole rather
+// than having its first four octets partially masked into a real-looking string.
+const IP_RE = /\b\d{1,3}(?:\.\d{1,3})+\b/g;
 
 export function maskIPs(segments: Segment[]): Segment[] {
-  return segments.map((seg) =>
-    seg.text && IP_RE.test(seg.text)
-      ? { ...seg, text: seg.text.replace(IP_RE, "***.***.***.***") }
-      : seg,
-  );
+  return segments.map((seg) => {
+    if (!seg.text) return seg;
+    const masked = seg.text.replace(IP_RE, (m) => {
+      const parts = m.split(".");
+      if (parts.length !== 4) return m; // not an IPv4
+      if (parts.some((p) => Number(p) > 255)) return m;
+      return "***.***.***.***";
+    });
+    return masked === seg.text ? seg : { ...seg, text: masked };
+  });
 }

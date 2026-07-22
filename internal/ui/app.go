@@ -17,6 +17,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/mattn/go-runewidth"
 )
 
 // Tab constants for special tab kinds (looked up by kind, not index).
@@ -1108,6 +1109,10 @@ func (a App) updateKudosMenu(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // handleEvent routes EventMsg to the appropriate components.
 func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 	var routedTabs uint64
+	// A menu-open event is deferred until the whole batch is processed: returning
+	// mid-loop discarded any game text queued behind it and the unread marks
+	// accumulated earlier in the batch. Last menu event in the batch wins.
+	var pendingMenu tea.Msg
 	for _, event := range msg.Events {
 		switch ev := event.(type) {
 
@@ -1185,13 +1190,13 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			a.status.SetConnected(false)
 
 		case types.WikiOpenMenuEvent:
-			return a.Update(MenuWikiMsg{})
+			pendingMenu = MenuWikiMsg{}
 
 		case types.MapsOpenMenuEvent:
-			return a.Update(MenuMapsMsg{})
+			pendingMenu = MenuMapsMsg{}
 
 		case types.CalcOpenMenuEvent:
-			return a.Update(MenuRBCalcMsg{})
+			pendingMenu = MenuRBCalcMsg{}
 		}
 	}
 
@@ -1202,6 +1207,12 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 				a.unread[i] = true
 			}
 		}
+	}
+
+	// Dispatch a deferred menu-open now that all text in the batch has been
+	// routed and unread marks applied.
+	if pendingMenu != nil {
+		return a.Update(pendingMenu)
 	}
 
 	return a, nil
@@ -1721,8 +1732,11 @@ func (a App) tabBarFingerprint() (unreadMask, visMask, nameSig uint64) {
 	return
 }
 
-// ipPattern matches IPv4 addresses in text.
-var ipPattern = regexp.MustCompile(`\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b`)
+// ipPattern matches any dotted-decimal sequence of two or more octets. The
+// replace func then masks only true 4-octet quads, so a 5+-octet sequence
+// (1.2.3.4.5) is captured whole and left untouched rather than having its first
+// four octets partially masked into a real-looking string.
+var ipPattern = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3})+\b`)
 
 // ipMaskCache maps real IPs to their fake replacements for session consistency.
 var ipMaskCache = make(map[string]string)
@@ -1737,8 +1751,11 @@ func maskIPs(segments []types.StyledSegment) []types.StyledSegment {
 			continue
 		}
 		masked := ipPattern.ReplaceAllStringFunc(seg.Text, func(ip string) string {
-			// Verify it's a real IP (all octets 0-255) before masking.
 			parts := strings.Split(ip, ".")
+			// Only a 4-octet quad with every octet 0-255 is a real IPv4.
+			if len(parts) != 4 {
+				return ip // 5+-octet sequence or too short — not an IPv4.
+			}
 			for _, p := range parts {
 				n, _ := strconv.Atoi(p)
 				if n > 255 {
@@ -1748,6 +1765,10 @@ func maskIPs(segments []types.StyledSegment) []types.StyledSegment {
 			// Return cached fake IP if we've seen this one before.
 			if fake, ok := ipMaskCache[ip]; ok {
 				return fake
+			}
+			// Bound the session cache; on overflow reset (a remap is acceptable).
+			if len(ipMaskCache) >= 1024 {
+				ipMaskCache = make(map[string]string)
 			}
 			// Generate impossible IP: each octet 256-999.
 			fake := strconv.Itoa(256+rand.Intn(744)) + "." +
@@ -1845,15 +1866,30 @@ func visibleWidth(s string) int {
 			i++
 			continue
 		}
-		// UTF-8 multibyte rune — count as one cell.
-		_, size := utf8.DecodeRuneInString(s[i:])
+		// UTF-8 multibyte rune — use its terminal cell width (CJK/emoji are 2,
+		// combining marks 0) so wrap and padding agree with the terminal.
+		r, size := utf8.DecodeRuneInString(s[i:])
 		if size <= 0 {
 			size = 1
 		}
-		width++
+		width += runeCellWidth(r)
 		i += size
 	}
 	return width
+}
+
+// runeCellWidth returns the terminal cell width of a rune. ASCII keeps the
+// zero-cost fast path (1); non-ASCII defers to go-runewidth so CJK/emoji count
+// as 2 and combining marks as 0. This is the single source of truth shared by
+// visibleWidth (padding) and renderSegments (wrap), so the two never disagree.
+// Perfect grapheme/ZWJ clustering is out of scope; runewidth-level correctness
+// covers the game's real content (residual multi-rune emoji sequences may
+// over/undercount by a cell).
+func runeCellWidth(r rune) int {
+	if r < 0x80 {
+		return 1
+	}
+	return runewidth.RuneWidth(r)
 }
 
 // renderAuthenticating shows a loading message during HTTP login.

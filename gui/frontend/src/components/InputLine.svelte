@@ -261,6 +261,10 @@
     // must never submit or navigate history. keyCode 229 covers WebKit quirks
     // where isComposing is false on the final composition keystroke.
     if (e.isComposing || e.keyCode === 229) return;
+    // Held Enter must not auto-fire repeated (blank/duplicate) submissions; the
+    // first press still submits. Numpad movement repeat is handled separately in
+    // GameView (hold-to-walk, intentional).
+    if (e.key === "Enter" && e.repeat) return;
     if (store.histSearchActive && rsKeydown(e)) return;
     if (e.key === "Enter") {
       e.preventDefault();

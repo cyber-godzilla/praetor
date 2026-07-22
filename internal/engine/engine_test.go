@@ -272,10 +272,156 @@ return M
 	// Switching to another mode should call on_stop
 	e.SetMode("other", nil)
 
-	// The cleanup command was sent then queue was cleared during mode switch,
-	// so we check that on_stop was called (no panic/error)
 	if e.CurrentMode() != "other" {
 		t.Errorf("CurrentMode() = %q, want 'other'", e.CurrentMode())
+	}
+
+	// on_stop's cleanup send must survive the switch: the outgoing mode's pending
+	// queue is cleared *before* on_stop runs, so on_stop's own sends (sheathe,
+	// stand, ...) reach the wire instead of being wiped immediately after.
+	cmd, ok := e.Queue().Dequeue()
+	if !ok {
+		t.Fatal("on_stop's cleanup command did not survive the mode switch")
+	}
+	if cmd.Command != "cleanup command" {
+		t.Errorf("surviving command = %q, want 'cleanup command'", cmd.Command)
+	}
+}
+
+func TestEngine_CloseFlushesPersistentStateSynchronously(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "saver", `
+local M = {}
+M.on_start = function(args)
+    state.persist("token")
+    state.set("token", "kept")
+end
+M.reactions = {}
+return M
+`)
+	dataDir := t.TempDir()
+
+	e, err := NewEngine([]string{modesDir, libDir}, nil, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	e.SetUsername("alice")
+	e.SetMode("saver", nil) // on_start persists token=kept and marks dirty
+
+	// Close must flush synchronously — the 5s debounce would otherwise lose this
+	// on quit.
+	e.Close()
+
+	e2, err := NewEngine([]string{modesDir, libDir}, nil, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine 2: %v", err)
+	}
+	defer e2.Close()
+	e2.SetUsername("alice")
+
+	v, ok := e2.State().GetValue("token")
+	if !ok {
+		t.Fatal("persistent key not loaded after Close flush (state lost on quit)")
+	}
+	if v.String() != "kept" {
+		t.Errorf("loaded persistent value = %q, want kept", v.String())
+	}
+}
+
+func TestEngine_SetMode_DeferredRecursionLandsOnTarget(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "a", `
+local M = {}
+M.on_start = function(args) set_mode("b") end
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "b", `
+local M = {}
+M.on_start = function(args) end
+M.reactions = {}
+return M
+`)
+	e := newTestEngine(t, modesDir, libDir)
+
+	e.SetMode("a", nil)
+
+	if e.CurrentMode() != "b" {
+		t.Fatalf("CurrentMode = %q, want b", e.CurrentMode())
+	}
+	// One deferred hop — not a deep recursion churning many metric sessions.
+	if n := len(e.Metrics().History()); n > 3 {
+		t.Fatalf("metrics history churned %d sessions for a single deferred switch", n)
+	}
+}
+
+func TestEngine_SetMode_PingPongCappedAndUsable(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "a", `
+local M = {}
+M.on_start = function(args) set_mode("b") end
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "b", `
+local M = {}
+M.on_start = function(args) set_mode("a") end
+M.reactions = {}
+return M
+`)
+	e := newTestEngine(t, modesDir, libDir)
+
+	e.SetMode("a", nil) // a↔b ping-pong: must cap, not recurse ~128 deep
+
+	// The loop is bounded, so the metric-session churn is small (well under the
+	// old ~128 / the 50-entry history cap).
+	if n := len(e.Metrics().History()); n > 12 {
+		t.Fatalf("mode-switch loop churned %d sessions; expected it to be capped", n)
+	}
+	// The engine remains usable after the capped loop.
+	e.SetMode("disable", nil)
+	if e.CurrentMode() != "disable" {
+		t.Fatalf("engine unusable after a capped switch loop: mode = %q", e.CurrentMode())
+	}
+}
+
+func TestEngine_ModeChanges_LatestWinsUnderFlood(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "alpha", `
+local M = {}
+M.on_start = function(args) end
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "beta", `
+local M = {}
+M.on_start = function(args) end
+M.reactions = {}
+return M
+`)
+
+	e := newTestEngine(t, modesDir, libDir)
+
+	// Flood past the mode-change channel's buffer with no reader draining, then
+	// switch to the final mode. The consumer only needs the latest state, so the
+	// final switch must not be the one that gets dropped.
+	for i := 0; i < 16; i++ {
+		e.SetMode("alpha", nil)
+	}
+	e.SetMode("beta", nil)
+
+	var last string
+	for {
+		select {
+		case mc := <-e.ModeChanges():
+			last = mc.NewMode
+			continue
+		default:
+		}
+		break
+	}
+	if last != "beta" {
+		t.Fatalf("last mode change seen = %q, want beta (final switch was dropped under flood)", last)
 	}
 }
 

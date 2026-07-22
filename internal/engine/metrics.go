@@ -44,11 +44,29 @@ func (ms *MetricSession) findEntry(key string) int {
 	return -1
 }
 
+// maxMetricsHistory caps retained completed sessions. A long session with
+// quick-cycle use (or a set_mode recursion) would otherwise grow history without
+// bound, and it is deep-read on every game line for the status update. 50 is
+// plenty for the Metrics tab.
+const maxMetricsHistory = 50
+
 // Metrics tracks mode-declared metrics with session history.
 type Metrics struct {
 	mu      sync.Mutex
 	current *MetricSession
 	history []MetricSession
+}
+
+// appendHistory adds a completed session, evicting the oldest when the cap is
+// reached. It compacts in place so the backing array stays bounded at the cap.
+// Caller holds m.mu.
+func (m *Metrics) appendHistory(s MetricSession) {
+	if len(m.history) >= maxMetricsHistory {
+		copy(m.history, m.history[1:])
+		m.history[len(m.history)-1] = s
+		return
+	}
+	m.history = append(m.history, s)
 }
 
 // NewMetrics creates a new Metrics tracker.
@@ -64,7 +82,7 @@ func (m *Metrics) StartSession(mode string) {
 
 	if m.current != nil {
 		m.current.EndTime = time.Now()
-		m.history = append(m.history, *m.current)
+		m.appendHistory(*m.current)
 	}
 
 	m.current = &MetricSession{
@@ -83,7 +101,7 @@ func (m *Metrics) EndSession() {
 	}
 
 	m.current.EndTime = time.Now()
-	m.history = append(m.history, *m.current)
+	m.appendHistory(*m.current)
 	m.current = nil
 }
 

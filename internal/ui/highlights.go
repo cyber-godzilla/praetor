@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -158,7 +159,7 @@ func (hm HighlightsManager) updateEditing(msg tea.KeyMsg) (HighlightsManager, te
 
 	case tea.KeyBackspace:
 		if len(hm.editBuf) > 0 {
-			hm.editBuf = hm.editBuf[:len(hm.editBuf)-1]
+			hm.editBuf = textutil.TrimLastRune(hm.editBuf)
 		}
 		return hm, nil
 
@@ -249,8 +250,16 @@ func (hm HighlightsManager) View() string {
 		boxStyle.Render(b.String()))
 }
 
-// applyHighlights splits styled segments where highlight patterns match,
-// applying the highlight style to matched portions.
+type highlightSpan struct {
+	start, end int
+	style      string
+}
+
+// applyHighlights matches highlight patterns against the WHOLE line first, then
+// splits the segment list at match edges. Matching per-segment (as before) meant
+// a pattern spanning a colorword/style boundary — "gold ring", where colorwords
+// puts "gold" in its own segment — never matched, silently breaking the
+// feature's core loot use case.
 func applyHighlights(segments []types.StyledSegment, highlights []config.HighlightConfig) []types.StyledSegment {
 	// Collect active highlights.
 	var active []config.HighlightConfig
@@ -263,36 +272,72 @@ func applyHighlights(segments []types.StyledSegment, highlights []config.Highlig
 		return segments
 	}
 
-	var result []types.StyledSegment
+	// Reassemble the full line; segment texts concatenate to it by construction.
+	var full strings.Builder
 	for _, seg := range segments {
-		result = append(result, splitSegment(seg, active)...)
+		full.WriteString(seg.Text)
+	}
+	text := full.String()
+
+	spans := findHighlightSpans(textutil.ToLowerASCII(text), active)
+	if len(spans) == 0 {
+		return segments
+	}
+
+	// Walk segments, splitting each at the span boundaries that fall inside it.
+	var result []types.StyledSegment
+	pos := 0 // byte offset of the current segment's start within text
+	for _, seg := range segments {
+		segStart := pos
+		segEnd := pos + len(seg.Text)
+		pos = segEnd
+
+		if seg.IsHR || seg.Text == "" {
+			result = append(result, seg)
+			continue
+		}
+
+		cur := segStart
+		for cur < segEnd {
+			sp := nextSpanOverlapping(spans, cur, segEnd)
+			if sp == nil {
+				result = append(result, sliceStyled(seg, text[cur:segEnd]))
+				break
+			}
+			if sp.start > cur {
+				result = append(result, sliceStyled(seg, text[cur:sp.start]))
+				cur = sp.start
+			}
+			end := sp.end
+			if end > segEnd {
+				end = segEnd // span continues into the next segment
+			}
+			result = append(result, types.StyledSegment{
+				Text:      text[cur:end],
+				Bold:      true,
+				Italic:    seg.Italic,
+				Underline: true,
+				Color:     "highlight:" + sp.style,
+			})
+			cur = end
+		}
 	}
 	return result
 }
 
-// splitSegment splits a single segment wherever highlight patterns match.
-func splitSegment(seg types.StyledSegment, highlights []config.HighlightConfig) []types.StyledSegment {
-	if seg.IsHR || seg.Text == "" {
-		return []types.StyledSegment{seg}
-	}
-
-	text := seg.Text
-	// Length-preserving ASCII fold (not strings.ToLower): match offsets index
-	// into the original text below, so a case fold that changed byte length
-	// (Ⱥ, İ) would slice out of range or tear runes. Folding the pattern the
-	// same way keeps len(pattern) == len(h.Pattern), so `start + len(pattern)`
-	// is a valid range. See internal/textutil.ToLowerASCII.
-	lower := textutil.ToLowerASCII(text)
-
-	// Find all match ranges.
-	type matchRange struct {
-		start, end int
-		style      string
-	}
-	var matches []matchRange
-
+// findHighlightSpans returns non-overlapping match spans over the (length-
+// preserving folded) full line. Precedence is config order: an earlier-
+// configured pattern's match wins over a later pattern that would overlap it.
+// The ASCII fold keeps byte offsets valid against the original text (a fold that
+// changed byte length would slice out of range or tear a rune — see
+// internal/textutil.ToLowerASCII).
+func findHighlightSpans(lower string, highlights []config.HighlightConfig) []highlightSpan {
+	var accepted []highlightSpan
 	for _, h := range highlights {
 		pattern := textutil.ToLowerASCII(h.Pattern)
+		if pattern == "" {
+			continue
+		}
 		offset := 0
 		for {
 			idx := strings.Index(lower[offset:], pattern)
@@ -301,69 +346,39 @@ func splitSegment(seg types.StyledSegment, highlights []config.HighlightConfig) 
 			}
 			start := offset + idx
 			end := start + len(pattern)
-			matches = append(matches, matchRange{start, end, h.Style})
 			offset = end
+			if !overlapsAny(accepted, start, end) {
+				accepted = append(accepted, highlightSpan{start, end, h.Style})
+			}
 		}
 	}
+	sort.Slice(accepted, func(i, j int) bool { return accepted[i].start < accepted[j].start })
+	return accepted
+}
 
-	if len(matches) == 0 {
-		return []types.StyledSegment{seg}
-	}
-
-	// Sort matches by start position. Simple insertion sort (few matches expected).
-	for i := 1; i < len(matches); i++ {
-		j := i
-		for j > 0 && matches[j].start < matches[j-1].start {
-			matches[j], matches[j-1] = matches[j-1], matches[j]
-			j--
+func overlapsAny(spans []highlightSpan, start, end int) bool {
+	for _, s := range spans {
+		if start < s.end && end > s.start {
+			return true
 		}
 	}
+	return false
+}
 
-	// Remove overlapping matches (keep first).
-	var filtered []matchRange
-	lastEnd := 0
-	for _, m := range matches {
-		if m.start >= lastEnd {
-			filtered = append(filtered, m)
-			lastEnd = m.end
+// nextSpanOverlapping returns the first span (spans are sorted by start) that
+// overlaps [lo, hi), or nil if none do.
+func nextSpanOverlapping(spans []highlightSpan, lo, hi int) *highlightSpan {
+	for i := range spans {
+		if spans[i].end > lo && spans[i].start < hi {
+			return &spans[i]
 		}
 	}
+	return nil
+}
 
-	// Split text into segments.
-	var result []types.StyledSegment
-	pos := 0
-	for _, m := range filtered {
-		// Text before match — keeps original style.
-		if m.start > pos {
-			result = append(result, types.StyledSegment{
-				Text:      text[pos:m.start],
-				Bold:      seg.Bold,
-				Italic:    seg.Italic,
-				Underline: seg.Underline,
-				Color:     seg.Color,
-			})
-		}
-		// Matched text — uses highlight style.
-		// We store the highlight style name in the Color field with a special prefix.
-		result = append(result, types.StyledSegment{
-			Text:      text[m.start:m.end],
-			Bold:      true,
-			Italic:    seg.Italic,
-			Underline: true,
-			Color:     "highlight:" + m.style,
-		})
-		pos = m.end
-	}
-	// Remaining text after last match.
-	if pos < len(text) {
-		result = append(result, types.StyledSegment{
-			Text:      text[pos:],
-			Bold:      seg.Bold,
-			Italic:    seg.Italic,
-			Underline: seg.Underline,
-			Color:     seg.Color,
-		})
-	}
-
-	return result
+// sliceStyled returns a copy of seg carrying s as its text and all of seg's
+// original style fields.
+func sliceStyled(seg types.StyledSegment, s string) types.StyledSegment {
+	seg.Text = s
+	return seg
 }

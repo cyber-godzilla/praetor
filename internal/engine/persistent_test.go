@@ -8,6 +8,36 @@ import (
 	"time"
 )
 
+func TestPersistentStore_Save_CorruptFileDoesNotClobber(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, persistentFileName)
+
+	// Two users on disk, then the file gets corrupted.
+	if err := os.WriteFile(path, []byte(`{"alice":{"k":1},"bob":{"k":2}}`), 0644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(`{corrupt`), 0644); err != nil {
+		t.Fatalf("corrupt: %v", err)
+	}
+
+	ps := NewPersistentStore(dir, "alice")
+	if err := ps.Save(map[string]interface{}{"k": 99}); err == nil {
+		t.Fatal("Save over a corrupt file succeeded; every other account's data would be dropped")
+	}
+
+	// Evidence preserved in a sidecar, and the live file untouched (not clobbered).
+	if _, err := os.Stat(path + ".corrupt"); err != nil {
+		t.Errorf("no .corrupt sidecar preserving the original bytes: %v", err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read live file: %v", err)
+	}
+	if string(raw) != `{corrupt` {
+		t.Errorf("live file was overwritten: %q", raw)
+	}
+}
+
 func TestPersistentStore_SaveAndLoad(t *testing.T) {
 	dir := t.TempDir()
 	store := NewPersistentStore(dir, "TestUser")

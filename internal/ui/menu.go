@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 )
 
 // Menu action messages.
@@ -194,7 +195,7 @@ func (m Menu) updatePathEdit(msg tea.KeyMsg) (Menu, tea.Cmd) {
 
 	case tea.KeyBackspace:
 		if len(m.pathBuf) > 0 {
-			m.pathBuf = m.pathBuf[:len(m.pathBuf)-1]
+			m.pathBuf = textutil.TrimLastRune(m.pathBuf)
 		}
 		return m, nil
 

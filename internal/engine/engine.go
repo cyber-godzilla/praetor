@@ -34,6 +34,9 @@ type Engine struct {
 	dataDir      string
 	persistStore *PersistentStore
 	actionGen    uint64 // incremented on mode switch/reload to cancel stale delayed actions
+
+	inSwitch bool           // true while setModeLocked's on_start/on_stop are running
+	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -70,7 +73,7 @@ func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine
 	}
 
 	L := vm.State()
-	e.timers = NewTimerManager(L, &e.mu)
+	e.timers = NewTimerManager(L, &e.mu, &e.actionGen)
 	RegisterBridge(L, e, e.status, e.timers)
 	RegisterStateAPI(L, e.state)
 
@@ -139,8 +142,11 @@ func (e *Engine) Close() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	// Shutdown (not ClearAll): the VM is closing, so mark the manager dead so
-	// no in-flight timer goroutine calls into the closed Lua state.
+	// no in-flight timer goroutine calls into the closed Lua state. Also advance
+	// the generation so any timer/action mid-flight is retired even if it somehow
+	// slips past the closed check.
 	e.timers.Shutdown()
+	e.actionGen++
 	if e.modeChangeCh != nil {
 		close(e.modeChangeCh)
 		e.modeChangeCh = nil
@@ -150,12 +156,48 @@ func (e *Engine) Close() {
 	}
 }
 
+// maxModeSwitchHops caps deferred set_mode chains so a self-referential or
+// ping-ponging on_start/on_stop can't churn (previously ~128 nested switches,
+// each ending/starting a metric session, before gopher-lua's stack overflow).
+const maxModeSwitchHops = 8
+
+type pendingSwitch struct {
+	name string
+	args []string
+}
+
 // SetMode switches to a new mode, running on_stop on the previous mode and
 // on_start on the new mode.
 func (e *Engine) SetMode(name string, args []string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.setModeLocked(name, args)
+	e.runSwitch(name, args)
+}
+
+// runSwitch performs a mode switch and then applies any switch that on_start/
+// on_stop requested via set_mode (deferred, last-writer-wins), iteratively
+// rather than recursively. The chain is capped; exceeding it logs a loop error
+// and stops, leaving the engine on the last completed mode and usable.
+func (e *Engine) runSwitch(name string, args []string) {
+	hops := 0
+	for {
+		e.inSwitch = true
+		e.setModeLocked(name, args)
+		e.inSwitch = false
+
+		if e.pending == nil {
+			return
+		}
+		next := e.pending
+		e.pending = nil
+		hops++
+		if hops > maxModeSwitchHops {
+			log.Printf("[ENGINE] mode switch loop detected (>%d hops); stopping at %q, ignoring pending %q",
+				maxModeSwitchHops, e.currentMode, next.name)
+			return
+		}
+		name, args = next.name, next.args
+	}
 }
 
 // setModeLocked performs the mode switch while the lock is already held.
@@ -172,9 +214,16 @@ func (e *Engine) setModeLocked(name string, args []string) {
 		}
 	}
 
+	// Discard the outgoing mode's still-pending commands *before* running its
+	// on_stop, so on_stop's own cleanup sends (sheathe/stand patterns) survive
+	// into the new mode's queue instead of being enqueued and then wiped. The
+	// generation bump inside Clear() also lets the drainer recall any old-mode
+	// command it dequeued but is still sleeping on.
+	e.queue.Clear()
+
 	// Call on_stop on previous mode
 	if e.modeObj != nil && e.modeObj.HasOnStop && e.modeObj.onStopRef != nil {
-		if err := L.CallByParam(lua.P{
+		if err := callLua(L, lua.P{
 			Fn:      e.modeObj.onStopRef,
 			NRet:    0,
 			Protect: true,
@@ -192,17 +241,29 @@ func (e *Engine) setModeLocked(name string, args []string) {
 
 	prevMode := e.currentMode
 
-	// Clear state and queue
+	// Clear state (on_stop above has already run against the old state).
 	e.state.Clear()
-	e.queue.Clear()
 
 	// Set new mode
 	e.currentMode = name
 
-	// Notify listeners about the mode change (non-blocking).
+	// Notify listeners about the mode change. This channel is coalescing: a
+	// consumer only needs the latest mode, so when the buffer is full we drop the
+	// OLDEST pending change to make room for this one. That guarantees the final
+	// mode of a rapid set_mode burst always lands (dropping intermediate ones is
+	// fine) instead of the newest being the one discarded.
+	mc := ModeChange{NewMode: name, PrevMode: prevMode}
 	select {
-	case e.modeChangeCh <- ModeChange{NewMode: name, PrevMode: prevMode}:
+	case e.modeChangeCh <- mc:
 	default:
+		select {
+		case <-e.modeChangeCh:
+		default:
+		}
+		select {
+		case e.modeChangeCh <- mc:
+		default:
+		}
 	}
 
 	if name == "" || name == "disable" {
@@ -233,7 +294,7 @@ func (e *Engine) setModeLocked(name string, args []string) {
 			argsTbl.RawSetInt(i+1, lua.LString(arg))
 		}
 
-		if err := L.CallByParam(lua.P{
+		if err := callLua(L, lua.P{
 			Fn:      mode.onStartRef,
 			NRet:    0,
 			Protect: true,
@@ -263,7 +324,7 @@ func (e *Engine) Process(text string) {
 
 		// Check condition if present
 		if reaction.HasCondition && reaction.conditionRef != nil {
-			if err := L.CallByParam(lua.P{
+			if err := callLua(L, lua.P{
 				Fn:      reaction.conditionRef,
 				NRet:    1,
 				Protect: true,
@@ -293,7 +354,7 @@ func (e *Engine) Process(text string) {
 				if e.actionGen != gen {
 					return // mode switched or VM reloaded — discard stale action
 				}
-				if err := L.CallByParam(lua.P{
+				if err := callLua(L, lua.P{
 					Fn:      actionRef,
 					NRet:    0,
 					Protect: true,
@@ -302,7 +363,7 @@ func (e *Engine) Process(text string) {
 				}
 			}()
 		} else {
-			if err := L.CallByParam(lua.P{
+			if err := callLua(L, lua.P{
 				Fn:      reaction.actionRef,
 				NRet:    0,
 				Protect: true,
@@ -386,7 +447,7 @@ func (e *Engine) rebuildVM(dirs []string) error {
 
 	newVM := NewLuaVM(dirs)
 	L := newVM.State()
-	e.timers = NewTimerManager(L, &e.mu)
+	e.timers = NewTimerManager(L, &e.mu, &e.actionGen)
 	RegisterBridge(L, e, e.status, e.timers)
 	RegisterStateAPI(L, e.state)
 
@@ -451,11 +512,16 @@ func (e *Engine) OnSend(command string, delayMs int) {
 	e.queue.Enqueue(command, delayMs)
 }
 
-// OnSetMode switches to a new mode. Called from Lua while e.mu is held
-// (during Process or on_start). Since setModeLocked also expects the lock
-// held, we can call it directly without unlock/relock.
+// OnSetMode switches to a new mode. Called from Lua while e.mu is held (during
+// Process, on_start, or on_stop). A set_mode issued *during* an active switch is
+// deferred (recorded, last-writer-wins) and applied by runSwitch once the current
+// switch finishes, so a recursive/ping-ponging on_start can't blow the stack.
 func (e *Engine) OnSetMode(mode string, args []string) {
-	e.setModeLocked(mode, args)
+	if e.inSwitch {
+		e.pending = &pendingSwitch{name: mode, args: args}
+		return
+	}
+	e.runSwitch(mode, args)
 }
 
 // OnNotify logs a notification.

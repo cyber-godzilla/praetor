@@ -1,8 +1,32 @@
 package ui
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/cyber-godzilla/praetor/internal/types"
 )
+
+func TestVisibleWidth_WideRunes(t *testing.T) {
+	if got := visibleWidth("漢"); got != 2 {
+		t.Errorf("visibleWidth(漢) = %d, want 2 (CJK is a double-width cell)", got)
+	}
+	// a,b,c = 1 each; 漢 = 2 → 5 cells.
+	if got := visibleWidth("ab漢c"); got != 5 {
+		t.Errorf("visibleWidth(ab漢c) = %d, want 5", got)
+	}
+}
+
+func TestRenderSegments_WrapsWideRunesAtCellWidth(t *testing.T) {
+	// 5 CJK glyphs = 10 terminal cells. At a pane width of 6 this must wrap; a
+	// rune-counting implementation sees only 5 "columns" and never breaks,
+	// overflowing the pane and pushing the sidebar out of alignment.
+	seg := []types.StyledSegment{{Text: "漢漢漢漢漢"}}
+	out := renderSegments(seg, 6)
+	if !strings.Contains(out, "\n") {
+		t.Errorf("wide-rune line did not wrap at cell width: %q", out)
+	}
+}
 
 // newTabBarTestApp builds a minimal App with just the fields renderTabBar
 // reads. The full NewApp constructor takes 27 arguments and pulls in

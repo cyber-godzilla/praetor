@@ -16,6 +16,10 @@ import type {
 } from "./types";
 import { Kind } from "./types";
 
+// Extra lines the scrollback buffer may hold above the configured cap before a
+// front-trim runs, so the O(n) keyed-each reconciliation amortizes over a burst.
+const TRIM_CHUNK = 256;
+
 export type Screen = "loading" | "account" | "login" | "connecting" | "game";
 export type TabKind = "all" | "custom" | "metrics" | "debug";
 
@@ -219,7 +223,12 @@ class AppStore {
   private appendLine(tab: Tab, line: Line, marksUnread = false) {
     tab.lines.push(line);
     const cap = this.scrollback;
-    if (cap > 0 && tab.lines.length > cap) {
+    // Batch the front-trim: only trim once the buffer exceeds cap + TRIM_CHUNK,
+    // then drop back to cap. Trimming one line per append (splice from the front)
+    // triggers an O(n) reconciliation of the keyed {#each} on every append during
+    // a burst; batching amortizes that cost over TRIM_CHUNK appends. The buffer
+    // holds at most cap + TRIM_CHUNK lines (slightly more history, never less).
+    if (cap > 0 && tab.lines.length > cap + TRIM_CHUNK) {
       tab.lines.splice(0, tab.lines.length - cap);
     }
     if (marksUnread && this.tabs[this.activeTab] !== tab) tab.unread = true;

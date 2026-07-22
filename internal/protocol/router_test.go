@@ -1,10 +1,36 @@
 package protocol
 
 import (
+	"strings"
 	"testing"
 )
 
 // --- LineBuffer Tests ---
+
+func TestLineBuffer_FlushesOversizedPartial(t *testing.T) {
+	lb := NewLineBuffer()
+
+	// Feed well over the 1 MiB cap with no CRLF, across several frames. An
+	// unbounded buffer would accumulate forever (OOM vector); the cap must flush
+	// the oversized partial as a line instead.
+	chunk := strings.Repeat("A", 256*1024)
+	var got []string
+	// 5 × 256 KiB = 1.25 MiB: the cap is crossed on the final write, which flushes
+	// and clears the buffer (a residual from a later frame would legitimately
+	// prepend to the next line).
+	for i := 0; i < 5; i++ {
+		got = append(got, lb.Write([]byte(chunk))...)
+	}
+	if len(got) == 0 {
+		t.Fatal("oversized partial was never flushed; the buffer grows without bound")
+	}
+
+	// The buffer must keep working after a flush: a subsequent normal line parses.
+	lines := lb.Write([]byte("normal line\r\n"))
+	if len(lines) != 1 || lines[0] != "normal line" {
+		t.Fatalf("line after an oversized flush did not parse: %v", lines)
+	}
+}
 
 func TestLineBuffer_PartialLine_NoEmission(t *testing.T) {
 	lb := NewLineBuffer()

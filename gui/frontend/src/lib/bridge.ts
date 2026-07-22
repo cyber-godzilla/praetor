@@ -105,6 +105,7 @@ export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", un
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);
 export const setIgnoreThink = (n: string[]) => call<void>("SetIgnoreThink", undefined, n);
 export const setScriptDirs = (d: string[]) => call<void>("SetScriptDirs", undefined, d);
+export const pickScriptDir = () => call<string>("PickScriptDir", "");
 export const setNotifications = (c: DesktopNotificationsConfig) =>
   call<void>("SetNotifications", undefined, c);
 

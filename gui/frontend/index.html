@@ -3,6 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content-Security-Policy: second line of defense against CSS injection via
+      server-supplied font colors. img-src 'self' data: allows the minimap/compass
+      base64 PNGs but blocks a `background:url(http://evil)` beacon; connect-src
+      and default-src block other outbound fetches. script-src stays permissive so
+      the Wails v2 runtime bridge keeps working (game text can't execute script —
+      all rendering goes through escaped Svelte text). style-src needs
+      'unsafe-inline' for Svelte's scoped styles and our inline segment colors.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ws: wss:"
+    />
     <title>Praetor</title>
   </head>
   <body>

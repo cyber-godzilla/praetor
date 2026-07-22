@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/cyber-godzilla/praetor/internal/textutil"
 )
 
 // IgnorelistKind selects which list this screen edits. The kind
@@ -145,7 +146,7 @@ func (s IgnorelistScreen) Update(msg tea.KeyMsg) (IgnorelistScreen, tea.Cmd) {
 			return s, nil
 		case tea.KeyBackspace:
 			if len(s.addBuf) > 0 {
-				s.addBuf = s.addBuf[:len(s.addBuf)-1]
+				s.addBuf = textutil.TrimLastRune(s.addBuf)
 			}
 			return s, nil
 		case tea.KeyRunes:

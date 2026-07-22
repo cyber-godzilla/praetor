@@ -2,10 +2,16 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"sort"
+	"sync"
 
 	"github.com/zalando/go-keyring"
 )
+
+// keyringMu serializes the read-modify-write cycle in SetAccount/RemoveAccount
+// so two concurrent writers can't lose each other's update.
+var keyringMu sync.Mutex
 
 const (
 	keyringService    = "praetor"
@@ -46,7 +52,11 @@ func (k *KeyringStore) loadAccounts() (map[string]string, error) {
 	}
 	var accounts map[string]string
 	if err := json.Unmarshal([]byte(raw), &accounts); err != nil {
-		return make(map[string]string), nil
+		// A corrupt/truncated blob must NOT read as "no accounts stored" — the
+		// next SetAccount would then overwrite the entry and permanently destroy
+		// every other account's credentials. Surface the error so callers refuse
+		// to write and the UI can tell the user to re-store to repair.
+		return nil, fmt.Errorf("keyring blob corrupt: %w", err)
 	}
 	return accounts, nil
 }
@@ -89,6 +99,8 @@ func (k *KeyringStore) GetAccount(username string) (string, error) {
 
 // SetAccount stores the username and password.
 func (k *KeyringStore) SetAccount(username, password string) error {
+	keyringMu.Lock()
+	defer keyringMu.Unlock()
 	accounts, err := k.loadAccounts()
 	if err != nil {
 		return err
@@ -99,6 +111,8 @@ func (k *KeyringStore) SetAccount(username, password string) error {
 
 // RemoveAccount removes the given username from the store.
 func (k *KeyringStore) RemoveAccount(username string) error {
+	keyringMu.Lock()
+	defer keyringMu.Unlock()
 	accounts, err := k.loadAccounts()
 	if err != nil {
 		return err

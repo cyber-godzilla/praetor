@@ -4,6 +4,7 @@
   import type { Segment } from "../lib/types";
   import { applyHighlights, compileHighlights, maskIPs, SEARCH_STYLE } from "../lib/highlight";
   import { matchingLineIds, stepIndex } from "../lib/search";
+  import { safeColor } from "../lib/color";
   import {
     followBandPx,
     gapToBottom,
@@ -279,10 +280,14 @@
 
   function segStyle(s: Segment): string {
     const parts: string[] = [];
-    if (s.color) parts.push(`color:${s.color}`);
+    // Sanitize colors before they reach the inline style attribute (defense in
+    // depth on top of the Go protocol layer's validation) — see safeColor.
+    const color = safeColor(s.color);
+    if (color) parts.push(`color:${color}`);
     // Background only — no padding/radius, so a highlight tints the exact
     // character cells like the TUI and doesn't add horizontal space.
-    if (s.bg) parts.push(`background:${s.bg}`);
+    const bg = safeColor(s.bg);
+    if (bg) parts.push(`background:${bg}`);
     if (s.bold) parts.push("font-weight:700");
     if (s.italic) parts.push("font-style:italic");
     if (s.underline) parts.push("text-decoration:underline");

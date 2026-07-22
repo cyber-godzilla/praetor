@@ -8,11 +8,16 @@
     hint,
     initial,
     onsave,
+    onBrowse,
   }: {
     title: string;
     hint?: string;
     initial: string[];
     onsave: (values: string[]) => Promise<void>;
+    // Optional native folder picker. When provided, a "Browse…" button appears
+    // and its non-empty result is appended (deduped). Other users of this modal
+    // (ignore lists, high-priority commands) omit it and show no button.
+    onBrowse?: () => Promise<string | null>;
   } = $props();
 
   // Seed once from the prop; the editor owns the list thereafter.
@@ -26,6 +31,11 @@
   }
   function remove(i: number) {
     items = items.filter((_, idx) => idx !== i);
+  }
+  async function browse() {
+    if (!onBrowse) return;
+    const v = await onBrowse();
+    if (v && !items.includes(v)) items = [...items, v];
   }
 
   async function save() {
@@ -54,6 +64,7 @@
     <input type="text" bind:value={draft} placeholder="Add…"
       onkeydown={(e) => e.key === "Enter" && add()} />
     <button onclick={add}>Add</button>
+    {#if onBrowse}<button onclick={browse}>Browse…</button>{/if}
   </div>
 </Modal>
 

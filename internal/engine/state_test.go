@@ -6,6 +6,27 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+func TestModeState_ClearsMarkPersistDirty(t *testing.T) {
+	ms := NewModeState()
+	var dirty int
+	ms.SetOnPersistDirty(func() { dirty++ })
+
+	// Clearing persistent data must mark the store dirty so the explicit Flush the
+	// UIs run actually writes the deletion — otherwise cleared keys resurrect from
+	// disk on next launch.
+	dirty = 0
+	ms.ClearPersistentKey("anything")
+	if dirty != 1 {
+		t.Errorf("ClearPersistentKey dirty notifications = %d, want 1", dirty)
+	}
+
+	dirty = 0
+	ms.ClearAllPersistent()
+	if dirty != 1 {
+		t.Errorf("ClearAllPersistent dirty notifications = %d, want 1", dirty)
+	}
+}
+
 func newTestLuaWithState(t *testing.T) (*lua.LState, *ModeState) {
 	t.Helper()
 	L := lua.NewState()

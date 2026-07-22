@@ -105,8 +105,22 @@ func (a *GuiApp) eventLoop() {
 // wire events, then emits them.
 func (a *GuiApp) processBatch(batch []types.Event) {
 	wire := make([]WireEvent, 0, len(batch))
+	// Once a disconnect is seen, drop in-game events for the rest of the batch so
+	// a trailing SKOOT/text doesn't repopulate the just-reset caches. A Connected
+	// event later in the same batch (reconnect) re-enables them. Mirrors the
+	// frontend guard so both sides agree by construction.
+	disconnected := false
 	for _, ev := range batch {
+		if disconnected {
+			switch ev.(type) {
+			case types.SKOOTUpdateEvent, types.GameTextEvent, types.SuppressedGameTextEvent,
+				types.StatusUpdateEvent, types.ModeChangeEvent, types.CommandEvent, types.MapURLEvent:
+				continue
+			}
+		}
 		switch e := ev.(type) {
+		case types.ConnectedEvent:
+			disconnected = false
 		case types.GameTextEvent:
 			if a.deps.SessionLog != nil {
 				a.deps.SessionLog.Log(e.Timestamp, e.Text)
@@ -155,6 +169,7 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 			a.mu.Lock()
 			a.kudosPromptShown = false
 			a.mu.Unlock()
+			disconnected = true
 		}
 
 		// Apply color-word coloring (if enabled) before conversion, mirroring

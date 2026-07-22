@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -36,9 +37,14 @@ type Client struct {
 	Settings Settings
 
 	events         chan types.Event
-	cancelRun      chan struct{} // cancels the ModeChanges listener goroutine
+	cancelRun      chan struct{} // cancels this connection's listener + drainer
 	userDisconnect bool          // set by Disconnect so Run reports a user logout
 	cancelMu       sync.Mutex    // guards cancelRun and userDisconnect
+
+	// sessMu guards concurrent access to the Session pointer. A reconnect
+	// reassigns it while the previous connection's goroutines may still be
+	// reading it, so all production reads/writes go through session()/setSession.
+	sessMu sync.Mutex
 
 	// htmlIndent tracks <ul> nesting across protocol lines for indentation.
 	htmlIndent int
@@ -50,6 +56,16 @@ type Client struct {
 	// authUser and authPassCookie are set by Login and used by handleSecret.
 	authUser       string
 	authPassCookie string
+
+	// handshakeDone is set once the SKOOT auth handshake has run for this
+	// connection. After that, a game line that happens to start "SECRET " is
+	// passed through as text instead of being consumed as another handshake.
+	// Touched only from the single Run line-loop goroutine.
+	handshakeDone bool
+
+	// openURL launches an external URL. Overridable in tests; defaults to opening
+	// the system browser asynchronously.
+	openURL func(string)
 }
 
 // NewClient creates a fully wired Client. Pass scriptDirs for the
@@ -68,12 +84,27 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		Settings: Settings{EchoTyped: true, EchoScript: true},
 		events:   make(chan types.Event, 256),
 		ignore:   NewIgnoreFilter(),
+		openURL:  func(u string) { go OpenBrowser(u) },
 	}, nil
 }
 
 // Events returns a read-only channel of game events for the TUI.
 func (c *Client) Events() <-chan types.Event {
 	return c.events
+}
+
+// session returns the current Session pointer under the guard.
+func (c *Client) session() *session.Session {
+	c.sessMu.Lock()
+	defer c.sessMu.Unlock()
+	return c.Session
+}
+
+// setSession replaces the current Session pointer under the guard.
+func (c *Client) setSession(s *session.Session) {
+	c.sessMu.Lock()
+	c.Session = s
+	c.sessMu.Unlock()
 }
 
 // SetIgnoreOOC replaces the OOC ignorelist (account names).
@@ -125,8 +156,9 @@ func (c *Client) ConnectWebSocket() error {
 		{Name: "pass", Value: c.authPassCookie},
 	}
 
-	c.Session = session.New()
-	return c.Session.Connect(wsURL, cookies)
+	s := session.New()
+	c.setSession(s)
+	return s.Connect(wsURL, cookies)
 }
 
 // ConnectWithAuth performs HTTP login, then connects the WebSocket with
@@ -141,11 +173,17 @@ func (c *Client) ConnectWithAuth(username, password string) error {
 // Run is the main loop: reads lines from the session, processes each one,
 // and emits events. It blocks until the session's Lines channel closes.
 func (c *Client) Run() {
-	c.emit(types.ConnectedEvent{})
-
 	// Fresh connection: reset the HTML indent tracker (owned solely by this
-	// goroutine via processLine) and clear any stale user-disconnect flag.
+	// goroutine via processLine), the handshake state, and any stale
+	// user-disconnect flag.
 	c.htmlIndent = 0
+	c.handshakeDone = false
+
+	sess := c.session()
+
+	// Drop anything the engine queued while offline (between the previous
+	// disconnect and now): those commands must not burst onto a fresh login.
+	c.Engine.Queue().Clear()
 
 	c.cancelMu.Lock()
 	c.userDisconnect = false
@@ -155,6 +193,12 @@ func (c *Client) Run() {
 	c.cancelRun = make(chan struct{})
 	done := c.cancelRun
 	c.cancelMu.Unlock()
+
+	// Announce the connection only after the lifecycle state (userDisconnect
+	// reset, cancelRun) is set up. Emitting earlier let a Disconnect() that
+	// raced the consumer of this event have its userDisconnect flag clobbered by
+	// the reset above, mislabeling a user logout as a dropped connection.
+	c.emit(types.ConnectedEvent{})
 
 	// Listen for Lua-initiated mode changes and forward them as events.
 	go func() {
@@ -166,20 +210,36 @@ func (c *Client) Run() {
 				}
 				c.emit(types.ModeChangeEvent{NewMode: mc.NewMode, PrevMode: mc.PrevMode})
 				c.emitStatusUpdate()
-				c.drainQueue()
 			case <-done:
 				return
 			}
 		}
 	}()
 
-	for line := range c.Session.Lines() {
+	// One long-lived drainer owns command sending for this connection: it paces
+	// min-interval locally, preserves FIFO order, and drains on enqueue (so timer
+	// sends go out on an idle link). It stops when done closes.
+	go c.drainLoop(sess, done)
+
+	for line := range sess.Lines() {
 		c.processLine(line)
 	}
 
+	// The line loop exited for some reason — a user Disconnect or an involuntary
+	// drop. Tear down this connection's world so nothing from the old session
+	// leaks into a reconnect: stop the listener + drainer, and drop any commands
+	// the still-running engine queued while offline (they must not be transmitted
+	// onto the next login). Guard against double-close: Disconnect may already
+	// have closed and nil'd cancelRun.
 	c.cancelMu.Lock()
 	userInitiated := c.userDisconnect
+	if c.cancelRun == done {
+		close(c.cancelRun)
+		c.cancelRun = nil
+	}
 	c.cancelMu.Unlock()
+
+	c.Engine.Queue().Clear()
 
 	reason := "connection closed"
 	if userInitiated {
@@ -203,7 +263,7 @@ func (c *Client) Disconnect() {
 
 	// Close the socket; this unblocks Run()'s read loop, which emits the
 	// DisconnectedEvent with the empty (logout) reason.
-	c.Session.Close()
+	c.session().Close()
 
 	// Reset the engine to a clean slate for the next session: switching to the
 	// default mode cancels timers, clears per-mode state, ends the metric
@@ -221,7 +281,7 @@ func (c *Client) SendCommand(input string) {
 		return
 	}
 	log.Printf("[SEND:GAME] %s", input)
-	if err := c.Session.Send(input); err != nil {
+	if err := c.session().Send(input); err != nil {
 		log.Printf("[CLIENT] send error: %v", err)
 	}
 
@@ -238,13 +298,21 @@ func (c *Client) SendCommand(input string) {
 	}
 }
 
-// emit sends an event to the events channel without blocking.
+// emit delivers an event to the events channel. Lifecycle events (connect,
+// disconnect, mode change) are guaranteed: dropping a DisconnectedEvent under a
+// text flood would leave the UI rendering a live-looking session, so those block
+// until delivered. Bulk events (text, SKOOT, status, command echo) stay
+// droppable — backpressure on a slow UI is intentional there.
 func (c *Client) emit(ev types.Event) {
-	select {
-	case c.events <- ev:
+	switch ev.(type) {
+	case types.ConnectedEvent, types.DisconnectedEvent, types.ModeChangeEvent:
+		c.events <- ev
 	default:
-		// Drop event if channel is full to avoid blocking the main loop.
-		log.Printf("[CLIENT] event channel full, dropping event %T", ev)
+		select {
+		case c.events <- ev:
+		default:
+			log.Printf("[CLIENT] event channel full, dropping event %T", ev)
+		}
 	}
 }
 
@@ -272,7 +340,14 @@ func (c *Client) processLine(line string) {
 		url := protocol.ParseMapURL(line)
 		c.emit(types.MapURLEvent{URL: url})
 	case protocol.MsgSecret:
-		c.handleSecret(line)
+		// Only the pre-handshake SECRET line is the auth token; after the
+		// handshake, game text starting "SECRET " must not be swallowed or
+		// trigger a garbage auth re-send.
+		if c.handshakeDone {
+			c.handleGameText(line)
+		} else {
+			c.handleSecret(line)
+		}
 	case protocol.MsgGameText:
 		c.handleGameText(line)
 	}
@@ -297,9 +372,11 @@ func (c *Client) handleSkoot(line string) {
 	ev.RawPayload = payload
 	c.emit(*ev)
 
-	// Open help URLs in the system browser.
+	// Open help URLs in the system browser, but only after validating the scheme:
+	// the URL is server-supplied, so a hostile/compromised (or MITM'd cleartext)
+	// server could otherwise auto-launch file:// or custom-scheme URLs.
 	if ev.HelpURL != "" {
-		go OpenBrowser(ev.HelpURL)
+		c.openHelpURL(ev.HelpURL)
 	}
 
 	// Update engine status values for Lua access.
@@ -317,12 +394,15 @@ func (c *Client) handleSecret(line string) {
 	}
 
 	msgs := session.BuildAuthMessages(c.authUser, c.authPassCookie, secret)
+	sess := c.session()
 	for _, msg := range msgs {
-		if err := c.Session.Send(msg); err != nil {
+		if err := sess.Send(msg); err != nil {
 			log.Printf("[CLIENT] auth send error: %v", err)
 			return
 		}
 	}
+	// Handshake complete for this connection: later "SECRET " lines are game text.
+	c.handshakeDone = true
 }
 
 // handleGameText parses HTML, classifies text, emits the event, then runs it
@@ -382,7 +462,6 @@ func (c *Client) handleGameText(line string) {
 
 	if result.Text != "" {
 		c.Engine.Process(result.Text)
-		c.drainQueue()
 		c.emitStatusUpdate()
 	}
 }
@@ -458,58 +537,81 @@ func (c *Client) emitStatusUpdate() {
 	c.emit(ev)
 }
 
-// drainQueue pops all commands from the engine queue and sends them, respecting
-// delays and the minimum interval between sends.
-func (c *Client) drainQueue() {
+// drainLoop is the single command sender for one connection. It is the only
+// goroutine that pops the queue and calls Send, which makes min-interval pacing
+// a race-free local time.Since and keeps sends in FIFO order across differing
+// per-command delays. It parks on the queue's Notify signal when idle (so a
+// timer-enqueued command still goes out on a quiet connection) and exits when
+// stop closes. sess is captured for this connection's lifetime, so a reconnect
+// that reassigns c.Session never redirects an in-flight command.
+func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 	queue := c.Engine.Queue()
+	var lastSend time.Time
 
-	// Snapshot the current session synchronously, before launching the drain
-	// goroutine. A reconnect can reassign c.Session while this goroutine is
-	// sleeping between sends; without this capture the goroutine would read
-	// c.Session unsynchronized after the sleep (a data race) and could send a
-	// stale, previously-queued command onto the newly reconnected session.
-	sess := c.Session
-
-	// Drain in a goroutine so processLine doesn't block.
-	go func() {
-		for {
-			cmd, ok := queue.Dequeue()
-			if !ok {
+	for {
+		cmd, gen, ok := queue.DequeueGen()
+		if !ok {
+			// Queue empty: park until something is enqueued or we're stopped.
+			select {
+			case <-queue.Notify():
+				continue
+			case <-stop:
 				return
-			}
-
-			// Respect the command delay.
-			if cmd.Delay > 0 {
-				time.Sleep(cmd.Delay)
-			}
-
-			// Enforce minimum interval between sends.
-			elapsed := queue.TimeSinceLastSend()
-			if elapsed < queue.MinInterval() {
-				time.Sleep(queue.MinInterval() - elapsed)
-			}
-
-			if err := sess.Send(cmd.Command); err != nil {
-				log.Printf("[CLIENT] queue send error: %v", err)
-				return
-			}
-			queue.RecordSend()
-
-			c.emit(types.CommandEvent{Command: cmd.Command})
-
-			// Echo engine commands in the output if script echo is enabled.
-			if c.Settings.EchoScript {
-				c.emit(types.GameTextEvent{
-					Styled: []types.StyledSegment{{
-						Text:   cmd.Command,
-						Italic: true,
-					}},
-					Timestamp: time.Now(),
-					IsEcho:    true,
-				})
 			}
 		}
-	}()
+
+		// Respect the command's own delay, interruptibly.
+		if cmd.Delay > 0 {
+			select {
+			case <-time.After(cmd.Delay):
+			case <-stop:
+				return
+			}
+		}
+
+		// Enforce the minimum interval since the last send. The first send (zero
+		// lastSend) goes immediately.
+		if !lastSend.IsZero() {
+			if gap := time.Since(lastSend); gap < queue.MinInterval() {
+				select {
+				case <-time.After(queue.MinInterval() - gap):
+				case <-stop:
+					return
+				}
+			}
+		}
+
+		// If a mode switch cleared the queue while we were sleeping, this command
+		// belongs to a retired generation — drop it instead of sending stale
+		// old-mode output onto the wire.
+		if queue.Generation() != gen {
+			continue
+		}
+
+		if err := sess.Send(cmd.Command); err != nil {
+			log.Printf("[CLIENT] queue send error: %v", err)
+			// A WebSocket write error is terminal. Close the session so the
+			// involuntary-disconnect flow runs promptly instead of waiting out
+			// the read deadline, and stop draining this dead connection.
+			sess.Close()
+			return
+		}
+		lastSend = time.Now()
+
+		c.emit(types.CommandEvent{Command: cmd.Command})
+
+		// Echo engine commands in the output if script echo is enabled.
+		if c.Settings.EchoScript {
+			c.emit(types.GameTextEvent{
+				Styled: []types.StyledSegment{{
+					Text:   cmd.Command,
+					Italic: true,
+				}},
+				Timestamp: time.Now(),
+				IsEcho:    true,
+			})
+		}
+	}
 }
 
 // sendNotification sends a desktop notification and emits a NotificationEvent.
@@ -680,6 +782,40 @@ func suggestMaps(input string, maxDist int) []string {
 		out[i] = c.key
 	}
 	return out
+}
+
+// isSafeExternalURL reports whether a URL is safe to hand to the system opener:
+// it must parse cleanly, use the http or https scheme, and name a host. This
+// fails closed on file://, javascript:, ssh://, scheme-relative, and empty URLs.
+func isSafeExternalURL(raw string) bool {
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	return u.Host != ""
+}
+
+// openHelpURL opens a server-supplied help URL if it passes scheme validation;
+// otherwise it logs the refusal and surfaces the URL as output text so the user
+// can copy it deliberately instead of it being auto-launched.
+func (c *Client) openHelpURL(raw string) {
+	if !isSafeExternalURL(raw) {
+		log.Printf("[CLIENT] refused to open non-http(s) help URL: %s", raw)
+		c.emit(types.GameTextEvent{
+			Styled: []types.StyledSegment{{
+				Text:   "help link (not opened): " + raw,
+				Color:  "#e8a838",
+				Italic: true,
+			}},
+			Timestamp: time.Now(),
+			IsEcho:    true,
+		})
+		return
+	}
+	c.openURL(raw)
 }
 
 // OpenBrowser opens a URL in the system's default browser.

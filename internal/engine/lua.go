@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -8,9 +9,31 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
+// scriptTimeout bounds a single entry into Lua. A runaway script
+// (`while true do end`) in any reaction, condition, timer, or lifecycle hook
+// would otherwise hang the engine forever — and because Process holds e.mu
+// across all Lua execution, stall the whole line pipeline until the process is
+// killed. It is a package var (not const) so tests can shrink it.
+var scriptTimeout = 2 * time.Second
+
+// callLua invokes a Lua callback with an execution deadline. On expiry the VM
+// aborts the call and returns a context error, which callers log and treat like
+// any other Lua runtime error (they already use Protect'd pcall paths). The
+// context is removed afterward so the deadline never bleeds into the next call.
+// All entries into Lua are serialized under the engine mutex, so setting the
+// context on the shared LState per call is safe.
+func callLua(L *lua.LState, p lua.P, args ...lua.LValue) error {
+	ctx, cancel := context.WithTimeout(context.Background(), scriptTimeout)
+	defer cancel()
+	L.SetContext(ctx)
+	defer L.RemoveContext()
+	return L.CallByParam(p, args...)
+}
 
 // LuaReaction is a parsed reaction from a Lua mode table.
 type LuaReaction struct {

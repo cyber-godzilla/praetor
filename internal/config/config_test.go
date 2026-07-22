@@ -4,8 +4,134 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 )
+
+func TestValidate_DropsEmptyHighlightPattern(t *testing.T) {
+	c := Defaults()
+	c.Highlights = []HighlightConfig{
+		{Pattern: "gold", Style: "gold", Active: true},
+		{Pattern: "", Style: "red", Active: true},
+		{Pattern: "   ", Style: "blue", Active: true},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(c.Highlights) != 1 || c.Highlights[0].Pattern != "gold" {
+		t.Fatalf("empty-pattern highlights not dropped: %+v", c.Highlights)
+	}
+}
+
+func TestConfig_TransportWarnings(t *testing.T) {
+	// Cleartext on both axes → two warnings.
+	c := Defaults()
+	c.Server.LoginURL = "http://login.example.com/login.php"
+	c.Server.Protocol = "ws"
+	if w := c.TransportWarnings(); len(w) != 2 {
+		t.Fatalf("http+ws warnings = %d (%v), want 2", len(w), w)
+	}
+
+	// Fully secure → no warnings.
+	c.Server.LoginURL = "https://login.example.com/login.php"
+	c.Server.Protocol = "wss"
+	if w := c.TransportWarnings(); len(w) != 0 {
+		t.Fatalf("https+wss warnings = %v, want none", w)
+	}
+
+	// The shipped default (https login, ws protocol) warns only about ws.
+	c.Server.Protocol = "ws"
+	if w := c.TransportWarnings(); len(w) != 1 {
+		t.Fatalf("https+ws warnings = %v, want 1 (protocol only)", w)
+	}
+}
+
+func TestSave_IsAtomic_NoLeftoverTempAndPreservesPerms(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := Defaults()
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+	// Tighten perms, then save again — perms must be preserved (not reset to 0644).
+	if err := os.Chmod(path, 0600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("second Save: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0600 {
+		t.Errorf("perms after Save = %o, want 600 (perms not preserved)", perm)
+	}
+
+	// No temp file may be left behind in the directory.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("readdir: %v", err)
+	}
+	for _, e := range entries {
+		if e.Name() != "config.yaml" {
+			t.Errorf("unexpected leftover file after Save: %q", e.Name())
+		}
+	}
+}
+
+func TestSave_FailedWriteLeavesOriginalIntact(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := Defaults()
+	cfg.UI.SidebarWidth = 42
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	original, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read original: %v", err)
+	}
+
+	// Saving to a path whose directory does not exist must fail without a
+	// truncate-in-place, leaving the existing file (a different path) untouched.
+	bad := filepath.Join(dir, "nonexistent-subdir", "config.yaml")
+	if err := Save(cfg, bad); err == nil {
+		t.Fatal("Save to a missing directory unexpectedly succeeded")
+	}
+
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if string(after) != string(original) {
+		t.Error("original config was modified by a failed Save to another path")
+	}
+}
+
+func TestSave_ConcurrentSavesDoNotRace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cfg := Defaults()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = Save(cfg, path)
+		}()
+	}
+	wg.Wait()
+
+	// The file must be complete and loadable after concurrent saves.
+	if _, err := Load(path); err != nil {
+		t.Fatalf("config unreadable after concurrent saves: %v", err)
+	}
+}
 
 func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()

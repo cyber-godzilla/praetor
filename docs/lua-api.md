@@ -16,6 +16,9 @@ end
 
 function M.on_stop()
     -- Optional. Called when the mode is deactivated.
+    -- The outgoing mode's still-pending queued commands are dropped *before*
+    -- on_stop runs, so any send() here (e.g. sheathe, stand) survives the switch
+    -- and reaches the server instead of being wiped by the mode change.
 end
 
 M.reactions = {

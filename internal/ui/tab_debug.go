@@ -53,9 +53,14 @@ func (d *DebugPane) ScrollUp(lines int) {
 	}
 }
 
-// ScrollDown scrolls the debug pane down.
+// ScrollDown scrolls the debug pane down, clamped so the position can't latch
+// past the content (View is a value receiver, so its clamp doesn't persist —
+// this one, called from Update, does).
 func (d *DebugPane) ScrollDown(lines int) {
 	d.scroll += lines
+	if m := d.debugMaxScroll(); d.scroll > m {
+		d.scroll = m
+	}
 }
 
 // UpdateSKOOT stores the latest raw payload and parsed data for a channel.
@@ -79,11 +84,10 @@ func (d *DebugPane) UpdateSKOOT(ev types.SKOOTUpdateEvent) {
 }
 
 // View renders the debug data.
-func (d DebugPane) View() string {
-	if d.width <= 0 || d.height <= 0 {
-		return ""
-	}
-
+// buildLines renders the debug pane's content into display lines. It is a pure
+// read of the pane's state, so ScrollDown can call it to clamp against the real
+// line count (View is a value receiver, so its own clamp can't persist).
+func (d *DebugPane) buildLines() []string {
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(colorOrange)
 	labelStyle := lipgloss.NewStyle().Foreground(colorDim)
 	valueStyle := lipgloss.NewStyle().Foreground(colorGreen)
@@ -200,7 +204,26 @@ func (d DebugPane) View() string {
 		lines = append(lines, labelStyle.Render("  (no data)"))
 	}
 
-	// Apply scroll
+	return lines
+}
+
+// debugMaxScroll returns the furthest-down scroll offset for the current content.
+func (d *DebugPane) debugMaxScroll() int {
+	m := len(d.buildLines()) - 1
+	if m < 0 {
+		return 0
+	}
+	return m
+}
+
+func (d DebugPane) View() string {
+	if d.width <= 0 || d.height <= 0 {
+		return ""
+	}
+
+	lines := d.buildLines()
+
+	// Clamp scroll for rendering (defensive; ScrollUp/ScrollDown already bound it).
 	if d.scroll >= len(lines) {
 		d.scroll = len(lines) - 1
 	}

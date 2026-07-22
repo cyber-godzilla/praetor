@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 )
 
@@ -109,17 +110,48 @@ func (rw *rotatingWriter) Write(p []byte) (int, error) {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 
+	// Degraded mode (a prior rotate/reopen failed): try to recover before writing
+	// so logging resumes once the underlying problem clears, rather than staying
+	// dead until restart.
+	if rw.file == nil && !rw.reopen() {
+		fmt.Fprint(os.Stderr, string(p))
+		return len(p), nil
+	}
+
 	// Check if rotation is needed.
 	if rw.written+int64(len(p)) > rw.maxBytes {
 		if err := rw.rotate(); err != nil {
-			// If rotation fails, keep writing to the current file.
 			fmt.Fprintf(os.Stderr, "log rotation failed: %v\n", err)
+		}
+		// rotate() may have left us degraded (nil file). Don't write to a closed
+		// handle — drop this line to stderr and stay recoverable.
+		if rw.file == nil {
+			fmt.Fprint(os.Stderr, string(p))
+			return len(p), nil
 		}
 	}
 
 	n, err := rw.file.Write(p)
 	rw.written += int64(n)
 	return n, err
+}
+
+// reopen (re)opens the log path, seeding the written counter from the file size.
+// On failure it leaves rw.file nil (degraded mode) and returns false. Caller
+// holds rw.mu.
+func (rw *rotatingWriter) reopen() bool {
+	f, err := os.OpenFile(rw.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		rw.file = nil
+		return false
+	}
+	rw.file = f
+	if info, statErr := f.Stat(); statErr == nil {
+		rw.written = info.Size()
+	} else {
+		rw.written = 0
+	}
+	return true
 }
 
 func (rw *rotatingWriter) Close() error {
@@ -132,30 +164,28 @@ func (rw *rotatingWriter) Close() error {
 }
 
 func (rw *rotatingWriter) rotate() error {
-	// Close current file.
-	if err := rw.file.Close(); err != nil {
-		return err
+	// Close the current file (ignore the error — we're replacing it) and clear
+	// the handle so a failure below can never leave us writing to a closed fd.
+	if rw.file != nil {
+		rw.file.Close()
+		rw.file = nil
 	}
 
 	// Rename current → .1 (overwriting any existing backup).
 	backup := rw.path + ".1"
 	os.Remove(backup)
 	if err := os.Rename(rw.path, backup); err != nil {
-		// If rename fails, try to reopen the original.
-		f, openErr := os.OpenFile(rw.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-		if openErr != nil {
-			return openErr
-		}
-		rw.file = f
+		// Rename failed: reopen the original so logging continues, but still
+		// report the failure.
+		rw.reopen()
 		return err
 	}
 
-	// Open fresh file.
-	f, err := os.OpenFile(rw.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		return err
+	// Open a fresh file at the original path. On failure we stay in degraded mode
+	// (file nil); Write recovers on a later call once the problem clears.
+	if !rw.reopen() {
+		return fmt.Errorf("reopening log after rotate: %s", rw.path)
 	}
-	rw.file = f
 	rw.written = 0
 	return nil
 }
@@ -170,6 +200,14 @@ func (w *slogWriter) Write(p []byte) (int, error) {
 	if len(msg) > 0 && msg[len(msg)-1] == '\n' {
 		msg = msg[:len(msg)-1]
 	}
-	w.logger.Info(msg)
+	// Route the game transcript and typed input ([RECV:*]/[SEND:*]) to debug so
+	// the default info-level app log doesn't silently duplicate the session
+	// transcript — a privacy footgun, since typed input can include an accidental
+	// password paste. Operational/lifecycle lines stay at info.
+	if strings.HasPrefix(msg, "[RECV:") || strings.HasPrefix(msg, "[SEND:") {
+		w.logger.Debug(msg)
+	} else {
+		w.logger.Info(msg)
+	}
 	return len(p), nil
 }

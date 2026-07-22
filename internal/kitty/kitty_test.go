@@ -38,3 +38,12 @@ func TestEncodeOmitsPlacementWhenNoID(t *testing.T) {
 		t.Fatalf("expected no p= when imageID=0, got: %q", esc)
 	}
 }
+
+func TestDeleteAll_DeletesAllImages(t *testing.T) {
+	got := DeleteAll()
+	// a=d (delete), d=A (all images + data), APC-wrapped, q=2 (quiet).
+	want := "\033_Ga=d,d=A,q=2;\033\\"
+	if got != want {
+		t.Errorf("DeleteAll() = %q, want %q", got, want)
+	}
+}

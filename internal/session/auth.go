@@ -3,11 +3,17 @@ package session
 import (
 	"crypto/md5"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"time"
 )
+
+// httpLoginTimeout bounds the whole login flow so a hung login server can't
+// block connect forever. It is a package var so tests can shrink it.
+var httpLoginTimeout = 15 * time.Second
 
 // ComputeHash computes the MD5 hex digest of the concatenation of username,
 // password, and secret. This is the hash format expected by the game server
@@ -40,14 +46,18 @@ func BuildAuthMessages(username, passCookie, secret string) []string {
 func HTTPLogin(loginURL, username, password string) (userCookie, passCookie string, err error) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{
-		Jar: jar,
+		Jar:     jar,
+		Timeout: httpLoginTimeout,
 	}
 
-	// Step 1: GET the login page to pick up the biscuit cookie.
-	_, err = client.Get(loginURL)
+	// Step 1: GET the login page to pick up the biscuit cookie. Drain and close
+	// the body so the persistent connection is reused instead of leaked.
+	getResp, err := client.Get(loginURL)
 	if err != nil {
 		return "", "", fmt.Errorf("HTTP login: fetching login page: %w", err)
 	}
+	_, _ = io.Copy(io.Discard, getResp.Body)
+	getResp.Body.Close()
 
 	// Step 2: POST credentials. The jar automatically sends the biscuit cookie.
 	form := url.Values{}

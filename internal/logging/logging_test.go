@@ -1,11 +1,82 @@
 package logging
 
 import (
+	"bytes"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestSlogWriter_RoutesTranscriptToDebug(t *testing.T) {
+	var buf bytes.Buffer
+	infoLogger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	w := &slogWriter{logger: infoLogger}
+
+	// The game transcript and typed input (which can include an accidental
+	// password paste) must NOT be duplicated into the default info-level app log.
+	w.Write([]byte("[RECV:TEXT] You see a sword.\n"))
+	w.Write([]byte("[SEND:GAME] my-secret-password\n"))
+	w.Write([]byte("[SEND:CMD] /mode combat\n"))
+	if buf.Len() != 0 {
+		t.Errorf("transcript lines were written at info level: %q", buf.String())
+	}
+
+	// Lifecycle/operational lines still log at info.
+	w.Write([]byte("[CLIENT] connected\n"))
+	if !strings.Contains(buf.String(), "connected") {
+		t.Errorf("operational line was dropped at info level: %q", buf.String())
+	}
+
+	// At debug level, a developer can opt into the transcript.
+	buf.Reset()
+	dbg := &slogWriter{logger: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
+	dbg.Write([]byte("[RECV:TEXT] visible at debug\n"))
+	if !strings.Contains(buf.String(), "visible at debug") {
+		t.Error("transcript not written even at debug level")
+	}
+}
+
+func TestRotatingWriter_RecoversFromReopenFailure(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tec.log")
+	rw, err := newRotatingWriter(path, 100) // tiny cap to force rotation
+	if err != nil {
+		t.Fatalf("newRotatingWriter: %v", err)
+	}
+	defer rw.Close()
+
+	if _, err := rw.Write([]byte("under the cap\n")); err != nil {
+		t.Fatalf("initial write: %v", err)
+	}
+
+	// Remove the directory so the next rotation's reopen fails (disk-full / dir
+	// removed analogue). The open fd keeps working, but rename + reopen can't.
+	os.RemoveAll(dir)
+
+	// This write crosses the cap and triggers a rotate whose reopen fails. It
+	// must not panic or write to a closed handle — degraded mode drops to stderr.
+	big := make([]byte, 200)
+	if _, err := rw.Write(big); err != nil {
+		t.Fatalf("degraded write returned an error instead of no-op: %v", err)
+	}
+	// And another write while still degraded stays safe.
+	if _, err := rw.Write([]byte("still degraded\n")); err != nil {
+		t.Fatalf("second degraded write errored: %v", err)
+	}
+
+	// Restore the directory: a later write must recover and recreate the file.
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatalf("restore dir: %v", err)
+	}
+	if _, err := rw.Write([]byte("recovered\n")); err != nil {
+		t.Fatalf("did not recover after the directory was restored: %v", err)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("log file was not recreated after recovery: %v", err)
+	}
+}
 
 func TestRotatingWriter_BasicWrite(t *testing.T) {
 	dir := t.TempDir()

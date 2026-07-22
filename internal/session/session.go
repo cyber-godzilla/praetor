@@ -31,6 +31,7 @@ type Session struct {
 	buf        *protocol.LineBuffer
 	pongWait   time.Duration
 	pingPeriod time.Duration
+	writeWait  time.Duration
 }
 
 // New creates a new Session with initialized channels and line buffer.
@@ -41,6 +42,7 @@ func New() *Session {
 		buf:        protocol.NewLineBuffer(),
 		pongWait:   defaultPongWait,
 		pingPeriod: defaultPingPeriod,
+		writeWait:  writeWait,
 	}
 }
 
@@ -53,6 +55,13 @@ func (s *Session) Connect(url string, cookies []*http.Cookie) error {
 
 	if s.closed {
 		return ErrSessionClosed
+	}
+	// One-shot: a second Connect would leak the first conn and spawn a second
+	// readLoop whose cleanup double-closes s.lines (panic). Callers reconnect by
+	// allocating a fresh Session, so enforce that contract explicitly rather than
+	// leave a latent trap for a future refactor.
+	if s.conn != nil {
+		return ErrAlreadyConnected
 	}
 
 	header := http.Header{}
@@ -114,6 +123,11 @@ func (s *Session) Send(command string) error {
 		return ErrSessionClosed
 	}
 
+	// Bound the write so a stalled link (full OS send buffer) can't wedge the
+	// mutex — and with it Close/IsConnected/pingLoop/readLoop cleanup — for the
+	// minutes it takes TCP retransmission to give up. On error the caller treats
+	// the session as disconnected.
+	_ = s.conn.SetWriteDeadline(time.Now().Add(s.writeWait))
 	return s.conn.WriteMessage(websocket.TextMessage, []byte(command+"\r\n"))
 }
 
@@ -153,6 +167,14 @@ func (s *Session) readLoop() {
 		s.mu.Lock()
 		wasClosed := s.closed
 		s.closed = true
+		// The read loop is the authority on "this connection is dead": close the
+		// conn here so an involuntary drop doesn't leak the fd. A later Close()
+		// early-returns on s.closed and never reaches its own conn.Close(), so
+		// without this the socket would leak until process exit. Idempotent:
+		// gorilla tolerates a repeat Close.
+		if s.conn != nil {
+			s.conn.Close()
+		}
 		s.mu.Unlock()
 		if !wasClosed {
 			close(s.done)

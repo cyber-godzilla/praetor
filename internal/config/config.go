@@ -2,13 +2,20 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
+
+// saveMu serializes Save so two overlapping writers (GUI setter goroutines,
+// which Wails dispatches concurrently) can't interleave their file writes.
+var saveMu sync.Mutex
 
 type Duration struct {
 	time.Duration
@@ -315,14 +322,54 @@ func Defaults() *Config {
 	}
 }
 
-// Save writes the config to the given path.
+// Save writes the config to the given path atomically: it marshals, writes a
+// temp file in the same directory, fsyncs it, then renames it over the target.
+// A crash or power loss mid-write therefore leaves either the old complete file
+// or the new one — never a truncated config.yaml that Load hard-fails on.
+// Concurrent Saves are serialized. Multi-instance play is last-writer-wins, but
+// the file is never torn.
 func Save(cfg *Config, path string) error {
+	saveMu.Lock()
+	defer saveMu.Unlock()
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshaling config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		return fmt.Errorf("writing config: %w", err)
+
+	// Preserve the existing file's permissions; default to 0644 for a new file.
+	perm := os.FileMode(0644)
+	if info, statErr := os.Stat(path); statErr == nil {
+		perm = info.Mode().Perm()
+	}
+
+	// The temp file MUST live in the same directory as the target so the rename
+	// is a same-filesystem (atomic) operation, not a cross-device copy.
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".config-*.yaml.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp config: %w", err)
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if we bail before the rename lands.
+	defer func() { _ = os.Remove(tmpName) }()
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return fmt.Errorf("writing temp config: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return fmt.Errorf("syncing temp config: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp config: %w", err)
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return fmt.Errorf("setting config perms: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("replacing config: %w", err)
 	}
 	return nil
 }
@@ -411,6 +458,26 @@ func migrateLegacyDisplay(cfg *Config, data []byte) {
 // Validate checks the config for invalid or out-of-range values,
 // clamping to sensible defaults where possible and returning an
 // error only for truly broken configuration.
+// TransportWarnings returns non-fatal advisories about cleartext transport: an
+// http:// login URL POSTs the raw password unencrypted, and the ws:// protocol
+// sends the credential-equivalent cookies, the MD5 handshake, and all game
+// traffic in the clear. These are warnings, not validation errors — the shipped
+// default is ws:// because the game server may not offer TLS, so making it an
+// error would brick the default config. The shells log these at startup.
+func (c *Config) TransportWarnings() []string {
+	var warnings []string
+	if strings.HasPrefix(strings.ToLower(c.Server.LoginURL), "http://") {
+		warnings = append(warnings, fmt.Sprintf(
+			"server.login_url uses cleartext http:// (%s) — your password is sent unencrypted; use https:// if the server supports it",
+			c.Server.LoginURL))
+	}
+	if c.Server.Protocol == "ws" {
+		warnings = append(warnings,
+			"server.protocol is ws:// (cleartext) — session cookies and game traffic are unencrypted; use wss:// if the server supports it")
+	}
+	return warnings
+}
+
 func (c *Config) Validate() error {
 	// Server
 	if c.Server.Host == "" {
@@ -479,11 +546,20 @@ func (c *Config) Validate() error {
 
 	// Highlights
 	validStyles := map[string]bool{"red": true, "gold": true, "green": true, "blue": true}
+	kept := c.Highlights[:0]
 	for i := range c.Highlights {
+		// Drop empty/whitespace-only patterns: a case-insensitive empty-substring
+		// match highlights every line. Reachable only by hand-editing config.yaml.
+		if strings.TrimSpace(c.Highlights[i].Pattern) == "" {
+			log.Printf("[CONFIG] dropping highlight with empty pattern")
+			continue
+		}
 		if !validStyles[c.Highlights[i].Style] {
 			c.Highlights[i].Style = "gold"
 		}
+		kept = append(kept, c.Highlights[i])
 	}
+	c.Highlights = kept
 
 	// Notifications
 	if c.Notifications.Desktop.HealthBelow.Threshold < 0 || c.Notifications.Desktop.HealthBelow.Threshold > 100 {
