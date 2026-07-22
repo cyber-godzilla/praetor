@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
@@ -10,6 +11,7 @@
   let inputEl: HTMLInputElement;
   let history: string[] = [];
   let histIdx = $state(-1); // -1 = current (not navigating)
+  let submitting = $state(false);
 
   // Reverse history search (Ctrl+R), readline-style. Active state is mirrored
   // in store.histSearchActive so GameView's Escape routing can yield to it;
@@ -23,6 +25,13 @@
   // likely dragging out a text selection. Sticky-focus stands down until release
   // so it can't clear the selection mid-drag.
   let pointerDown = false;
+
+  // Desktop keeps a sticky command cursor. Touch-sized/coarse-pointer clients
+  // only focus after an explicit tap so the software keyboard does not reopen
+  // after every command or modal interaction.
+  function stickyFocusEnabled(): boolean {
+    return !window.matchMedia("(max-width: 899px), (pointer: coarse)").matches;
+  }
 
   async function handleKudos(rest: string) {
     if (rest === "") {
@@ -99,7 +108,7 @@
     value = "";
   }
 
-  async function submit() {
+  async function submitOnce() {
     const line = value;
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
@@ -149,8 +158,27 @@
     }
 
     // Everything else routes to the core (which interprets other /slash cmds).
-    api.send(line);
+    await api.send(line);
     pushHistory(line);
+  }
+
+  async function submit() {
+    if (submitting || !store.transportReady) return;
+    submitting = true;
+    try {
+      await submitOnce();
+    } catch (error) {
+      store.addToast("Command failed", error instanceof Error ? error.message : String(error));
+    } finally {
+      submitting = false;
+      // A disabled input is blurred by browsers while the request is in
+      // flight. Wait for Svelte to enable it again before restoring desktop
+      // focus; mobile preserves its tap-to-focus policy.
+      await tick();
+      if (!store.openModal && store.transportReady && stickyFocusEnabled()) {
+        inputEl?.focus();
+      }
+    }
   }
 
   // ---- Reverse history search --------------------------------------------
@@ -290,7 +318,7 @@
 
   // Keep focus on the input whenever no modal is open.
   $effect(() => {
-    if (!store.openModal && inputEl) inputEl.focus();
+    if (!store.openModal && inputEl && stickyFocusEnabled()) inputEl.focus();
   });
 
   // Explicit refocus requests (e.g. after the Ctrl+F search bar closes — the
@@ -298,7 +326,7 @@
   // otherwise strand focus on <body>).
   $effect(() => {
     void store.focusInputRequest;
-    if (!store.openModal) inputEl?.focus();
+    if (!store.openModal && stickyFocusEnabled()) inputEl?.focus();
   });
 
   // True when keyboard focus sits in some OTHER text field (the Ctrl+F search
@@ -313,20 +341,21 @@
     if (store.inputPrefill) {
       value = store.inputPrefill;
       store.inputPrefill = "";
-      queueMicrotask(() => inputEl?.focus());
+      if (stickyFocusEnabled()) queueMicrotask(() => inputEl?.focus());
     }
   });
 
   // When the app window regains focus, put the cursor back in the input —
   // unless the browser restored focus to another text field (the search box).
   function onWindowFocus() {
-    if (!store.openModal && !otherTextFieldActive()) inputEl?.focus();
+    if (!store.openModal && !otherTextFieldActive() && stickyFocusEnabled()) inputEl?.focus();
   }
 
   // Webview window-focus events are unreliable, so treat a click anywhere in the
   // app as a signal to return the cursor to the input — unless it landed on a
   // text field or modal, or the user is selecting text (so copying still works).
   function refocusFromClick(e: MouseEvent) {
+    if (!stickyFocusEnabled()) return;
     const t = e.target as HTMLElement | null;
     const sel = window.getSelection();
     if (
@@ -352,6 +381,7 @@
     // isn't selecting text (see shouldRefocusInput) — otherwise Ctrl+C / the
     // right-click Copy would have nothing to act on.
     requestAnimationFrame(() => {
+      if (!stickyFocusEnabled()) return;
       const sel = window.getSelection();
       if (
         shouldRefocusInput({
@@ -399,13 +429,16 @@
       onblur={onBlur}
       spellcheck={store.config?.UI?.InputSpellcheck ?? true}
       autocomplete="off"
+      disabled={!store.transportReady || submitting}
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     />
+    <button class="send" onclick={submit} aria-label="Send command" disabled={!store.transportReady || submitting}>Send</button>
     <button
       class="mode"
       class:active={!!store.mode && store.mode !== "disable"}
       title="Switch mode"
       onclick={() => (store.openModal = "modeselect")}
+      disabled={!store.transportReady}
       tabindex="-1"
     >
       {store.mode && store.mode !== "disable" ? store.mode : "disable"}
@@ -475,5 +508,38 @@
   .mode.active {
     color: var(--accent);
     border-color: var(--accent-dim);
+  }
+  .send {
+    display: none;
+  }
+
+  @media (max-width: 899px), (pointer: coarse) {
+    .inputbar {
+      gap: 6px;
+      padding: 7px 8px;
+    }
+    .prompt {
+      display: none;
+    }
+    input {
+      min-width: 0;
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .send {
+      display: block;
+      min-width: 58px;
+      min-height: 44px;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .mode {
+      min-height: 44px;
+      max-width: 92px;
+      overflow: hidden;
+      padding-inline: 8px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 </style>

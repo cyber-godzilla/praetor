@@ -76,7 +76,7 @@ set_mode(name, {args})     -- Switch with arguments (passed to on_start)
 ### Notifications
 
 ```lua
-notify(title, message)     -- Send a desktop notification
+notify(title, message)     -- Send a shell notification (native desktop or all web clients)
 log(message)               -- Write to the application log
 ```
 

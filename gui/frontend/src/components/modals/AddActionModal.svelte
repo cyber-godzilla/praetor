@@ -27,12 +27,12 @@
     try {
       await api.setActionSets(sets);
       if (store.config) store.config.UI.ActionSets = sets;
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     } finally {
       saving = false;
     }
-    store.openModal = null;
   }
 </script>
 

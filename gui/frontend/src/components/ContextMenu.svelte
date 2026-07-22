@@ -64,8 +64,8 @@
     if (!copyText) return;
     try {
       await api.clipboardSet(copyText);
-    } catch {
-      // bridge already logs; nothing else to do here
+    } catch (error) {
+      store.addToast("Copy unavailable", error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -76,7 +76,8 @@
     let text = "";
     try {
       text = await api.clipboardGet();
-    } catch {
+    } catch (error) {
+      store.addToast("Paste unavailable", error instanceof Error ? error.message : String(error));
       return;
     }
     if (!text) return;

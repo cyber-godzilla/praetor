@@ -190,7 +190,7 @@ type AppLoggingConfig struct {
 
 type SessionLoggingConfig struct {
 	Enabled bool   `yaml:"enabled"`
-	Path    string `yaml:"path"` // empty = XDG_DATA_HOME/praetor/sessions/
+	Path    string `yaml:"path"` // empty = XDG_CONFIG_HOME/praetor/logs/
 }
 
 type UIConfig struct {

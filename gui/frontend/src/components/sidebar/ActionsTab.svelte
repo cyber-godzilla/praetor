@@ -19,8 +19,12 @@
     if (!canCycle) return;
     store.actionSetIndex = cycleIndex(store.actionSetIndex, delta, sets.length);
   }
-  function fire(cmd: string) {
-    api.send(cmd);
+  async function fire(cmd: string) {
+    try {
+      await api.send(cmd);
+    } catch (error) {
+      store.addToast("Action unavailable", error instanceof Error ? error.message : String(error));
+    }
   }
 </script>
 
@@ -36,7 +40,7 @@
 {#if current}
   <div class="buttons">
     {#each current.Buttons ?? [] as b, i (i)}
-      <button class="action" onclick={() => fire(b.Command)} title={b.Command} tabindex="-1">{b.Label}</button>
+      <button class="action" onclick={() => fire(b.Command)} title={b.Command} tabindex="-1" disabled={!store.transportReady}>{b.Label}</button>
     {/each}
     <button class="action addbtn" onclick={() => (store.openModal = "action-add")} title="Add action" aria-label="Add action" tabindex="-1">+</button>
   </div>

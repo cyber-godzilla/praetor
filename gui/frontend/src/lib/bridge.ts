@@ -1,7 +1,5 @@
-// Typed wrapper around the Wails GuiApp bindings and runtime events. When the
-// app runs outside Wails (e.g. `vite dev` in a plain browser), window.go is
-// undefined; calls resolve to safe defaults so the UI still renders for
-// layout work.
+// Transport-neutral API used by the shared Svelte frontend. The native Wails
+// shell and the authenticated browser shell implement the same operation set.
 
 import type {
   InitState,
@@ -19,27 +17,34 @@ import type {
   NoteSummary,
   Note,
 } from "./types";
+import type { PraetorTransport, SystemUpdate } from "./transport";
+import { WebAuthRequiredError } from "./transport";
+import { WailsTransport } from "./transport-wails";
+import { WebTransport } from "./transport-web";
 
-function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
-  return window.go?.gui?.GuiApp;
-}
+const transport: PraetorTransport = window.go?.gui?.GuiApp && window.runtime
+  ? new WailsTransport()
+  : new WebTransport();
+
+const call = <T>(method: string, fallback: T, ...args: any[]) =>
+  transport.invoke<T>(method, fallback, ...args);
+
+export { WebAuthRequiredError };
 
 export function inWails(): boolean {
-  return !!window.go?.gui?.GuiApp && !!window.runtime;
+  return transport.kind === "wails";
 }
 
-async function call<T>(method: string, fallback: T, ...args: any[]): Promise<T> {
-  const a = app();
-  if (!a || typeof a[method] !== "function") {
-    return fallback;
-  }
-  try {
-    return (await a[method](...args)) as T;
-  } catch (e) {
-    console.error(`GuiApp.${method} failed:`, e);
-    throw e;
-  }
+export function inWeb(): boolean {
+  return transport.kind === "web";
 }
+
+export const webLogin = (password: string) => transport.webLogin(password);
+export const webLogout = () => transport.webLogout();
+export const quit = () => transport.quit();
+export const showLocalNotification = (title: string, message: string) =>
+  transport.showLocalNotification(title, message);
+export const requestNotificationPermission = () => transport.requestNotificationPermission();
 
 // ---- Lifecycle & init ----
 export const getInitState = () =>
@@ -53,7 +58,7 @@ export const getInitState = () =>
   });
 
 export const getConfig = () => call<AppConfig>("GetConfig", {} as AppConfig);
-export const start = () => call<void>("Start", undefined);
+export const start = () => transport.start();
 
 // ---- Auth / connection ----
 export const listAccounts = () => call<string[]>("ListAccounts", []);
@@ -154,7 +159,10 @@ export const saveNote = (originalTitle: string, title: string, body: string) =>
 export const deleteNote = (title: string) => call<void>("DeleteNote", undefined, title);
 
 // ---- Events ----
-export function onEvents(cb: (batch: WireEvent[]) => void): () => void {
-  if (!window.runtime) return () => {};
-  return window.runtime.EventsOn("praetor:events", (data: WireEvent[]) => cb(data));
+export function onEvents(
+  events: (batch: WireEvent[]) => void,
+  snapshot?: (batch: WireEvent[]) => void,
+  system?: (update: SystemUpdate) => void,
+): () => void {
+  return transport.subscribe({ events, snapshot, system });
 }

@@ -1,10 +1,13 @@
 package gui
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
@@ -31,6 +34,55 @@ func TestToWire_GameText(t *testing.T) {
 	}
 	if w.Text.Timestamp != 1234 {
 		t.Fatalf("timestamp = %d, want 1234", w.Text.Timestamp)
+	}
+}
+
+func TestLoggingSettingsReconfigureLiveLogger(t *testing.T) {
+	defaultDir := t.TempDir()
+	otherDir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Logging.Session.Enabled = false
+	cfg.Logging.Session.Path = ""
+	logger, err := client.NewSessionLogger(false, defaultDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := &Deps{
+		Config:      cfg,
+		ConfigPath:  filepath.Join(t.TempDir(), "config.yaml"),
+		SessionsDir: defaultDir,
+		SessionLog:  logger,
+	}
+	app := NewGuiApp(deps, &captureEmitter{})
+
+	if err := app.SetSessionLogging(true); err != nil {
+		t.Fatalf("enable logging: %v", err)
+	}
+	logger.Log(time.Now(), "default directory")
+	if err := app.SetLogPath(otherDir); err != nil {
+		t.Fatalf("change log path: %v", err)
+	}
+	logger.Log(time.Now(), "other directory")
+	if err := app.SetSessionLogging(false); err != nil {
+		t.Fatalf("disable logging: %v", err)
+	}
+
+	readOnlyLog := func(dir string) string {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) == 0 {
+			t.Fatalf("no transcript in %s: entries=%v err=%v", dir, entries, err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if text := readOnlyLog(defaultDir); !strings.Contains(text, "default directory") || strings.Contains(text, "other directory") {
+		t.Fatalf("default transcript contents:\n%s", text)
+	}
+	if text := readOnlyLog(otherDir); !strings.Contains(text, "other directory") || strings.Contains(text, "default directory") {
+		t.Fatalf("other transcript contents:\n%s", text)
 	}
 }
 
@@ -219,5 +271,39 @@ func TestSetActionSets(t *testing.T) {
 	}
 	if len(got.UI.ActionSets) != 1 || got.UI.ActionSets[0].Buttons[0].Command != "attack" {
 		t.Fatalf("persisted config wrong: %+v", got.UI.ActionSets)
+	}
+}
+
+func TestGetConfigReturnsDeepSnapshot(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Scripts = []string{"one"}
+	cfg.UI.CustomTabs = []config.CustomTabConfig{{Name: "Original"}}
+	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
+
+	snapshot := app.GetConfig()
+	snapshot.Scripts[0] = "changed"
+	snapshot.UI.CustomTabs[0].Name = "Changed"
+
+	if cfg.Scripts[0] != "one" || cfg.UI.CustomTabs[0].Name != "Original" {
+		t.Fatalf("GetConfig returned mutable config storage: %#v", cfg)
+	}
+}
+
+func TestSettingsRejectInvalidWebValues(t *testing.T) {
+	cfg := config.Defaults()
+	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
+	for name, err := range map[string]error{
+		"display": app.SetDisplayMode("floating"),
+		"numpad":  app.SetNumpadNavigation("sometimes"),
+		"minimap": app.SetMinimapScale(0),
+		"compass": app.SetCompassScale(9),
+		"font":    app.SetOutputFontSize(200),
+	} {
+		if err == nil {
+			t.Errorf("%s invalid value was accepted", name)
+		}
+	}
+	if cfg.UI.DisplayMode != "sidebar" || cfg.UI.MinimapScale != 1 || cfg.UI.CompassScale != 1 {
+		t.Fatalf("invalid settings mutated config: %#v", cfg.UI)
 	}
 }

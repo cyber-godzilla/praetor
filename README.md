@@ -21,6 +21,7 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **IP Masking** — optional scrambling of IP addresses in game text
 - **Update Notifier** — the GUI checks GitHub releases at startup and toasts when a newer version exists (optional)
 - **Notes** — a freeform notepad (GUI): /notes, /notes add|open|delete|list, or the Notes menu item; each note is a plaintext file in ~/.config/praetor/notes/
+- **Shared Web Mode** — one headless process serves the full client to authenticated desktop and mobile browsers on a trusted LAN
 
 The two binaries:
 

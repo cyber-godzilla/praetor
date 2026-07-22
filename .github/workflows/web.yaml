@@ -1,0 +1,52 @@
+name: Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "cmd/praetor-web/**"
+      - "internal/web/**"
+      - "internal/webassets/**"
+      - "internal/gui/**"
+      - "internal/client/**"
+      - "gui/frontend/**"
+      - "Makefile"
+      - ".github/workflows/web.yaml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "cmd/praetor-web/**"
+      - "internal/web/**"
+      - "internal/webassets/**"
+      - "internal/gui/**"
+      - "internal/client/**"
+      - "gui/frontend/**"
+      - "Makefile"
+      - ".github/workflows/web.yaml"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install frontend dependencies
+        working-directory: gui/frontend
+        run: npm ci
+      - name: Web race tests, frontend tests, and embedded build
+        run: make web-check
+      - name: Build static Linux amd64 artifact
+        run: make web-linux-amd64
+      - name: Verify headless binary has no dynamic desktop dependencies
+        run: |
+          file praetor-web-linux-amd64
+          if ldd praetor-web-linux-amd64 2>&1 | grep -Eiq 'gtk|webkit'; then
+            echo "unexpected GTK/WebKit dependency"
+            exit 1
+          fi

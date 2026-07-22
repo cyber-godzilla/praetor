@@ -59,9 +59,9 @@
 <div class="statusbar">
   <div class="bars">
     {#each bars as b (b.label)}
-      <button class="bar" title="{b.tip} — click to check condition" onclick={checkCond} tabindex="-1">
+      <button class="bar" title="{b.tip} — click to check condition" onclick={checkCond} tabindex="-1" disabled={!store.transportReady}>
         <span class="lbl">{b.label}</span>
-        <span class="bracket">[</span><span
+        <span class="bracket">[</span><span class="filled"
           style="color:{vitalColor(b.value)}">{block(filledCount(b.value))}</span><span
           class="empty">{dots(WIDTH - filledCount(b.value))}</span><span class="bracket">]</span>
         <span class="num" style="color:{vitalColor(b.value)}">{b.value ?? "—"}</span>
@@ -69,7 +69,7 @@
     {/each}
   </div>
   {#if lighting}
-    <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting} tabindex="-1">☀ {lighting.text}</button>
+    <button class="lighting" style="color:{lighting.color}" title="Lighting — click to check" onclick={checkLighting} tabindex="-1" disabled={!store.transportReady}>☀ {lighting.text}</button>
   {/if}
   <span class="spacer"></span>
   <span class="conn {conn.cls}">{conn.text}</span>
@@ -85,6 +85,8 @@
     border-bottom: 1px solid var(--border);
     font-size: 12px;
     white-space: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
   }
   .bars {
     display: flex;
@@ -136,5 +138,37 @@
   }
   .conn.bad {
     color: var(--red);
+  }
+
+  @media (max-width: 899px) {
+    .statusbar {
+      gap: 12px;
+      padding: 5px 8px;
+      scrollbar-width: none;
+    }
+    .statusbar::-webkit-scrollbar {
+      display: none;
+    }
+    .bars {
+      gap: 10px;
+    }
+    .bar,
+    .lighting {
+      min-height: 44px;
+    }
+  }
+
+  @media (max-width: 599px) {
+    .bars {
+      gap: 8px;
+    }
+    .bar .bracket,
+    .bar .filled,
+    .bar .empty {
+      display: none;
+    }
+    .num {
+      margin-left: 2px;
+    }
   }
 </style>

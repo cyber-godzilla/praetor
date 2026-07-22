@@ -46,6 +46,8 @@ type wrapper struct {
 	dataDir       string
 	configDir     string
 	desktopNotify *client.DesktopNotifier
+	sessionLog    *client.SessionLogger
+	sessionsDir   string
 }
 
 func (w wrapper) Init() tea.Cmd {
@@ -309,9 +311,29 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.Logging.Session.Enabled = !w.cfg.Logging.Session.Enabled
+			oldEnabled := w.cfg.Logging.Session.Enabled
+			enabled := !oldEnabled
+			logDir := w.sessionsDir
+			if w.cfg.Logging.Session.Path != "" {
+				logDir = expandPath(w.cfg.Logging.Session.Path)
+			}
+			if w.sessionLog != nil {
+				if err := w.sessionLog.Reconfigure(enabled, logDir); err != nil {
+					log.Printf("reconfiguring session logger: %v", err)
+					rolledBack, _ := w.app.Update(msg)
+					w.app = rolledBack.(ui.App)
+					return w, cmd
+				}
+			}
+			w.cfg.Logging.Session.Enabled = enabled
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
+				w.cfg.Logging.Session.Enabled = oldEnabled
+				if w.sessionLog != nil {
+					_ = w.sessionLog.Reconfigure(oldEnabled, logDir)
+				}
+				rolledBack, _ := w.app.Update(msg)
+				w.app = rolledBack.(ui.App)
 			}
 		}
 		return w, cmd
@@ -321,9 +343,32 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
+			oldPath := w.cfg.Logging.Session.Path
+			logDir := w.sessionsDir
+			if msg.Path != "" {
+				logDir = expandPath(msg.Path)
+			}
+			if w.sessionLog != nil {
+				if err := w.sessionLog.Reconfigure(w.cfg.Logging.Session.Enabled, logDir); err != nil {
+					log.Printf("reconfiguring session logger: %v", err)
+					rolledBack, _ := w.app.Update(ui.MenuLogPathMsg{Path: oldPath})
+					w.app = rolledBack.(ui.App)
+					return w, cmd
+				}
+			}
 			w.cfg.Logging.Session.Path = msg.Path
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
+				w.cfg.Logging.Session.Path = oldPath
+				oldDir := w.sessionsDir
+				if oldPath != "" {
+					oldDir = expandPath(oldPath)
+				}
+				if w.sessionLog != nil {
+					_ = w.sessionLog.Reconfigure(w.cfg.Logging.Session.Enabled, oldDir)
+				}
+				rolledBack, _ := w.app.Update(ui.MenuLogPathMsg{Path: oldPath})
+				w.app = rolledBack.(ui.App)
 			}
 		}
 		return w, cmd
@@ -734,14 +779,14 @@ func main() {
 	// Session transcript logging.
 	logDir := sessionsDir
 	if cfg.Logging.Session.Path != "" {
-		logDir = cfg.Logging.Session.Path
+		logDir = expandPath(cfg.Logging.Session.Path)
 	}
 	sessLog, err := client.NewSessionLogger(cfg.Logging.Session.Enabled, logDir)
 	if err != nil {
 		log.Printf("session logger: %v", err)
-	} else {
-		defer sessLog.Close()
+		sessLog, _ = client.NewSessionLogger(false, logDir)
 	}
+	defer sessLog.Close()
 
 	// Determine initial state: if accounts exist, show account selection.
 	accounts, err := creds.ListAccounts()
@@ -755,12 +800,13 @@ func main() {
 
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	gc.Engine.SetNotificationSink(desktopNotify.Notify)
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
 	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
-	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify}
+	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify, sessionLog: sessLog, sessionsDir: sessionsDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	// Snapshot the kudos-queue length before the bridge goroutine starts. The

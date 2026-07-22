@@ -19,19 +19,36 @@
     cfg.Patterns = (cfg.Patterns ?? []).filter((_, idx) => idx !== i);
   }
 
+  async function enableBrowserNotifications() {
+    const result = await api.requestNotificationPermission();
+    if (result === "granted") {
+      store.addToast("Browser notifications", "Enabled for this browser.");
+    } else if (result === "unsupported") {
+      store.addToast("Browser notifications unavailable", "Use HTTPS or allow in-app notifications only.");
+    } else {
+      store.addToast("Browser notifications", "Permission was not granted.");
+    }
+  }
+
   async function save() {
     try {
       await api.setNotifications(cfg);
       store.config!.Notifications.Desktop = cfg;
       store.addToast("Notifications", "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 
-<Modal title="Desktop Notifications" wide back onsave={save}>
+<Modal title={api.inWeb() ? "Notifications" : "Desktop Notifications"} wide back onsave={save}>
+  {#if api.inWeb()}
+    <div class="browser-notify">
+      <span class="dim">Matches always appear in every client as in-app alerts. Browser-native alerts are a permission local to this device.</span>
+      <button onclick={enableBrowserNotifications}>Enable on this browser</button>
+    </div>
+  {/if}
   <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.HealthBelow.Enabled} /> Notify when health below</label>
     <input class="num" type="number" min="0" max="100" bind:value={cfg.HealthBelow.Threshold} />
@@ -62,6 +79,20 @@
     padding: 8px 0;
     border-bottom: 1px solid var(--border);
   }
+  .browser-notify {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 0 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .browser-notify span {
+    flex: 1;
+  }
+  .browser-notify button {
+    flex: 0 0 auto;
+  }
   .chk {
     display: flex;
     align-items: center;
@@ -89,5 +120,19 @@
   .sm {
     padding: 4px 10px;
     font-size: 12px;
+  }
+  @media (max-width: 599px) {
+    .browser-notify,
+    .section {
+      align-items: stretch;
+      flex-direction: column;
+    }
+    .pat {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) 40px;
+    }
+    .pat input:nth-of-type(3) {
+      grid-column: 2;
+    }
   }
 </style>

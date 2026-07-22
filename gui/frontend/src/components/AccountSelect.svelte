@@ -12,7 +12,10 @@
     store.disconnectNotice = "";
     try {
       await api.connectStored(username);
-      store.screen = "connecting";
+      // The shared connected event can arrive before the HTTP operation
+      // completes. Keep the game screen if that authoritative event won the
+      // race; otherwise wait on the normal connecting screen.
+      if (store.connState !== "connected") store.screen = "connecting";
     } catch (e: any) {
       error = e?.message ?? String(e);
       busy = "";
@@ -21,9 +24,19 @@
 
   async function remove(username: string, ev: MouseEvent) {
     ev.stopPropagation();
-    await api.removeAccount(username);
-    store.accounts = store.accounts.filter((a) => a !== username);
-    if (store.accounts.length === 0) store.screen = "login";
+    if (
+      api.inWeb() &&
+      !window.confirm(`Remove the stored TEC credentials for ${username} for every client?`)
+    ) {
+      return;
+    }
+    try {
+      await api.removeAccount(username);
+      store.accounts = store.accounts.filter((a) => a !== username);
+      if (store.accounts.length === 0) store.screen = "login";
+    } catch (cause: any) {
+      error = cause?.message ?? String(cause);
+    }
   }
 
 </script>
@@ -66,6 +79,11 @@
     <button class="add" onclick={() => (store.screen = "login")} disabled={!!busy} type="button">
       + Add another account
     </button>
+    {#if api.inWeb()}
+      <button class="signout" onclick={() => void api.quit()} disabled={!!busy} type="button">
+        Sign out of web UI
+      </button>
+    {/if}
     <div class="ver">{store.version}</div>
   </div>
 </div>
@@ -77,9 +95,11 @@
     align-items: center;
     justify-content: center;
     background: var(--bg);
+    padding: 16px;
   }
   .card {
     width: 400px;
+    max-width: 100%;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
     padding: 24px 24px 16px;
@@ -215,6 +235,13 @@
     margin-top: 18px;
     text-align: center;
     font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .signout {
+    width: 100%;
+    margin-top: 8px;
+    border: none;
+    background: none;
     color: var(--fg-dim);
   }
 </style>

@@ -166,7 +166,7 @@
   }
   .mbody {
     padding: 12px;
-    overflow-y: auto;
+    overflow: auto;
   }
   .mfoot {
     padding: 8px 12px;
@@ -174,5 +174,39 @@
     display: flex;
     justify-content: flex-end;
     gap: 8px;
+  }
+
+  @media (max-width: 599px) {
+    .backdrop {
+      align-items: flex-end;
+    }
+    .modal,
+    .modal.wide {
+      width: 100%;
+      max-width: 100%;
+      max-height: calc(100dvh - env(safe-area-inset-top));
+      border-inline: none;
+      border-bottom: none;
+    }
+    .mhead {
+      min-height: 48px;
+      padding-inline: 10px;
+    }
+    .back,
+    .x {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    .mbody {
+      padding: 10px;
+      overscroll-behavior: contain;
+    }
+    .mfoot {
+      padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+      flex-wrap: wrap;
+    }
+    .mfoot button {
+      min-height: 44px;
+    }
   }
 </style>

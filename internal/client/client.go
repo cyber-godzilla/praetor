@@ -630,12 +630,6 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 	}
 }
 
-// sendNotification sends a desktop notification and emits a NotificationEvent.
-func (c *Client) sendNotification(title, message string) {
-	go sendDesktopNotification(title, message)
-	c.emit(types.NotificationEvent{Title: title, Message: message})
-}
-
 // handleLocalCommand parses and executes slash commands.
 func (c *Client) handleLocalCommand(input string) {
 	parts := strings.Fields(input)

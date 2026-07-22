@@ -105,3 +105,35 @@ func TestUpdateConfig_PreservesDedup(t *testing.T) {
 		t.Errorf("expected lastSent time preserved, got %v (was %v)", dn.lastSent["health"], sentTime)
 	}
 }
+
+func TestDesktopNotifier_UsesInjectedSink(t *testing.T) {
+	cfg := config.DesktopNotificationsConfig{
+		HealthBelow: config.ThresholdConfig{Enabled: true, Threshold: 25},
+	}
+	dn := NewDesktopNotifier(cfg)
+	type delivered struct{ title, message string }
+	got := make(chan delivered, 1)
+	dn.SetSink(NotificationSinkFunc(func(title, message string) {
+		got <- delivered{title: title, message: message}
+	}))
+
+	dn.CheckHealth(20)
+	select {
+	case notification := <-got:
+		if notification.title != "Health Warning" || notification.message != "Health at 20%" {
+			t.Fatalf("unexpected notification: %#v", notification)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("injected notification sink was not called")
+	}
+}
+
+func TestDesktopNotifier_NilSinkDoesNotDeliverNatively(t *testing.T) {
+	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{
+		HealthBelow: config.ThresholdConfig{Enabled: true, Threshold: 25},
+	})
+	dn.SetSink(nil)
+	// The assertion is that this returns without attempting to dereference the
+	// sink. Native process execution is deliberately outside unit tests.
+	dn.CheckHealth(20)
+}

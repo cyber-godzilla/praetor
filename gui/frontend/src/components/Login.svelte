@@ -16,11 +16,16 @@
     store.disconnectNotice = "";
     try {
       await api.connectNew(username, password, storeCredentials);
+      password = "";
       store.loginUser = username;
       if (storeCredentials && !store.accounts.includes(username)) {
         store.accounts = [...store.accounts, username];
       }
-      store.screen = "connecting";
+      // The server starts the game loop before this HTTP request returns, so
+      // its WebSocket "connected" event may already have advanced the UI to
+      // the game screen. Never overwrite that newer authoritative state with
+      // the transitional screen.
+      if (store.connState !== "connected") store.screen = "connecting";
     } catch (err: any) {
       error = err?.message ?? String(err);
       busy = false;
@@ -65,6 +70,11 @@
         ← Back to accounts
       </button>
     {/if}
+    {#if api.inWeb()}
+      <button type="button" class="back" onclick={() => void api.quit()} disabled={busy}>
+        Sign out of web UI
+      </button>
+    {/if}
   </form>
 </div>
 
@@ -74,9 +84,11 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 16px;
   }
   .card {
     width: 340px;
+    max-width: 100%;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
     padding: 24px;

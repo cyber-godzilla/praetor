@@ -1,16 +1,45 @@
-.PHONY: test build run run-sixel run-kitty run-none run-pprof xterm-sixel foot-sixel vet fmt lint check clean
+.PHONY: test build web web-assets web-run web-dev web-check web-linux-amd64 web-clean run run-sixel run-kitty run-none run-pprof xterm-sixel foot-sixel vet fmt lint check clean
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 
 # The TUI ships as `praetor-tui`; the GUI (built under gui/) owns the plain
 # `praetor` name. Keep these in sync with packaging/ and the release pipeline.
 TUI_BIN ?= praetor-tui
+WEB_BIN ?= praetor-web
+WEB_LISTEN ?= 127.0.0.1:8787
 
 test:
 	go test ./... -count=1 -timeout=60s
 
 build:
 	go build -ldflags "-X main.version=$(VERSION)" -o $(TUI_BIN) ./cmd/praetor/
+
+web-assets:
+	cd gui/frontend && npm run build
+	mkdir -p internal/webassets/dist
+	rm -rf internal/webassets/dist/assets
+	cp gui/frontend/dist/index.html internal/webassets/dist/index.html
+	cp -R gui/frontend/dist/assets internal/webassets/dist/assets
+
+web: web-assets
+	go build -ldflags "-X main.version=$(VERSION)" -o $(WEB_BIN) ./cmd/praetor-web/
+
+web-run: web
+	./$(WEB_BIN) --listen $(WEB_LISTEN)
+
+web-dev: web-assets
+	go run -ldflags "-X main.version=$(VERSION)" ./cmd/praetor-web/ --listen $(WEB_LISTEN)
+
+web-check: web-assets
+	go test -race ./internal/web ./internal/gui ./cmd/praetor-web -count=1
+	cd gui/frontend && npm test
+
+web-linux-amd64: web-assets
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o praetor-web-linux-amd64 ./cmd/praetor-web/
+
+web-clean:
+	rm -f $(WEB_BIN) praetor-web-linux-amd64
+	rm -rf internal/webassets/dist/assets internal/webassets/dist/index.html
 
 run: build
 	./$(TUI_BIN)
@@ -54,4 +83,5 @@ lint:
 check: vet fmt test
 
 clean:
-	rm -f $(TUI_BIN) praetor
+	rm -f $(TUI_BIN) $(WEB_BIN) praetor
+	rm -rf internal/webassets/dist/assets internal/webassets/dist/index.html

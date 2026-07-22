@@ -2,6 +2,10 @@
 /praetor-tui
 /dist/
 /dist-brew/
+/praetor-web
+/praetor-web-linux-amd64
+/internal/webassets/dist/*
+!/internal/webassets/dist/.keep
 # Chocolatey pack artifacts staged at release time.
 /packaging/choco/tools/*.exe
 /packaging/choco/praetor.rendered.nuspec

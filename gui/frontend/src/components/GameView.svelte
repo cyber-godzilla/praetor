@@ -9,6 +9,7 @@
   import MetricsPanel from "./MetricsPanel.svelte";
   import InputLine from "./InputLine.svelte";
   import Sidebar from "./Sidebar.svelte";
+  import MobileDock from "./MobileDock.svelte";
 
   function visibleTabs() {
     return store.tabs.filter((t) => t.visible);
@@ -164,6 +165,12 @@
 <div class="game">
   <StatusBar />
   <TabBar />
+  {#if !store.transportReady}
+    <div class="transport-banner" role="status">
+      {store.transportState === "reconnecting" ? "Reconnecting to Praetor…" : "Connecting to Praetor…"}
+      Commands are paused until current state is restored.
+    </div>
+  {/if}
   <div class="body">
     <div class="main">
       {#if activeTab?.kind === "metrics"}
@@ -177,6 +184,7 @@
     </div>
     {#if store.sidebarOpen}
       <Sidebar />
+      <MobileDock />
     {/if}
   </div>
 </div>
@@ -199,5 +207,22 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+  }
+  .transport-banner {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--accent-dim);
+    background: var(--bg-elevated);
+    color: var(--accent);
+    font-size: 12px;
+    text-align: center;
+  }
+  @media (max-width: 899px) {
+    .body {
+      flex-direction: column;
+    }
+    .main {
+      flex: 1 1 auto;
+    }
   }
 </style>

@@ -120,6 +120,11 @@ class AppStore {
   // Connection
   connState = $state<"connected" | "disconnected">("disconnected");
   connReason = $state("");
+  // Browser-to-Praetor transport health is separate from the shared TEC
+  // connection. Wails stays online; web mode updates this around snapshots and
+  // reconnects so commands cannot be issued against stale state.
+  transportReady = $state(true);
+  transportState = $state<"connecting" | "connected" | "reconnecting">("connected");
   // Set when a disconnect was NOT user-initiated (a drop). Rendered as a banner
   // on the bootup screen; cleared on user logout and on the next connect.
   disconnectNotice = $state("");
@@ -327,6 +332,24 @@ class AppStore {
     this.histSearchActive = false;
     this.notesInitial = null;
     this.notesEditorActive = false;
+  }
+
+  // installSnapshot replaces only shared game-session state. Config/account
+  // metadata is delivered separately, while browser-local UI state such as
+  // collapsed panels and input history remains owned by the browser.
+  installSnapshot(events: WireEvent[]) {
+    this.resetSession();
+    this.connState = "disconnected";
+    this.connReason = "";
+    this.apply(events);
+  }
+
+  installConfig(config: AppConfig) {
+    const oldTabs = this.config?.UI?.CustomTabs;
+    this.config = config;
+    if (config.UI?.CustomTabs !== oldTabs) {
+      this.rebuildTabs(config.UI?.CustomTabs);
+    }
   }
 
   private applyConn(c: ConnPayload) {

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy, tick } from "svelte";
   import type { Tab, Line } from "../lib/store.svelte";
   import { store } from "../lib/store.svelte";
   import type { Segment } from "../lib/types";
@@ -21,45 +22,92 @@
   const fontSize = $derived(store.config?.UI?.OutputFontSize || 14);
 
   let viewport: HTMLDivElement;
+  let contentEl: HTMLDivElement;
   // Follow the tail whenever the view sits within a band of the newest line
   // (see lib/scroll.ts). Distance — not scroll direction — decides following, so
   // a burst that momentarily outruns the auto-scroll, or a wheel gesture that
   // lands a few pixels short of the bottom, still counts as "following". Only
   // scrolling up out of the band (or pressing Home) detaches; End/PgDn re-engage.
-  let autoFollow = true;
-  // Last observed scrollTop, used to tell a user's upward scroll (scrollTop
-  // decreases) apart from content growth (scrollHeight grows, scrollTop does
-  // not). Kept in sync on programmatic scrolls so those never read as user
-  // movement. Home also freezes at the top even when the whole buffer is short
-  // enough that the top sits inside the band; setting scrollTop=0 fires a scroll
-  // event we swallow via ignoreScroll.
-  let lastTop = 0;
+  let autoFollow = $state(true);
+  // Scroll events also come from DOM anchoring and programmatic movement. Only
+  // a short-lived explicit wheel/touch/control gesture may disengage following;
+  // capped scrollback removing rows above the viewport must not look like one.
+  const USER_SCROLL_IDLE_MS = 180;
+  let userScrollActive = false;
+  let userScrollTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastTouchY: number | undefined;
   let ignoreScroll = false;
 
   function bandPx(): number {
     return followBandPx(fontSize);
   }
 
-  // Recompute the follow state from the current scroll position. Re-engage
-  // whenever within the band, but only DISENGAGE on a genuine upward scroll —
-  // a burst that grows scrollHeight faster than the auto-scroll catches up must
-  // not spuriously detach following (which would leave the view stuck behind).
+  function endUserScroll() {
+    userScrollActive = false;
+    if (userScrollTimer !== undefined) clearTimeout(userScrollTimer);
+    userScrollTimer = undefined;
+  }
+
+  function markUserScroll() {
+    userScrollActive = true;
+    if (userScrollTimer !== undefined) clearTimeout(userScrollTimer);
+    userScrollTimer = setTimeout(endUserScroll, USER_SCROLL_IDLE_MS);
+  }
+
+  // Recompute the follow state from the current scroll position. Application
+  // layout may re-engage near the tail but cannot detach it; only an active user
+  // gesture is allowed to take ownership of scrollback.
   function onScroll() {
     if (!viewport) return;
-    const top = viewport.scrollTop;
     if (ignoreScroll) {
       ignoreScroll = false;
-      lastTop = top;
+      sampleMetrics();
       return;
     }
     autoFollow = nextAutoFollow({
       gapPx: gapToBottom(viewport),
       bandPx: bandPx(),
-      top,
-      lastTop,
       current: autoFollow,
+      userMovedAway: userScrollActive,
     });
-    lastTop = top;
+    // Native wheel/touch momentum can continue after its input event. Keep the
+    // user-intent window alive until scrolling itself has gone quiet.
+    if (userScrollActive) markUserScroll();
+    sampleMetrics();
+  }
+
+  function onViewportWheel(e: WheelEvent) {
+    if (e.deltaY < 0) markUserScroll();
+    else if (e.deltaY > 0) endUserScroll();
+  }
+
+  function onViewportTouchStart(e: TouchEvent) {
+    lastTouchY = e.touches[0]?.clientY;
+  }
+
+  function onViewportTouchMove(e: TouchEvent) {
+    const y = e.touches[0]?.clientY;
+    if (y === undefined) return;
+    if (lastTouchY !== undefined) {
+      // Dragging the finger downward moves the viewport toward older output.
+      if (y > lastTouchY) markUserScroll();
+      else if (y < lastTouchY) endUserScroll();
+    }
+    lastTouchY = y;
+  }
+
+  function onViewportTouchEnd() {
+    lastTouchY = undefined;
+  }
+
+  function applyUserScrollPosition(movedAway: boolean) {
+    if (!viewport) return;
+    autoFollow = nextAutoFollow({
+      gapPx: gapToBottom(viewport),
+      bandPx: bandPx(),
+      current: autoFollow,
+      userMovedAway: movedAway,
+    });
     sampleMetrics();
   }
 
@@ -97,6 +145,7 @@
   }
   function onThumbMove(e: PointerEvent) {
     if (!dragging || !viewport) return;
+    const previousTop = viewport.scrollTop;
     const delta = scrollDeltaForThumbDrag({
       dyPx: e.clientY - dragStartY,
       trackPx: metrics.trackPx,
@@ -106,6 +155,10 @@
     });
     const maxScroll = Math.max(0, metrics.scrollHeight - metrics.clientHeight);
     viewport.scrollTop = Math.min(maxScroll, Math.max(0, dragStartScroll + delta));
+    const movedAway = viewport.scrollTop < previousTop;
+    if (movedAway) markUserScroll();
+    else endUserScroll();
+    applyUserScrollPosition(movedAway);
   }
   function onThumbUp(e: PointerEvent) {
     dragging = false;
@@ -122,64 +175,138 @@
     pageBy(y < thumb.offsetPx ? -1 : 1);
   }
 
-  // Coalesce all appends within a frame into a single scroll-to-bottom.
-  let scrollQueued = false;
-  function followTail() {
-    if (scrollQueued) return;
-    scrollQueued = true;
-    requestAnimationFrame(() => {
-      scrollQueued = false;
-      if (viewport && autoFollow) {
+  // Coalesce appends, wait for Svelte's DOM update, then anchor and verify on
+  // consecutive frames. The bounded verification covers wrapping/layout that
+  // settles after the first scroll without creating an unbounded RAF loop.
+  const TAIL_TOLERANCE_PX = 1;
+  let tailScheduled = false;
+  let tailFrame = 0;
+  let verifyFrame = 0;
+  let destroyed = false;
+
+  function setTailPosition() {
+    if (!viewport || !autoFollow) return;
+    viewport.scrollTop = viewport.scrollHeight;
+    sampleMetrics();
+  }
+
+  function queueTailVerification() {
+    if (verifyFrame || destroyed) return;
+    verifyFrame = requestAnimationFrame(() => {
+      verifyFrame = 0;
+      if (!viewport || !autoFollow) return;
+      if (gapToBottom(viewport) > TAIL_TOLERANCE_PX) {
         viewport.scrollTop = viewport.scrollHeight;
-        lastTop = viewport.scrollTop;
       }
+      sampleMetrics();
+    });
+  }
+
+  function followTail(immediate = false) {
+    if (immediate) setTailPosition();
+    if (tailScheduled || destroyed) return;
+    tailScheduled = true;
+    void tick().then(() => {
+      if (destroyed) {
+        tailScheduled = false;
+        return;
+      }
+      tailFrame = requestAnimationFrame(() => {
+        tailFrame = 0;
+        tailScheduled = false;
+        if (!viewport || !autoFollow) return;
+        setTailPosition();
+        queueTailVerification();
+      });
     });
   }
 
   // Explicit scroll commands shared by the on-screen buttons and the keyboard.
   function toTop() {
     if (!viewport) return;
+    endUserScroll();
     autoFollow = false; // freeze: appends never re-engage, only End/scroll does
     // Only swallow a scroll event if one will actually fire (position changes).
     if (viewport.scrollTop !== 0) {
       ignoreScroll = true;
       viewport.scrollTop = 0;
     }
-    lastTop = 0;
+    sampleMetrics();
   }
   function toEnd() {
     if (!viewport) return;
+    endUserScroll();
+    ignoreScroll = false;
     autoFollow = true;
-    viewport.scrollTop = viewport.scrollHeight;
-    lastTop = viewport.scrollTop;
+    // Move immediately for responsive controls, then repeat after pending DOM
+    // and layout work so End cannot target a stale scrollHeight.
+    followTail(true);
   }
   function pageBy(dir: 1 | -1) {
     if (!viewport) return;
+    const movedAway = dir < 0;
+    if (movedAway) markUserScroll();
+    else endUserScroll();
     viewport.scrollBy({ top: viewport.clientHeight * 0.85 * dir });
     // A PgDn that lands within the band snaps fully to the bottom (== End).
     if (dir > 0 && withinBand(gapToBottom(viewport), bandPx())) toEnd();
-    else onScroll();
+    else applyUserScrollPosition(movedAway);
   }
 
   $effect(() => {
-    // Touch length so the effect re-runs on append.
+    // At the scrollback cap, length returns to the same value after every head
+    // trim. Also depend on the newest identity so every append schedules follow.
     void tab.lines.length;
+    void tab.lines[tab.lines.length - 1]?.id;
     if (autoFollow) followTail();
     sampleMetrics();
   });
 
+  // Re-anchor when either the viewport or rendered content changes geometry.
+  // Observing only the fixed viewport misses child insertion and line wrapping.
+  $effect(() => {
+    if (!viewport || !contentEl) return;
+    const ro = new ResizeObserver(() => {
+      if (autoFollow) followTail();
+      sampleMetrics();
+    });
+    ro.observe(viewport);
+    ro.observe(contentEl);
+    return () => ro.disconnect();
+  });
+
+  // Font-size changes reflow line heights without resizing the viewport, so
+  // re-follow explicitly when it changes.
+  $effect(() => {
+    void fontSize;
+    if (autoFollow) followTail();
+    sampleMetrics();
+  });
+
+  onDestroy(() => {
+    destroyed = true;
+    endUserScroll();
+    if (tailFrame) cancelAnimationFrame(tailFrame);
+    if (verifyFrame) cancelAnimationFrame(verifyFrame);
+  });
+
+  // Snap to the bottom and resume following when switching to another tab.
+  $effect(() => {
+    void tab.name;
+    autoFollow = true;
+    followTail();
+    sampleMetrics();
+  });
+
   // ---- Scrollback search (Ctrl+F) ---------------------------------------
-  // GameView toggles store.searchOpen from its capture-phase key handling; the
-  // query and match cursor live here. Matches are recomputed against the
-  // active tab's rendered text; navigation scrolls the match into view.
   let searchEl: HTMLInputElement | undefined = $state();
   let searchQuery = $state("");
-  let searchIdx = $state(-1); // index into searchMatches; -1 = none yet
+  let searchIdx = $state(-1);
 
   const searchMatches = $derived(
     store.searchOpen && searchQuery.trim()
       ? matchingLineIds(
-          tab.lines.map((l) => ({ id: l.id, text: textOf(l) })),
+          tab.lines.map((line) => ({ id: line.id, text: textOf(line) })),
           searchQuery,
         )
       : [],
@@ -188,8 +315,6 @@
     searchIdx >= 0 && searchIdx < searchMatches.length ? searchMatches[searchIdx] : -1,
   );
 
-  // Keep the cursor valid as matches change (appends, trims, tab switches):
-  // out-of-range or unset snaps to the newest match.
   $effect(() => {
     const len = searchMatches.length;
     if (len === 0) {
@@ -199,7 +324,6 @@
     }
   });
 
-  // (Re)focus the search input on open and on repeat Ctrl+F.
   $effect(() => {
     void store.searchFocusRequest;
     if (store.searchOpen) {
@@ -212,21 +336,21 @@
 
   function textOf(line: Line): string {
     return segsFor(line)
-      .map((s) => s.text)
+      .map((segment) => segment.text)
       .join("");
   }
 
   function scrollToCurrent() {
     const id = searchMatches[searchIdx];
     if (id === undefined || !viewport) return;
-    const el = viewport.querySelector(`[data-lid="${id}"]`);
-    el?.scrollIntoView({ block: "center" });
-    onScroll(); // refresh follow state + rail metrics after the jump
+    const element = viewport.querySelector(`[data-lid="${id}"]`);
+    element?.scrollIntoView({ block: "center" });
+    onScroll();
   }
 
-  function onQueryInput(v: string) {
-    searchQuery = v;
-    searchIdx = searchMatches.length - 1; // restart at the newest match
+  function onQueryInput(query: string) {
+    searchQuery = query;
+    searchIdx = searchMatches.length - 1;
     scrollToCurrent();
   }
 
@@ -244,44 +368,12 @@
   function onSearchKey(e: KeyboardEvent) {
     if (e.key === "Enter") {
       e.preventDefault();
-      searchStep(e.shiftKey ? 1 : -1); // Enter walks older; Shift+Enter newer
+      searchStep(e.shiftKey ? 1 : -1);
     }
-    // Escape is handled by GameView's capture-phase handler (closes the bar).
   }
-
-  // Re-anchor to the bottom when the viewport geometry changes (window/sidebar
-  // resize, font-size change). Without this, scrollHeight/clientHeight shift
-  // while scrollTop stays put, leaving the "followed" view stuck at an offset.
-  $effect(() => {
-    if (!viewport) return;
-    const ro = new ResizeObserver(() => {
-      if (autoFollow) followTail();
-      sampleMetrics();
-    });
-    ro.observe(viewport);
-    return () => ro.disconnect();
-  });
-
-  // Font-size changes reflow line heights without resizing the viewport, so
-  // re-follow explicitly when it changes.
-  $effect(() => {
-    void fontSize;
-    if (autoFollow) followTail();
-    sampleMetrics();
-  });
-
-  // Snap to the bottom and resume following when switching to another tab.
-  $effect(() => {
-    void tab.name;
-    autoFollow = true;
-    followTail();
-    sampleMetrics();
-  });
 
   function segStyle(s: Segment): string {
     const parts: string[] = [];
-    // Sanitize colors before they reach the inline style attribute (defense in
-    // depth on top of the Go protocol layer's validation) — see safeColor.
     const color = safeColor(s.color);
     if (color) parts.push(`color:${color}`);
     // Background only — no padding/radius, so a highlight tints the exact
@@ -295,14 +387,14 @@
   }
 
   // Apply frontend render transforms in the TUI order: highlights, then IP
-  // masking. (Color words are applied upstream in the Go facade.) An active
-  // Ctrl+F query is painted last so search matches win visually.
+  // masking. (Color words are applied upstream in the Go facade.) Search is
+  // painted last so its active query wins visually.
   function displaySegs(line: Line): Segment[] {
     let segs = applyHighlights(segsFor(line), highlights);
     if (hideIPs) segs = maskIPs(segs);
-    const q = searchQuery.trim().toLowerCase();
-    if (store.searchOpen && q) {
-      segs = applyHighlights(segs, [{ pattern: q, bg: SEARCH_STYLE.bg, fg: SEARCH_STYLE.fg }]);
+    const query = searchQuery.trim().toLowerCase();
+    if (store.searchOpen && query) {
+      segs = applyHighlights(segs, [{ pattern: query, bg: SEARCH_STYLE.bg, fg: SEARCH_STYLE.fg }]);
     }
     return segs;
   }
@@ -324,7 +416,6 @@
   // control wins); PgUp/PgDn page the view, with PgDn-near-bottom acting as End.
   function onWindowKey(e: KeyboardEvent) {
     if (store.openModal || !viewport) return;
-    // While the search box has focus, Home/End/PgUp/PgDn edit/navigate there.
     if (searchEl && document.activeElement === searchEl) return;
     switch (e.key) {
       case "PageUp":
@@ -372,31 +463,45 @@
       <button type="button" tabindex="-1" title="Close (Esc)" onclick={closeSearch}>✕</button>
     </div>
   {/if}
-  <div class="pane" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
-    {#each tab.lines as line (line.id)}
-      {#if isBlank(line)}
-        <div class="line blank">&nbsp;</div>
-      {:else}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <div
-          class="line"
-          class:echo={line.isEcho}
-          class:suppressed={!!line.suppressed}
-          class:search-current={line.id === currentMatchId}
-          data-lid={line.id}
-          onclick={() => line.suppressed && reveal(line)}
-          role={line.suppressed ? "button" : undefined}
-          tabindex={line.suppressed ? -1 : undefined}
-        >
-          {#each displaySegs(line) as seg}
-            {#if seg.isHR}
-              <hr />
-            {:else}<span style={segStyle(seg)}>{seg.text}</span>{/if}
-          {/each}
-        </div>
-      {/if}
-    {/each}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="pane"
+    class:following={autoFollow}
+    bind:this={viewport}
+    onscroll={onScroll}
+    onwheel={onViewportWheel}
+    ontouchstart={onViewportTouchStart}
+    ontouchmove={onViewportTouchMove}
+    ontouchend={onViewportTouchEnd}
+    ontouchcancel={onViewportTouchEnd}
+    style="font-size:{fontSize}px"
+  >
+    <div class="content" bind:this={contentEl}>
+      {#each tab.lines as line (line.id)}
+        {#if isBlank(line)}
+          <div class="line blank">&nbsp;</div>
+        {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            class="line"
+            class:echo={line.isEcho}
+            class:suppressed={!!line.suppressed}
+            class:search-current={line.id === currentMatchId}
+            data-lid={line.id}
+            onclick={() => line.suppressed && reveal(line)}
+            role={line.suppressed ? "button" : undefined}
+            tabindex={line.suppressed ? -1 : undefined}
+          >
+            {#each displaySegs(line) as seg}
+              {#if seg.isHR}
+                <hr />
+              {:else}<span style={segStyle(seg)}>{seg.text}</span>{/if}
+            {/each}
+          </div>
+        {/if}
+      {/each}
+    </div>
   </div>
 
   <!-- Custom scroll rail overlaying the pane's right edge: Home/PgUp cap the top,
@@ -458,6 +563,14 @@
     line-height: 1.4;
     background: var(--bg);
     user-select: text;
+  }
+  /* While following, application code owns tail anchoring. When detached,
+     restore native anchoring so a reader's scrollback position stays stable. */
+  .pane.following {
+    overflow-anchor: none;
+  }
+  .content {
+    min-width: 0;
   }
   /* Hide the native scrollbar — the custom rail replaces it. Scrolling via
      wheel/keys still works. */
@@ -541,7 +654,6 @@
   .thumb:active {
     cursor: grabbing;
   }
-  /* Ctrl+F search bar overlays the top-right corner, clear of the rail. */
   .searchbar {
     position: absolute;
     top: 6px;

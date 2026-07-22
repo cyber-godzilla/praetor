@@ -111,13 +111,16 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 
 	logDir := sessionsDir
 	if cfg.Logging.Session.Path != "" {
-		logDir = cfg.Logging.Session.Path
+		logDir = expandPath(cfg.Logging.Session.Path)
 	}
 	sessLog, err := client.NewSessionLogger(cfg.Logging.Session.Enabled, logDir)
 	if err != nil {
-		// Non-fatal: continue without session logging.
-		sessLog = nil
+		// Non-fatal: retain a disabled logger so a corrected path can be
+		// applied live from any shell without restarting the process.
+		sessLog, _ = client.NewSessionLogger(false, logDir)
 	}
+	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	gc.Engine.SetNotificationSink(desktopNotify.Notify)
 
 	notesStore := notes.New(filepath.Join(configDir, "notes"))
 
@@ -128,10 +131,10 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		ConfigDir:     configDir,
 		DataDir:       dataDir,
 		StateDir:      stateDir,
-		SessionsDir:   logDir,
+		SessionsDir:   sessionsDir,
 		Creds:         creds,
 		SessionLog:    sessLog,
-		DesktopNotify: client.NewDesktopNotifier(cfg.Notifications.Desktop),
+		DesktopNotify: desktopNotify,
 		ScriptDirs:    scriptDirs,
 		Notes:         notesStore,
 		Version:       version,
