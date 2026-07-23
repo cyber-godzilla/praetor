@@ -57,6 +57,104 @@ file praetor-web-linux-amd64
 ldd praetor-web-linux-amd64   # expected to report that it is not dynamically linked
 ```
 
+## Docker
+
+One container runs one Praetor process and therefore one shared TEC account
+login and game session. Every browser connected to that container controls the
+same session.
+
+These commands work with Docker Desktop or Docker Engine. Start in the
+repository directory and complete the shared environment setup before choosing
+either the Docker CLI or Docker Compose instructions below.
+
+Create the credential-encryption key required by Praetor:
+
+```sh
+docker run --rm node:22-alpine node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
+
+Keep the output; it is the encryption key for saved TEC credentials.
+
+In the `packaging/docker` folder, make a copy of `.env.example` named `.env`.
+Open `.env` in a text editor, paste the generated key after
+`PRAETOR_CREDENTIALS_KEY=`, and enter your desired browser password after
+`PRAETOR_WEB_PASSWORD=`.
+
+Production note: storing the encryption key in plaintext `.env` is convenient
+but not ideal; prefer having a secrets manager inject
+`PRAETOR_CREDENTIALS_KEY` as a runtime environment variable.
+
+If you prefer a randomly generated browser password, use:
+
+```sh
+docker run --rm node:22-alpine node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"
+```
+
+The same `packaging/docker/.env` file is used by both methods.
+
+### Docker CLI
+
+Run these commands from the repository directory:
+
+```sh
+docker build -t praetor-web:local .
+docker volume create praetor-data
+docker run -d --name praetor-web --restart unless-stopped --env-file packaging/docker/.env -p 8787:8787 -v praetor-data:/data praetor-web:local
+```
+
+Open `https://localhost:8787/` and enter the browser password. A certificate
+warning is expected because Praetor creates its own self-signed certificate.
+
+To use a different host port, change the first `8787` in the `-p` argument. For
+example, `-p 9443:8787` uses `https://localhost:9443/`.
+
+Useful CLI commands:
+
+```sh
+# Follow container startup and shutdown output
+docker logs -f praetor-web
+
+# Follow the application log (includes traffic when log level is debug)
+docker exec praetor-web tail -n 100 -f /data/state/tec.log
+
+# Follow the newest game-session transcript after a session has started
+docker exec praetor-web sh -c 'tail -n 100 -f "$(ls -t /data/logs/session_*.log | head -n 1)"'
+
+# Stop and remove the container while keeping its data
+docker stop praetor-web
+docker rm praetor-web
+```
+
+### Docker Compose
+
+From the repository directory:
+
+```sh
+cd packaging/docker
+docker compose up -d --build
+```
+
+Open `https://localhost:8787/` and use the same browser password. To use a
+different host port, change `PRAETOR_PORT` in `.env`; for example,
+`PRAETOR_PORT=9443` uses `https://localhost:9443/`.
+
+Useful Compose commands:
+
+```sh
+# View logs
+docker compose logs -f
+
+# Stop and remove the container while keeping its data
+docker compose down
+```
+
+Both methods store configuration, encrypted credentials, TLS files, scripts,
+and logs in the Docker volume named `praetor-data`. Updating or removing the
+container does not remove that volume.
+
+The `.env` values can be seen through Docker inspection tools, so do not use
+this basic example on a shared or untrusted Docker host.
+
 ## Security boundary
 
 The default listener is deliberately loopback-only and uses the automatically

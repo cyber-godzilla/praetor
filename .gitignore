@@ -9,6 +9,7 @@
 # Chocolatey pack artifacts staged at release time.
 /packaging/choco/tools/*.exe
 /packaging/choco/praetor.rendered.nuspec
+/packaging/docker/.env
 .superpowers/
 .claude/
 # Local review-findings backlog (one task file per finding); not for the public repo.
