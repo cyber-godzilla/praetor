@@ -204,6 +204,7 @@ type LoggingConfig struct {
 type AppLoggingConfig struct {
 	Level     string `yaml:"level"` // debug, info, warn, error
 	MaxSizeMB int    `yaml:"max_size_mb"`
+	Retain    bool   `yaml:"retain"`
 }
 
 type SessionLoggingConfig struct {
@@ -345,6 +346,7 @@ func Defaults() *Config {
 			App: AppLoggingConfig{
 				Level:     "info",
 				MaxSizeMB: 5,
+				Retain:    false,
 			},
 			Session: SessionLoggingConfig{
 				Enabled: true,

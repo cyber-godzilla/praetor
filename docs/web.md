@@ -271,7 +271,7 @@ The resulting profile contains these files and directories:
 | Default session transcripts | `<config>/logs/` |
 | Notes and exports | `<config>/notes/` and `<config>/exports/` |
 | Lua persistent state | `<data>/persistent_state.json` |
-| Application log | `<state>/tec.log` |
+| Application log | `<state>/tec.log` and `.1`, or retained `<state>/tec_YYYY-MM-DD_HH-MM-SS*.log` |
 | Default encrypted credential file | `<state>/credentials/credentials.enc` |
 | Automatic self-signed TLS pair | `<state>/tls/praetor-web-self-signed.{crt,key}` |
 
@@ -357,6 +357,7 @@ logging:
   app:
     level: info
     max_size_mb: 5
+    retain: false
   session:
     enabled: true
     path: /srv/praetor/session-logs
@@ -369,7 +370,12 @@ own the same TEC session.
 
 Changing the logging directory while transcript logging is enabled closes the
 old transcript and starts a new timestamped transcript immediately. Enabling or
-disabling logging also applies immediately in web, Wails, and TUI shells.
+disabling transcript logging also applies immediately in web, Wails, and TUI
+shells. `retain` instead selects the application-log writer during
+startup: enable it to preserve dated `tec_*.log` segments indefinitely, then
+restart the process. Select `debug` to include exact received and sent
+application lines; the default `info` level retains only lifecycle and
+operational records.
 
 Desktop installs default to the operating-system keyring. A headless service
 normally cannot access or unlock a desktop keyring session, so it should select

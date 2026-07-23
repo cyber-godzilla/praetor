@@ -38,6 +38,7 @@ describe("web transport operation parity", () => {
       SetMobileHideNavigationOnInput: "mobile-hide-navigation-on-input",
       SetMobileLowercaseFirstLetter: "mobile-lowercase-first-letter",
       SetMobileOutputFontSize: "mobile-output-font-size",
+      SetRetainAppLogs: "retain-app-logs",
     });
   });
 

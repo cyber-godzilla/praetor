@@ -277,6 +277,31 @@ func TestServerRevisionedSettingBroadcast(t *testing.T) {
 	}
 }
 
+func TestServerRetainAppLogsSetting(t *testing.T) {
+	srv, handler := newTestServer(t)
+	cookie, csrf := loginRequest(t, handler)
+	body := bytes.NewBufferString(`{"expectedRevision":1,"value":true}`)
+	req := httptest.NewRequest(
+		http.MethodPut,
+		"http://praetor.test/api/v1/settings/retain-app-logs",
+		body,
+	)
+	req.Host = "praetor.test"
+	req.Header.Set("Origin", "http://praetor.test")
+	req.Header.Set("X-Praetor-CSRF", csrf)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("setting status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if !srv.app.GetConfig().Logging.App.Retain {
+		t.Fatal("retain-app-logs did not update the shared configuration")
+	}
+}
+
 func TestServerMobileWebSettings(t *testing.T) {
 	tests := []struct {
 		operation string

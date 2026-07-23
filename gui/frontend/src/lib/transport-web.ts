@@ -485,6 +485,7 @@ export const settingsOperations: Record<string, string> = {
   SetMobileHideNavigationOnInput: "mobile-hide-navigation-on-input",
   SetMobileLowercaseFirstLetter: "mobile-lowercase-first-letter",
   SetMobileOutputFontSize: "mobile-output-font-size",
+  SetRetainAppLogs: "retain-app-logs",
   SetSessionLogging: "session-logging",
   SetLogPath: "log-path",
   SetDisplayMode: "display-mode",

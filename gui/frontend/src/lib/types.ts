@@ -217,6 +217,7 @@ export interface AppConfig {
   Ignorelist: { OOC: string[] | null; Think: string[] | null };
   Notifications: { Desktop: DesktopNotificationsConfig };
   Logging: {
+    App: { Retain: boolean };
     Session: { Enabled: boolean; Path: string };
     [k: string]: unknown;
   };

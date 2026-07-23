@@ -275,6 +275,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetMobileLowercaseFirstLetter)
 	case "mobile-output-font-size":
 		return settingValue(raw, s.app.SetMobileOutputFontSize)
+	case "retain-app-logs":
+		return settingValue(raw, s.app.SetRetainAppLogs)
 	case "session-logging":
 		return settingValue(raw, s.app.SetSessionLogging)
 	case "log-path":

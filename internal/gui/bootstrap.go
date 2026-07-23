@@ -61,15 +61,6 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	stateDir := appDir("PRAETOR_STATE_DIR", "XDG_STATE_HOME", ".local/state", "praetor")
 	sessionsDir := filepath.Join(configDir, "logs")
 
-	logLevel := "info"
-	if debug {
-		logLevel = "debug"
-	}
-	appLog, err := logging.New(stateDir, "tec.log", logLevel, 5)
-	if err != nil {
-		return nil, err
-	}
-
 	cfgFile := filepath.Join(configDir, "config.yaml")
 	if _, statErr := os.Stat(cfgFile); os.IsNotExist(statErr) {
 		if err := os.MkdirAll(configDir, 0o755); err != nil {
@@ -84,6 +75,21 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	}
 
 	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		return nil, err
+	}
+
+	logLevel := cfg.Logging.App.Level
+	if debug {
+		logLevel = "debug"
+	}
+	appLog, err := logging.New(
+		stateDir,
+		"tec.log",
+		logLevel,
+		cfg.Logging.App.MaxSizeMB,
+		cfg.Logging.App.Retain,
+	)
 	if err != nil {
 		return nil, err
 	}

@@ -712,18 +712,53 @@ func main() {
 	stateDir := xdgPath("XDG_STATE_HOME", ".local/state", "praetor")
 	sessionsDir := filepath.Join(configDir, "logs")
 
-	// Set up structured logging in state dir.
-	logLevel := "info"
+	// Load configuration before opening the application log because its archive
+	// retention policy and segment size are startup settings.
+	cfgFile := filepath.Join(configDir, "config.yaml")
+	createdConfig := false
+	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			log.Fatalf("creating config dir: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Join(configDir, "scripts"), 0755); err != nil {
+			log.Printf("creating scripts dir: %v", err)
+		}
+		// Write default config.
+		defaults := config.Defaults()
+		if err := config.Save(defaults, cfgFile); err != nil {
+			log.Fatalf("writing default config: %v", err)
+		}
+		createdConfig = true
+	}
+
+	cfg, err := config.Load(cfgFile)
+	if err != nil {
+		log.Fatalf("loading config: %v", err)
+	}
+
+	logLevel := cfg.Logging.App.Level
 	if *debugFlag {
 		logLevel = "debug"
 	}
-	appLog, err := logging.New(stateDir, "tec.log", logLevel, 5)
+	appLog, err := logging.New(
+		stateDir,
+		"tec.log",
+		logLevel,
+		cfg.Logging.App.MaxSizeMB,
+		cfg.Logging.App.Retain,
+	)
 	if err != nil {
 		log.Fatalf("opening log file: %v", err)
 	}
 	defer appLog.Close()
 	// Standard log package now routes through slog.
 	log.Printf("praetor %s starting", version)
+	if createdConfig {
+		log.Printf("Created default config at %s", cfgFile)
+	}
+	for _, w := range cfg.TransportWarnings() {
+		log.Printf("[CONFIG] %s", w)
+	}
 
 	var pprofDir string
 	if *pprofFlag {
@@ -740,31 +775,6 @@ func main() {
 				}
 			}()
 		}
-	}
-
-	// Ensure config dir and default config exist.
-	cfgFile := filepath.Join(configDir, "config.yaml")
-	if _, err := os.Stat(cfgFile); os.IsNotExist(err) {
-		if err := os.MkdirAll(configDir, 0755); err != nil {
-			log.Fatalf("creating config dir: %v", err)
-		}
-		if err := os.MkdirAll(filepath.Join(configDir, "scripts"), 0755); err != nil {
-			log.Printf("creating scripts dir: %v", err)
-		}
-		// Write default config.
-		defaults := config.Defaults()
-		if err := config.Save(defaults, cfgFile); err != nil {
-			log.Fatalf("writing default config: %v", err)
-		}
-		log.Printf("Created default config at %s", cfgFile)
-	}
-
-	cfg, err := config.Load(cfgFile)
-	if err != nil {
-		log.Fatalf("loading config: %v", err)
-	}
-	for _, w := range cfg.TransportWarnings() {
-		log.Printf("[CONFIG] %s", w)
 	}
 
 	// Build script directories list, expanding ~ and env vars.

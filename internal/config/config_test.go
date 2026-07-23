@@ -9,6 +9,16 @@ import (
 	"testing"
 )
 
+func TestDefaults_AppLoggingIsInfoAndRetentionOff(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Logging.App.Level != "info" {
+		t.Errorf("Level = %q, want info", cfg.Logging.App.Level)
+	}
+	if cfg.Logging.App.Retain {
+		t.Error("Retain = true, want false")
+	}
+}
+
 func TestValidate_DropsEmptyHighlightPattern(t *testing.T) {
 	c := Defaults()
 	c.Highlights = []HighlightConfig{
@@ -449,6 +459,9 @@ func TestValidate_ClampsValues(t *testing.T) {
 	}
 	if cfg.Logging.App.MaxSizeMB != 5 {
 		t.Errorf("MaxSizeMB = %d, want 5", cfg.Logging.App.MaxSizeMB)
+	}
+	if cfg.Logging.App.Retain {
+		t.Error("Retain = true, want false")
 	}
 }
 

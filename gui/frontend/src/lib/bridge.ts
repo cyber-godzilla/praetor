@@ -121,6 +121,7 @@ export const setMobileLowercaseFirstLetter = (v: boolean) =>
   call<void>("SetMobileLowercaseFirstLetter", undefined, v);
 export const setMobileOutputFontSize = (px: number) =>
   call<void>("SetMobileOutputFontSize", undefined, px);
+export const setRetainAppLogs = (v: boolean) => call<void>("SetRetainAppLogs", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
