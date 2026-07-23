@@ -197,6 +197,11 @@ export interface UIConfig {
   EchoScript: boolean;
   HideIPs: boolean;
   InputSpellcheck: boolean;
+  MobileOutputFontSize: number;
+  MobileShowToolbar: boolean;
+  MobileShowTabBar: boolean;
+  MobileHideNavigationOnInput: boolean;
+  MobileLowercaseFirstLetter: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;
@@ -212,6 +217,7 @@ export interface AppConfig {
   Ignorelist: { OOC: string[] | null; Think: string[] | null };
   Notifications: { Desktop: DesktopNotificationsConfig };
   Logging: {
+    App: { Retain: boolean };
     Session: { Enabled: boolean; Path: string };
     [k: string]: unknown;
   };
@@ -230,9 +236,30 @@ export interface InitState {
   version: string;
   debug: boolean;
   accounts: string[] | null;
+  credentialStore: CredentialStoreStatus;
   hasModes: boolean;
   modeNames: string[] | null;
   config: AppConfig;
+}
+
+export interface CredentialStoreStatus {
+  backend: string;
+  available: boolean;
+  canStore: boolean;
+  message?: string;
+}
+
+export interface AccountState {
+  accounts: string[];
+  credentialStore: CredentialStoreStatus;
+}
+
+export interface ConnectResult {
+  connected: boolean;
+  credentialSaveRequested: boolean;
+  credentialsSaved: boolean;
+  warning?: string;
+  accountState?: AccountState;
 }
 
 export interface PersistentKeyInfo {

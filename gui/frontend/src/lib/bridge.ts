@@ -1,7 +1,5 @@
-// Typed wrapper around the Wails GuiApp bindings and runtime events. When the
-// app runs outside Wails (e.g. `vite dev` in a plain browser), window.go is
-// undefined; calls resolve to safe defaults so the UI still renders for
-// layout work.
+// Transport-neutral API used by the shared Svelte frontend. The native Wails
+// shell and the authenticated browser shell implement the same operation set.
 
 import type {
   InitState,
@@ -18,28 +16,37 @@ import type {
   UpdateInfo,
   NoteSummary,
   Note,
+  AccountState,
+  ConnectResult,
 } from "./types";
+import type { PraetorTransport, SystemUpdate } from "./transport";
+import { WebAuthRequiredError } from "./transport";
+import { WailsTransport } from "./transport-wails";
+import { WebTransport } from "./transport-web";
 
-function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
-  return window.go?.gui?.GuiApp;
-}
+const transport: PraetorTransport = window.go?.gui?.GuiApp && window.runtime
+  ? new WailsTransport()
+  : new WebTransport();
+
+const call = <T>(method: string, fallback: T, ...args: any[]) =>
+  transport.invoke<T>(method, fallback, ...args);
+
+export { WebAuthRequiredError };
 
 export function inWails(): boolean {
-  return !!window.go?.gui?.GuiApp && !!window.runtime;
+  return transport.kind === "wails";
 }
 
-async function call<T>(method: string, fallback: T, ...args: any[]): Promise<T> {
-  const a = app();
-  if (!a || typeof a[method] !== "function") {
-    return fallback;
-  }
-  try {
-    return (await a[method](...args)) as T;
-  } catch (e) {
-    console.error(`GuiApp.${method} failed:`, e);
-    throw e;
-  }
+export function inWeb(): boolean {
+  return transport.kind === "web";
 }
+
+export const webLogin = (password: string) => transport.webLogin(password);
+export const webLogout = () => transport.webLogout();
+export const quit = () => transport.quit();
+export const showLocalNotification = (title: string, message: string) =>
+  transport.showLocalNotification(title, message);
+export const requestNotificationPermission = () => transport.requestNotificationPermission();
 
 // ---- Lifecycle & init ----
 export const getInitState = () =>
@@ -47,18 +54,36 @@ export const getInitState = () =>
     version: "dev",
     debug: false,
     accounts: [],
+    credentialStore: {
+      backend: "unconfigured",
+      available: false,
+      canStore: false,
+      message: "Secure credential storage is not configured.",
+    },
     hasModes: false,
     modeNames: [],
     config: {} as AppConfig,
   });
 
 export const getConfig = () => call<AppConfig>("GetConfig", {} as AppConfig);
-export const start = () => call<void>("Start", undefined);
+export const start = () => transport.start();
 
 // ---- Auth / connection ----
-export const listAccounts = () => call<string[]>("ListAccounts", []);
+export const listAccounts = () => call<AccountState>("ListAccounts", {
+  accounts: [],
+  credentialStore: {
+    backend: "unconfigured",
+    available: false,
+    canStore: false,
+    message: "Secure credential storage is not configured.",
+  },
+});
 export const connectNew = (u: string, p: string, store: boolean) =>
-  call<void>("ConnectNew", undefined, u, p, store);
+  call<ConnectResult>("ConnectNew", {
+    connected: false,
+    credentialSaveRequested: store,
+    credentialsSaved: false,
+  }, u, p, store);
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
 export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
@@ -86,6 +111,17 @@ export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefin
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
+export const setMobileShowToolbar = (v: boolean) =>
+  call<void>("SetMobileShowToolbar", undefined, v);
+export const setMobileShowTabBar = (v: boolean) =>
+  call<void>("SetMobileShowTabBar", undefined, v);
+export const setMobileHideNavigationOnInput = (v: boolean) =>
+  call<void>("SetMobileHideNavigationOnInput", undefined, v);
+export const setMobileLowercaseFirstLetter = (v: boolean) =>
+  call<void>("SetMobileLowercaseFirstLetter", undefined, v);
+export const setMobileOutputFontSize = (px: number) =>
+  call<void>("SetMobileOutputFontSize", undefined, px);
+export const setRetainAppLogs = (v: boolean) => call<void>("SetRetainAppLogs", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
@@ -154,7 +190,10 @@ export const saveNote = (originalTitle: string, title: string, body: string) =>
 export const deleteNote = (title: string) => call<void>("DeleteNote", undefined, title);
 
 // ---- Events ----
-export function onEvents(cb: (batch: WireEvent[]) => void): () => void {
-  if (!window.runtime) return () => {};
-  return window.runtime.EventsOn("praetor:events", (data: WireEvent[]) => cb(data));
+export function onEvents(
+  events: (batch: WireEvent[]) => void,
+  snapshot?: (batch: WireEvent[]) => void,
+  system?: (update: SystemUpdate) => void,
+): () => void {
+  return transport.subscribe({ events, snapshot, system });
 }

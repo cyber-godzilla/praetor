@@ -41,6 +41,7 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 type Config struct {
 	Server        ServerConfig        `yaml:"server"`
 	Commands      CommandsConfig      `yaml:"commands"`
+	Credentials   CredentialsConfig   `yaml:"credentials"`
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
 	Highlights    []HighlightConfig   `yaml:"highlights"`
@@ -54,6 +55,23 @@ type Config struct {
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
 type UpdatesConfig struct {
 	Check bool `yaml:"check"` // notify when a newer release exists
+}
+
+// CredentialsConfig selects the secure account credential backend. Backend is
+// deliberately explicit: Praetor never falls back from a failed keyring to a
+// plaintext or file-backed store.
+type CredentialsConfig struct {
+	Backend       string                         `yaml:"backend"`
+	EncryptedFile EncryptedFileCredentialsConfig `yaml:"encrypted_file"`
+}
+
+// EncryptedFileCredentialsConfig controls the headless-service credential
+// store. Path may be empty to use STATE_DIR/credentials/credentials.enc. KeyEnv
+// names the environment variable containing a base64-encoded 32-byte key; the
+// key itself is never written to config.yaml.
+type EncryptedFileCredentialsConfig struct {
+	Path   string `yaml:"path"`
+	KeyEnv string `yaml:"key_env"`
 }
 
 type ServerConfig struct {
@@ -186,11 +204,12 @@ type LoggingConfig struct {
 type AppLoggingConfig struct {
 	Level     string `yaml:"level"` // debug, info, warn, error
 	MaxSizeMB int    `yaml:"max_size_mb"`
+	Retain    bool   `yaml:"retain"`
 }
 
 type SessionLoggingConfig struct {
 	Enabled bool   `yaml:"enabled"`
-	Path    string `yaml:"path"` // empty = XDG_DATA_HOME/praetor/sessions/
+	Path    string `yaml:"path"` // empty = XDG_CONFIG_HOME/praetor/logs/
 }
 
 type UIConfig struct {
@@ -219,6 +238,13 @@ type UIConfig struct {
 	// command input (red squiggles under misspelled words while composing says
 	// and emotes). Engine support varies by platform webview.
 	InputSpellcheck bool `yaml:"input_spellcheck"`
+	// Mobile web presentation settings are persisted with the shared UI config,
+	// but the native Wails and TUI shells deliberately ignore them.
+	MobileOutputFontSize        int  `yaml:"mobile_output_font_size"`
+	MobileShowToolbar           bool `yaml:"mobile_show_toolbar"`
+	MobileShowTabBar            bool `yaml:"mobile_show_tab_bar"`
+	MobileHideNavigationOnInput bool `yaml:"mobile_hide_navigation_on_input"`
+	MobileLowercaseFirstLetter  bool `yaml:"mobile_lowercase_first_letter"`
 	// NumpadNavigation controls the GUI numpad-walking behavior:
 	//   "numlock" — move when NumLock is off; type digits when on (default)
 	//   "always"  — numpad always sends movement (needed on macOS, which has
@@ -269,24 +295,34 @@ func Defaults() *Config {
 			MaxQueueSize: 20,
 			HighPriority: []string{},
 		},
+		Credentials: CredentialsConfig{
+			Backend: "keyring",
+			EncryptedFile: EncryptedFileCredentialsConfig{
+				Path:   "",
+				KeyEnv: "PRAETOR_CREDENTIALS_KEY",
+			},
+		},
 		Scripts: []string{},
 		UI: UIConfig{
-			DisplayMode:      "sidebar",
-			DefaultTab:       "all",
-			Scrollback:       5000,
-			SidebarWidth:     40,
-			MinimapScale:     1.0,
-			MinimapHeight:    12,
-			CompassScale:     1.0,
-			OutputFontSize:   14,
-			CRTScanlines:     true,
-			CRTRoll:          true,
-			CRTBloom:         true,
-			QuickCycleModes:  []string{"disable"},
-			EchoTyped:        true,
-			EchoScript:       true,
-			InputSpellcheck:  true,
-			NumpadNavigation: "numlock",
+			DisplayMode:          "sidebar",
+			DefaultTab:           "all",
+			Scrollback:           5000,
+			SidebarWidth:         40,
+			MinimapScale:         1.0,
+			MinimapHeight:        12,
+			CompassScale:         1.0,
+			OutputFontSize:       14,
+			CRTScanlines:         true,
+			CRTRoll:              true,
+			CRTBloom:             true,
+			QuickCycleModes:      []string{"disable"},
+			EchoTyped:            true,
+			EchoScript:           true,
+			InputSpellcheck:      true,
+			MobileOutputFontSize: 14,
+			MobileShowToolbar:    true,
+			MobileShowTabBar:     true,
+			NumpadNavigation:     "numlock",
 		},
 		Highlights: []HighlightConfig{},
 		Kudos: KudosConfig{
@@ -310,6 +346,7 @@ func Defaults() *Config {
 			App: AppLoggingConfig{
 				Level:     "info",
 				MaxSizeMB: 5,
+				Retain:    false,
 			},
 			Session: SessionLoggingConfig{
 				Enabled: true,
@@ -360,12 +397,39 @@ func Load(path string) (*Config, error) {
 
 	migrateLegacyEcho(cfg, data)
 	migrateLegacyDisplay(cfg, data)
+	migrateMobileOutputFontSize(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// migrateMobileOutputFontSize preserves the pre-split behavior for existing
+// configurations. Before this field existed, mobile and desktop web output
+// both used output_font_size; copy that value only when the mobile key is
+// absent. Once saved, the two values remain independent.
+func migrateMobileOutputFontSize(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	ui, ok := raw["ui"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	if _, exists := ui["mobile_output_font_size"]; !exists {
+		// Match the validation that output_font_size received before the split,
+		// including its fallback for legacy values below the desktop minimum.
+		size := cfg.UI.OutputFontSize
+		if size < 8 {
+			size = 14
+		} else if size > 40 {
+			size = 40
+		}
+		cfg.UI.MobileOutputFontSize = size
+	}
 }
 
 // migrateLegacyEcho copies the deprecated ui.echo_commands value into the
@@ -476,6 +540,24 @@ func (c *Config) Validate() error {
 		c.Commands.MaxQueueSize = 20
 	}
 
+	// Credentials. Backends are never inferred from runtime availability: a
+	// missing keyring remains a visible keyring error, and an encrypted file
+	// requires its own independently supplied key.
+	switch c.Credentials.Backend {
+	case "keyring", "encrypted_file", "disabled":
+	default:
+		return fmt.Errorf("credentials.backend must be 'keyring', 'encrypted_file', or 'disabled', got %q", c.Credentials.Backend)
+	}
+	if c.Credentials.EncryptedFile.KeyEnv == "" {
+		c.Credentials.EncryptedFile.KeyEnv = "PRAETOR_CREDENTIALS_KEY"
+	}
+	for i, r := range c.Credentials.EncryptedFile.KeyEnv {
+		if (i == 0 && r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z')) ||
+			(i > 0 && r != '_' && (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') && (r < '0' || r > '9')) {
+			return fmt.Errorf("credentials.encrypted_file.key_env is not a valid environment variable name")
+		}
+	}
+
 	// UI
 	validDisplayModes := map[string]bool{"sidebar": true, "topbar": true, "off": true}
 	if !validDisplayModes[c.UI.DisplayMode] {
@@ -504,6 +586,11 @@ func (c *Config) Validate() error {
 		c.UI.OutputFontSize = 14
 	} else if c.UI.OutputFontSize > 40 {
 		c.UI.OutputFontSize = 40
+	}
+	if c.UI.MobileOutputFontSize < 6 {
+		c.UI.MobileOutputFontSize = 6
+	} else if c.UI.MobileOutputFontSize > 40 {
+		c.UI.MobileOutputFontSize = 40
 	}
 	if len(c.UI.QuickCycleModes) == 0 {
 		c.UI.QuickCycleModes = []string{"disable"}

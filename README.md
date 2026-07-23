@@ -2,7 +2,7 @@
 
 A cross-platform desktop client for [The Eternal City](https://www.eternalcitygame.com/), built with Go. Replaces the browser-based Orchil client.
 
-Praetor's primary application is a **native desktop GUI** (the `praetor` app, built with [Wails](https://wails.io)). It also ships a **secondary terminal client** (`praetor-tui`) for players who prefer a terminal or run headless/over SSH. Both are driven by the same engine, so features and behaviour stay identical.
+Praetor's primary application is a **native desktop GUI** (the `praetor` app, built with [Wails](https://wails.io)). It also has a **terminal client** (`praetor-tui`) and an authenticated, shared **LAN web client** (`praetor-web`). All three are driven by the same engine, parser, Lua runtime, renderer, settings, and persistent state.
 
 ## Features
 
@@ -15,17 +15,19 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **Desktop Notifications** — alerts for health/fatigue thresholds and custom pattern matches
 - **Metrics Dashboard** — session tracking for kills, actions, and custom metrics with history
 - **Persistent State** — Lua scripts can persist data across sessions (e.g., armor absorption tracking)
-- **Multi-Account** — system keyring storage with account selection, optional credential storage
+- **Multi-Account** — system-keyring or encrypted-service storage with account selection
 - **Scrollback & History Search** — Ctrl+F searches the output, Ctrl+R reverse-searches your commands (GUI)
 - **Responsive Sidebar** — auto-hides or compacts when terminal is too small
 - **IP Masking** — optional scrambling of IP addresses in game text
 - **Update Notifier** — the GUI checks GitHub releases at startup and toasts when a newer version exists (optional)
 - **Notes** — a freeform notepad (GUI): /notes, /notes add|open|delete|list, or the Notes menu item; each note is a plaintext file in ~/.config/praetor/notes/
+- **Shared Web Mode** — one headless process serves the full client to authenticated desktop and mobile browsers on a trusted LAN
 
-The two binaries:
+The three binaries:
 
 - **`praetor`** — the desktop **GUI** (Wails); the packages install this into your applications menu.
 - **`praetor-tui`** — the **terminal** client (Bubbletea), fully supported; needs a terminal with [Kitty graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/) support (Kitty, WezTerm, Ghostty) for the minimap/compass.
+- **`praetor-web`** — the headless **shared web** client; several authenticated browsers control one TEC session, with a responsive mobile map/navigation dock.
 
 > **Upgrading from an older release?** The `praetor` command used to be the terminal client. It is now the GUI, and the terminal client moved to `praetor-tui`. See the per-manager notes below.
 
@@ -48,13 +50,19 @@ make build      # produces ./praetor-tui
 
 # Desktop GUI
 cd gui && make deps && make build   # produces gui/build/bin/praetor
+
+# Shared web client (PRAETOR_WEB_PASSWORD is mandatory)
+cd ..
+make web                            # produces ./praetor-web
+PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web --listen 127.0.0.1:8787
+# Open https://127.0.0.1:8787/ and expect a warning for the self-signed certificate.
 ```
 
-On first launch, Praetor creates a default config at `~/.config/praetor/config.yaml` and a scripts directory at `~/.config/praetor/scripts/`.
+On first launch, Praetor creates a default config at `~/.config/praetor/config.yaml` and a scripts directory at `~/.config/praetor/scripts/`. The first `praetor-web` launch also creates a persistent self-signed certificate under `~/.local/state/praetor/tls/`. Open the web client with HTTPS; the automatic certificate encrypts the connection but produces a browser trust warning.
 
 ## Installation
 
-Packages install **both** binaries: `praetor` (GUI) and `praetor-tui` (terminal).
+Linux packages install all three binaries: `praetor` (GUI), `praetor-tui` (terminal), and `praetor-web` (shared web). Platform-specific macOS and Windows packages continue to describe the binaries included by that package.
 
 ### Homebrew (macOS)
 
@@ -83,7 +91,7 @@ curl -fsSL "https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/gpg
 echo "deb [signed-by=/etc/apt/keyrings/praetor-archive-keyring.gpg] https://packages.buildkite.com/cybergodzilla-2099/praetor-debian/any/ any main" | \
   sudo tee /etc/apt/sources.list.d/praetor.list
 
-# Install (provides both `praetor` GUI and `praetor-tui`)
+# Install (provides `praetor`, `praetor-tui`, and `praetor-web`)
 sudo apt update && sudo apt install praetor
 ```
 
@@ -132,12 +140,15 @@ make build                       # produces ./praetor-tui
 sudo mv praetor-tui /usr/local/bin/
 ```
 
-For the GUI, see [`gui/`](gui/) (`cd gui && make deps && make build`).
+For the GUI, see [`gui/`](gui/) (`cd gui && make deps && make build`). For the web client, run `make web`; this builds the canonical Svelte frontend and embeds it in a headless Go binary.
 
 ### Build Options
 
 ```bash
 make build    # Build the terminal client (./praetor-tui)
+make web      # Build the shared web client (./praetor-web)
+make web-linux-amd64 # Build the static Linux amd64 web artifact
+make web-check # Race-test the web/core code and run frontend tests
 make run      # Build and run the terminal client
 make test     # Run all tests
 make check    # Run vet + fmt + tests
@@ -146,9 +157,27 @@ make clean    # Remove built binaries
 
 ## Usage
 
+### Shared web mode
+
+`praetor-web` owns one shared TEC connection. Every browser that knows the preshared web password is an equally authorized operator: commands, login/logout, modes, settings, script reloads, credentials, and persistent-data actions affect that shared process. Signing out of the web UI affects only the requesting browser; disconnecting the game affects all browsers.
+
+The password is read only from `PRAETOR_WEB_PASSWORD` at startup and is mandatory. The default listener is loopback-only and uses an automatically generated, persistent self-signed TLS certificate:
+
+```bash
+PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web
+```
+
+To listen directly on a trusted private LAN, explicitly bind a private interface; the listener still uses automatic HTTPS:
+
+```bash
+PRAETOR_WEB_PASSWORD='choose-a-long-password' ./praetor-web --listen 0.0.0.0:8787
+```
+
+The self-signed fallback encrypts traffic but is not expected to be trusted by browsers. Use `--tls-cert` with `--tls-key` to override it with a trusted pair. Plaintext HTTP requires the explicit `--insecure-http` option and exposes the web password, TEC credentials, commands, and game text to the network path. Do not expose the service to the public Internet. See [Web mode operations and security](docs/web.md) for certificate behavior, HTTPS reverse-proxy setup, firewall guidance, password rotation, systemd user-service setup, keyring behavior, and backups.
+
 ### Login
 
-Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. After logging in, you're prompted whether to store credentials in your system keyring.
+Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. Desktop installs use the system keyring by default; headless services can explicitly use an encrypted credential file with a separately managed key. Credential-storage failures never block an otherwise successful TEC connection, and Praetor never falls back to plaintext storage.
 
 ### Key Bindings
 

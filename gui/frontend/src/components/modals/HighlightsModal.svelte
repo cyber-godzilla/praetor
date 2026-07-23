@@ -47,10 +47,10 @@
       await api.setHighlights(items);
       store.config!.Highlights = items;
       store.addToast("Highlights", "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 

@@ -12,6 +12,56 @@ server:
   login_url: https://login.eternalcitygame.com/login.php
 ```
 
+## Credentials
+
+```yaml
+credentials:
+  backend: keyring                  # keyring, encrypted_file, or disabled
+  encrypted_file:
+    path: ""                        # empty = state/credentials/credentials.enc
+    key_env: PRAETOR_CREDENTIALS_KEY
+```
+
+`keyring` is the desktop default. On Linux it requires an available Secret
+Service provider on the user-session D-Bus, such as GNOME Keyring or KWallet,
+with an unlocked default collection. If the keyring is unavailable, Praetor
+shows that condition separately from an empty account list. A login without
+**Remember this account** remains available, and a save failure after TEC has
+accepted a login does not disconnect or block the game session.
+
+`encrypted_file` is intended for headless web services that cannot safely join
+a desktop D-Bus session. `key_env` must contain a base64-encoded 32-byte random
+key when Praetor starts. For example:
+
+```sh
+openssl rand -base64 32
+```
+
+The key is removed from Praetor's environment after the store is initialized;
+it is never written to `config.yaml` or beside the encrypted file. The store
+uses a versioned AES-256-GCM envelope with a fresh nonce on every write,
+authenticated decryption, atomic file replacement, and mode `0600`. The
+default parent directory is created with mode `0700`. A missing, malformed, or
+incorrect key fails startup rather than falling back to another backend.
+
+`disabled` removes account persistence while retaining ordinary interactive
+login. Praetor never silently falls back to plaintext credential storage.
+Changing credential backends does not migrate accounts automatically. Add the
+accounts again under the new backend after confirming the prior store is
+backed up or no longer needed.
+
+## Reconnection
+
+```yaml
+reconnect:
+  enabled: true                   # Auto-reconnect on disconnect
+  initial_delay: 1s
+  max_delay: 60s
+  backoff_multiplier: 2           # Exponential backoff between attempts
+```
+
+Toggleable via Esc → Auto Reconnect.
+
 ## Scripts
 
 ```yaml
@@ -56,10 +106,26 @@ ui:
   echo_script_commands: true      # Echo commands sent by Lua scripts
   hide_ips: false                 # Scramble IP addresses in text
   input_spellcheck: true          # GUI: spellcheck the command input (webview native)
+  mobile_output_font_size: 14     # Web: output size for mobile-width layouts
+  mobile_show_toolbar: true       # Web: show Actions / Modes / Menu on mobile
+  mobile_show_tab_bar: true       # Web: show the tab selector on mobile
+  mobile_hide_navigation_on_input: false # Web: hide map/compass while typing
+  mobile_lowercase_first_letter: false   # Web: counter keyboard capitalization
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
-All UI toggles are available via the Esc menu and saved automatically.
+The web Settings modal keeps desktop and mobile output sizes independent. The
+mobile size accepts values from 6 through 40 CSS pixels; desktop output retains
+its existing 8 through 40 range. Existing configurations without
+`mobile_output_font_size` inherit their current `output_font_size` once, so an
+upgrade does not unexpectedly change text size. The remaining `mobile_*`
+fields are checkboxes. Mobile settings affect only the browser mobile layout;
+the TUI and native Wails UI ignore them. The toolbar and tab selector default
+to visible, while navigation hiding and command normalization default to
+disabled. When the tab selector is hidden, its Menu button moves to the far
+right of the mobile status row.
+
+All other UI toggles are available via the Esc menu and saved automatically.
 
 ### Custom Tabs
 
@@ -122,21 +188,30 @@ Desktop notifications use the system's native notification mechanism (`notify-se
 ```yaml
 logging:
   app:
-    level: info                   # debug, info, warn, error
-    max_size_mb: 5                # Log rotation size
+    level: info                   # debug, info (default), warn, error
+    max_size_mb: 5                # Size of each app-log segment
+    retain: false                 # Keep dated app-log segments permanently
   session:
     enabled: true                 # Record game session transcripts
     path: ""                      # Empty = ~/.config/praetor/logs/
 ```
 
-- **App logs** are written to `~/.local/state/praetor/tec.log` with size-based rotation.
+- **App logs** normally use `~/.local/state/praetor/tec.log` with one
+  size-rotated `tec.log.1` backup. When `retain` is enabled, each
+  application start creates `tec_YYYY-MM-DD_HH-MM-SS.log`; reaching
+  `max_size_mb` opens another collision-safe dated/suffixed segment. Praetor
+  never deletes retained segments.
 - **Session logs** record timestamped game text to `~/.config/praetor/logs/` (or the configured path).
 
-Log settings are available via Esc → Game Logs and Esc → Log Location.
+Session-log settings are available via Esc → Game Logs and Esc → Log Location.
+The desktop/web Settings dialog also provides **Retain application logs**. That
+setting changes the application-log writer at process startup, so restart
+Praetor after changing it.
 
 ### What the app log records at each level
 
-The app log level controls how much detail `tec.log` captures:
+The app log level controls how much detail the current `tec.log` or retained
+`tec_*.log` captures:
 
 - **`info` (default)** — lifecycle and operational messages (connect/disconnect,
   auth results, mode changes, errors). The game transcript and your typed input
@@ -150,6 +225,15 @@ The app log level controls how much detail `tec.log` captures:
 
 The **session transcript** (Esc → Game Logs) is the user-controlled game log and
 is unaffected by the app log level — it records exactly as configured.
+
+Retained application logs are created with owner-only permissions (`0600`).
+At debug level they are substantially more sensitive than session transcripts.
+Retention is deliberately opt-in and has no age or space limit:
+monitor the state volume, include the files in backups only when intended, and
+delete or archive them under an external policy if disk growth becomes a
+concern. Existing `tec.log`/`.1` files are left in place when retained mode is
+enabled, and retained files are not collapsed back into `tec.log` when it is
+disabled.
 
 ## Transport security
 
@@ -187,9 +271,10 @@ Toggleable in the GUI under Settings → "Check for updates on startup".
 | Session logs | `~/.config/praetor/logs/` |
 | Exports | `~/.config/praetor/exports/` |
 | Notes | `~/.config/praetor/notes/` |
-| App logs | `~/.local/state/praetor/tec.log` |
+| App logs | `~/.local/state/praetor/tec.log` and `.1`, or retained `tec_YYYY-MM-DD_HH-MM-SS*.log` |
 | Persistent state | `~/.local/share/praetor/persistent_state.json` |
-| Credentials | System keyring |
+| Credentials | System keyring, or an explicitly configured encrypted file under the state directory |
+| Automatic web TLS | `~/.local/state/praetor/tls/praetor-web-self-signed.{crt,key}` |
 
 ## How the config file is written
 

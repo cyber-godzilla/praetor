@@ -1,7 +1,14 @@
 <script lang="ts">
+  import { onDestroy, tick } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { shouldRefocusInput, shouldRefocusFromClick, NON_REFOCUS_SELECTOR } from "../lib/focus";
+  import {
+    lowercaseFirstCommandLetter,
+    MOBILE_COMMAND_QUERY,
+    MOBILE_LAYOUT_QUERY,
+    outerPageHasVerticalDrift,
+  } from "../lib/mobile";
   import { resolveModeName } from "../lib/modes";
   import { searchBackward, dropLastChar } from "../lib/histsearch";
   import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
@@ -10,6 +17,7 @@
   let inputEl: HTMLInputElement;
   let history: string[] = [];
   let histIdx = $state(-1); // -1 = current (not navigating)
+  let submitting = $state(false);
 
   // Reverse history search (Ctrl+R), readline-style. Active state is mirrored
   // in store.histSearchActive so GameView's Escape routing can yield to it;
@@ -23,6 +31,147 @@
   // likely dragging out a text selection. Sticky-focus stands down until release
   // so it can't clear the selection mid-drag.
   let pointerDown = false;
+  let mobileToolPointerDown = false;
+  let mobileToolReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+  const MOBILE_KEYBOARD_DEBOUNCE_MS = 140;
+  const MOBILE_KEYBOARD_FALLBACK_MS = 360;
+  const MOBILE_KEYBOARD_OBSERVE_MS = 1200;
+  let keyboardDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyboardFallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  let keyboardObserveTimer: ReturnType<typeof setTimeout> | undefined;
+  let observedVisualViewport: VisualViewport | null = null;
+
+  // Desktop keeps a sticky command cursor. Touch-sized/coarse-pointer clients
+  // only focus after an explicit tap so the software keyboard does not reopen
+  // after every command or modal interaction.
+  function stickyFocusEnabled(): boolean {
+    return !window.matchMedia(MOBILE_COMMAND_QUERY).matches;
+  }
+
+  function mobileWebInput(): boolean {
+    return api.inWeb() && window.matchMedia(MOBILE_COMMAND_QUERY).matches;
+  }
+
+  function mobileWebLayout(): boolean {
+    return api.inWeb() && window.matchMedia(MOBILE_LAYOUT_QUERY).matches;
+  }
+
+  // Opening a software keyboard can pan the browser's outer viewport after the
+  // mobile dock has disappeared and App has resized to visualViewport.height.
+  // Correct that browser-owned scroll only after the keyboard/layout settles;
+  // the OutputPane's own scrollTop is intentionally never read or changed here.
+  function restoreOuterPageTopIfShifted() {
+    if (!mobileWebLayout() || document.activeElement !== inputEl) return;
+
+    const scrollingElement = document.scrollingElement;
+    if (
+      !outerPageHasVerticalDrift({
+        windowY: window.scrollY,
+        scrollingElementTop: scrollingElement?.scrollTop ?? 0,
+        documentElementTop: document.documentElement.scrollTop,
+        bodyTop: document.body.scrollTop,
+        visualViewportOffsetTop: window.visualViewport?.offsetTop ?? 0,
+      })
+    ) {
+      return;
+    }
+
+    // Some mobile engines expose the keyboard pan through window.scrollY,
+    // while others retain it on the root/body scrolling element. Clear each
+    // representation so the session output remains aligned with the screen top.
+    window.scrollTo(0, 0);
+    if (scrollingElement) scrollingElement.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
+  function scheduleKeyboardViewportCorrection() {
+    if (keyboardDebounceTimer !== undefined) clearTimeout(keyboardDebounceTimer);
+    keyboardDebounceTimer = setTimeout(() => {
+      keyboardDebounceTimer = undefined;
+      restoreOuterPageTopIfShifted();
+    }, MOBILE_KEYBOARD_DEBOUNCE_MS);
+  }
+
+  function stopKeyboardViewportCorrection() {
+    if (observedVisualViewport) {
+      observedVisualViewport.removeEventListener("resize", scheduleKeyboardViewportCorrection);
+      observedVisualViewport.removeEventListener("scroll", scheduleKeyboardViewportCorrection);
+      observedVisualViewport = null;
+    }
+    if (keyboardDebounceTimer !== undefined) clearTimeout(keyboardDebounceTimer);
+    if (keyboardFallbackTimer !== undefined) clearTimeout(keyboardFallbackTimer);
+    if (keyboardObserveTimer !== undefined) clearTimeout(keyboardObserveTimer);
+    keyboardDebounceTimer = undefined;
+    keyboardFallbackTimer = undefined;
+    keyboardObserveTimer = undefined;
+  }
+
+  function startKeyboardViewportCorrection() {
+    stopKeyboardViewportCorrection();
+    if (!mobileWebLayout()) return;
+
+    observedVisualViewport = window.visualViewport;
+    observedVisualViewport?.addEventListener("resize", scheduleKeyboardViewportCorrection);
+    observedVisualViewport?.addEventListener("scroll", scheduleKeyboardViewportCorrection);
+
+    // A delayed fallback covers browsers that animate the keyboard without
+    // dispatching VisualViewport events. The final check closes this bounded
+    // observation window after slower keyboard animations have completed.
+    keyboardFallbackTimer = setTimeout(() => {
+      keyboardFallbackTimer = undefined;
+      restoreOuterPageTopIfShifted();
+    }, MOBILE_KEYBOARD_FALLBACK_MS);
+    keyboardObserveTimer = setTimeout(() => {
+      restoreOuterPageTopIfShifted();
+      stopKeyboardViewportCorrection();
+    }, MOBILE_KEYBOARD_OBSERVE_MS);
+
+    // Focusing also removes the optional map/compass dock. Check again after
+    // Svelte has committed that shorter layout and the browser has painted it;
+    // this catches page drift caused by the dock collapse independently of the
+    // later keyboard animation.
+    void tick().then(() => {
+      requestAnimationFrame(() => {
+        if (document.activeElement === inputEl && mobileWebLayout()) {
+          scheduleKeyboardViewportCorrection();
+        }
+      });
+    });
+  }
+
+  function normalizeMobileCommand(input: string): string {
+    if (!mobileWebInput() || !store.config?.UI?.MobileLowercaseFirstLetter) return input;
+    return lowercaseFirstCommandLetter(input);
+  }
+
+  function onInput(e: Event) {
+    // Paste and IME commits accept the current reverse-history match before
+    // applying mobile capitalization normalization.
+    if (store.histSearchActive) rsAccept();
+    const target = e.currentTarget as HTMLInputElement;
+    const original = target.value;
+    const normalized = normalizeMobileCommand(original);
+    value = normalized;
+    if (normalized === original) return;
+
+    // Lowercasing can change UTF-16 length for a small number of Unicode
+    // characters. Keep the native selection aligned instead of jumping to the
+    // end after correcting the software keyboard's capitalization.
+    const delta = normalized.length - original.length;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+    let changedAt = 0;
+    while (changedAt < original.length && original[changedAt] === normalized[changedAt]) {
+      changedAt++;
+    }
+    const adjust = (position: number) =>
+      position > changedAt ? position + delta : position;
+    target.value = normalized;
+    if (start !== null && end !== null) {
+      target.setSelectionRange(Math.max(0, adjust(start)), Math.max(0, adjust(end)));
+    }
+  }
 
   async function handleKudos(rest: string) {
     if (rest === "") {
@@ -99,8 +248,9 @@
     value = "";
   }
 
-  async function submit() {
-    const line = value;
+  async function submitOnce() {
+    const line = normalizeMobileCommand(value);
+    if (line !== value) value = line;
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
 
@@ -149,8 +299,27 @@
     }
 
     // Everything else routes to the core (which interprets other /slash cmds).
-    api.send(line);
+    await api.send(line);
     pushHistory(line);
+  }
+
+  async function submit() {
+    if (submitting || !store.transportReady) return;
+    submitting = true;
+    try {
+      await submitOnce();
+    } catch (error) {
+      store.addToast("Command failed", error instanceof Error ? error.message : String(error));
+    } finally {
+      submitting = false;
+      // A disabled input is blurred by browsers while the request is in
+      // flight. Wait for Svelte to enable it again before restoring desktop
+      // focus; mobile preserves its tap-to-focus policy.
+      await tick();
+      if (!store.openModal && store.transportReady && stickyFocusEnabled()) {
+        inputEl?.focus();
+      }
+    }
   }
 
   // ---- Reverse history search --------------------------------------------
@@ -290,7 +459,7 @@
 
   // Keep focus on the input whenever no modal is open.
   $effect(() => {
-    if (!store.openModal && inputEl) inputEl.focus();
+    if (!store.openModal && inputEl && stickyFocusEnabled()) inputEl.focus();
   });
 
   // Explicit refocus requests (e.g. after the Ctrl+F search bar closes — the
@@ -298,7 +467,7 @@
   // otherwise strand focus on <body>).
   $effect(() => {
     void store.focusInputRequest;
-    if (!store.openModal) inputEl?.focus();
+    if (!store.openModal && stickyFocusEnabled()) inputEl?.focus();
   });
 
   // True when keyboard focus sits in some OTHER text field (the Ctrl+F search
@@ -313,20 +482,53 @@
     if (store.inputPrefill) {
       value = store.inputPrefill;
       store.inputPrefill = "";
-      queueMicrotask(() => inputEl?.focus());
+      if (stickyFocusEnabled()) queueMicrotask(() => inputEl?.focus());
     }
   });
 
   // When the app window regains focus, put the cursor back in the input —
   // unless the browser restored focus to another text field (the search box).
   function onWindowFocus() {
-    if (!store.openModal && !otherTextFieldActive()) inputEl?.focus();
+    if (!store.openModal && !otherTextFieldActive() && stickyFocusEnabled()) inputEl?.focus();
+  }
+
+  function onPointerDown(e: PointerEvent) {
+    pointerDown = true;
+    const target = e.target as HTMLElement | null;
+    mobileToolPointerDown = !!target?.closest("[data-mobile-tools]");
+  }
+
+  function onPointerUp() {
+    pointerDown = false;
+    if (!mobileToolPointerDown) return;
+    mobileToolPointerDown = false;
+    // `click` follows `pointerup`; defer cleanup so the tool can open its modal
+    // before restoring navigation changes the dock's geometry.
+    mobileToolReleaseTimer = setTimeout(() => {
+      if (!store.openModal && document.activeElement !== inputEl) {
+        store.mobileCommandInputActive = false;
+      }
+    }, 0);
+  }
+
+  function onPointerCancel() {
+    pointerDown = false;
+    mobileToolPointerDown = false;
+    if (document.activeElement !== inputEl) store.mobileCommandInputActive = false;
+  }
+
+  function onWindowBlur() {
+    pointerDown = false;
+    mobileToolPointerDown = false;
+    stopKeyboardViewportCorrection();
+    store.mobileCommandInputActive = false;
   }
 
   // Webview window-focus events are unreliable, so treat a click anywhere in the
   // app as a signal to return the cursor to the input — unless it landed on a
   // text field or modal, or the user is selecting text (so copying still works).
   function refocusFromClick(e: MouseEvent) {
+    if (!stickyFocusEnabled()) return;
     const t = e.target as HTMLElement | null;
     const sel = window.getSelection();
     if (
@@ -346,12 +548,26 @@
   // back. Modals are exempt so their fields keep focus. This is why Tab and
   // Shift+Tab cycle tabs (handled in GameView) rather than moving the focus
   // ring through the UI.
-  function onBlur() {
+  function onFocus() {
+    store.mobileCommandInputActive = mobileWebLayout();
+    startKeyboardViewportCorrection();
+  }
+
+  function onBlur(e: FocusEvent) {
+    stopKeyboardViewportCorrection();
+    const next = e.relatedTarget as HTMLElement | null;
+    // Keep the compact dock stable until a focusable mobile tool has received
+    // its click. The tool handler clears this flag after dispatch, preventing
+    // the hidden map from reappearing and moving the target mid-tap.
+    if (!mobileToolPointerDown && !next?.closest("[data-mobile-tools]")) {
+      store.mobileCommandInputActive = false;
+    }
     // Defer to the next frame: the blur fires before the browser settles which
     // element/selection the click landed on. Then only reclaim focus if the user
     // isn't selecting text (see shouldRefocusInput) — otherwise Ctrl+C / the
     // right-click Copy would have nothing to act on.
     requestAnimationFrame(() => {
+      if (!stickyFocusEnabled()) return;
       const sel = window.getSelection();
       if (
         shouldRefocusInput({
@@ -366,15 +582,21 @@
       }
     });
   }
+
+  onDestroy(() => {
+    if (mobileToolReleaseTimer !== undefined) clearTimeout(mobileToolReleaseTimer);
+    stopKeyboardViewportCorrection();
+    store.mobileCommandInputActive = false;
+  });
 </script>
 
 <svelte:window
   onfocus={onWindowFocus}
   onclick={refocusFromClick}
-  onpointerdown={() => (pointerDown = true)}
-  onpointerup={() => (pointerDown = false)}
-  onpointercancel={() => (pointerDown = false)}
-  onblur={() => (pointerDown = false)}
+  onpointerdown={onPointerDown}
+  onpointerup={onPointerUp}
+  onpointercancel={onPointerCancel}
+  onblur={onWindowBlur}
 />
 
 <div class="inputwrap">
@@ -391,21 +613,22 @@
       bind:this={inputEl}
       bind:value
       onkeydown={onKeydown}
-      oninput={() => {
-        // Direct edits that bypass rsKeydown (paste, IME commit) implicitly
-        // accept whatever is now in the field and end the search.
-        if (store.histSearchActive) rsAccept();
-      }}
+      oninput={onInput}
+      onfocus={onFocus}
       onblur={onBlur}
       spellcheck={store.config?.UI?.InputSpellcheck ?? true}
       autocomplete="off"
+      autocapitalize={api.inWeb() && (store.config?.UI?.MobileLowercaseFirstLetter ?? false) ? "none" : "sentences"}
+      disabled={!store.transportReady || submitting}
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     />
+    <button class="send" onclick={submit} aria-label="Send command" disabled={!store.transportReady || submitting}>Send</button>
     <button
       class="mode"
       class:active={!!store.mode && store.mode !== "disable"}
       title="Switch mode"
       onclick={() => (store.openModal = "modeselect")}
+      disabled={!store.transportReady}
       tabindex="-1"
     >
       {store.mode && store.mode !== "disable" ? store.mode : "disable"}
@@ -475,5 +698,38 @@
   .mode.active {
     color: var(--accent);
     border-color: var(--accent-dim);
+  }
+  .send {
+    display: none;
+  }
+
+  @media (max-width: 899px), (pointer: coarse) {
+    .inputbar {
+      gap: 6px;
+      padding: 7px 8px;
+    }
+    .prompt {
+      display: none;
+    }
+    input {
+      min-width: 0;
+      min-height: 44px;
+      font-size: 16px;
+    }
+    .send {
+      display: block;
+      min-width: 58px;
+      min-height: 44px;
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .mode {
+      min-height: 44px;
+      max-width: 92px;
+      overflow: hidden;
+      padding-inline: 8px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
   }
 </style>

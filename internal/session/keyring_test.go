@@ -245,8 +245,10 @@ func TestMockCredentialStore_RoundTrip(t *testing.T) {
 	}
 }
 
-// Verify that both KeyringStore and MockCredentialStore implement CredentialStore.
+// Verify every credential backend implements CredentialStore.
 func TestCredentialStore_InterfaceCompliance(t *testing.T) {
 	var _ CredentialStore = &KeyringStore{}
+	var _ CredentialStore = &EncryptedFileCredentialStore{}
+	var _ CredentialStore = &DisabledCredentialStore{}
 	var _ CredentialStore = &MockCredentialStore{}
 }

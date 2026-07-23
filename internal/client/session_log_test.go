@@ -134,6 +134,85 @@ func TestSessionLogger_Filename(t *testing.T) {
 	}
 }
 
+func TestSessionLogger_ReconfigureEnableAndDisable(t *testing.T) {
+	dir := t.TempDir()
+	sl, err := NewSessionLogger(false, dir)
+	if err != nil {
+		t.Fatalf("NewSessionLogger: %v", err)
+	}
+	if err := sl.Reconfigure(true, dir); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if !sl.Enabled() {
+		t.Fatal("logger should be enabled")
+	}
+	sl.Log(time.Date(2026, 7, 19, 1, 2, 3, 0, time.UTC), "enabled line")
+	if err := sl.Reconfigure(false, dir); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	sl.Log(time.Now(), "must not be logged")
+
+	content := readSessionLog(t, dir)
+	if !strings.Contains(content, "[01:02:03] enabled line") {
+		t.Fatalf("enabled text missing:\n%s", content)
+	}
+	if strings.Contains(content, "must not be logged") {
+		t.Fatalf("disabled text was logged:\n%s", content)
+	}
+	if !strings.Contains(content, "=== Session ended") {
+		t.Fatalf("disable did not close the transcript:\n%s", content)
+	}
+}
+
+func TestSessionLogger_ReconfigureDirectoryWhileEnabled(t *testing.T) {
+	dirA := t.TempDir()
+	dirB := t.TempDir()
+	sl, err := NewSessionLogger(true, dirA)
+	if err != nil {
+		t.Fatalf("NewSessionLogger: %v", err)
+	}
+	sl.Log(time.Now(), "in A")
+	if err := sl.Reconfigure(true, dirB); err != nil {
+		t.Fatalf("change directory: %v", err)
+	}
+	sl.Log(time.Now(), "in B")
+	if err := sl.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	a := readSessionLog(t, dirA)
+	b := readSessionLog(t, dirB)
+	if !strings.Contains(a, "in A") || strings.Contains(a, "in B") {
+		t.Fatalf("unexpected first transcript:\n%s", a)
+	}
+	if !strings.Contains(b, "in B") || strings.Contains(b, "in A") {
+		t.Fatalf("unexpected second transcript:\n%s", b)
+	}
+}
+
+func TestSessionLogger_ReconfigureFailureKeepsCurrentFile(t *testing.T) {
+	dir := t.TempDir()
+	sl, err := NewSessionLogger(true, dir)
+	if err != nil {
+		t.Fatalf("NewSessionLogger: %v", err)
+	}
+	badPath := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(badPath, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sl.Reconfigure(true, badPath); err == nil {
+		t.Fatal("expected reconfigure failure")
+	}
+	if !sl.Enabled() || sl.Directory() != dir {
+		t.Fatalf("existing logger changed after failed reconfigure: enabled=%v dir=%q", sl.Enabled(), sl.Directory())
+	}
+	sl.Log(time.Now(), "still active")
+	_ = sl.Close()
+	if content := readSessionLog(t, dir); !strings.Contains(content, "still active") {
+		t.Fatalf("old logger stopped after failure:\n%s", content)
+	}
+}
+
 // readSessionLog reads the first .log file in dir.
 func readSessionLog(t *testing.T, dir string) string {
 	t.Helper()

@@ -42,10 +42,10 @@
     try {
       await onsave(items);
       store.addToast(title, "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 

@@ -46,17 +46,18 @@
     kudos.Queue = (kudos.Queue ?? []).filter((_, idx) => idx !== i);
   }
 
-  async function persist() {
+  async function persist(): Promise<boolean> {
     try {
       await api.setKudos(kudos);
       store.config!.Kudos = kudos;
+      return true;
     } catch (e) {
       store.addToast("Save failed", String(e));
+      return false;
     }
   }
   async function persistThenClose() {
-    await persist();
-    store.openModal = null;
+    if (await persist()) store.openModal = null;
   }
 </script>
 

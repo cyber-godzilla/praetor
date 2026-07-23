@@ -34,10 +34,10 @@
       await api.setQuickCycleModes(list);
       store.config!.UI.QuickCycleModes = list;
       store.addToast("Quick-cycle modes", "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 

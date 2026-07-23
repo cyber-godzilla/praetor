@@ -326,6 +326,7 @@ logging:
   app:
     level: info
     max_size_mb: 5
+    retain: false
   session:
     enabled: true
     path: ""

@@ -4,9 +4,20 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 )
+
+func TestDefaults_AppLoggingIsInfoAndRetentionOff(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Logging.App.Level != "info" {
+		t.Errorf("Level = %q, want info", cfg.Logging.App.Level)
+	}
+	if cfg.Logging.App.Retain {
+		t.Error("Retain = true, want false")
+	}
+}
 
 func TestValidate_DropsEmptyHighlightPattern(t *testing.T) {
 	c := Defaults()
@@ -251,6 +262,86 @@ ui:
 	}
 }
 
+func TestLoadConfigMobileWebSettings(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(`
+ui:
+  output_font_size: 18
+  mobile_output_font_size: 6
+  mobile_show_toolbar: false
+  mobile_show_tab_bar: false
+  mobile_hide_navigation_on_input: true
+  mobile_lowercase_first_letter: true
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UI.MobileShowToolbar {
+		t.Error("MobileShowToolbar = true, want false")
+	}
+	if cfg.UI.MobileShowTabBar {
+		t.Error("MobileShowTabBar = true, want false")
+	}
+	if cfg.UI.OutputFontSize != 18 || cfg.UI.MobileOutputFontSize != 6 {
+		t.Errorf("font sizes = desktop %d, mobile %d; want 18 and 6", cfg.UI.OutputFontSize, cfg.UI.MobileOutputFontSize)
+	}
+	if !cfg.UI.MobileHideNavigationOnInput {
+		t.Error("MobileHideNavigationOnInput = false, want true")
+	}
+	if !cfg.UI.MobileLowercaseFirstLetter {
+		t.Error("MobileLowercaseFirstLetter = false, want true")
+	}
+}
+
+func TestLoadConfigMobileWebDefaultsForExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("ui:\n  scrollback: 5000\n  output_font_size: 11\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if !cfg.UI.MobileShowToolbar {
+		t.Error("missing mobile_show_toolbar should preserve the existing visible toolbar")
+	}
+	if !cfg.UI.MobileShowTabBar {
+		t.Error("missing mobile_show_tab_bar should preserve the existing visible tab selector")
+	}
+	if cfg.UI.MobileHideNavigationOnInput {
+		t.Error("missing mobile_hide_navigation_on_input should preserve visible navigation")
+	}
+	if cfg.UI.MobileLowercaseFirstLetter {
+		t.Error("missing mobile_lowercase_first_letter should not rewrite command input")
+	}
+	if cfg.UI.MobileOutputFontSize != 11 {
+		t.Errorf("missing mobile_output_font_size = %d, want existing output_font_size 11", cfg.UI.MobileOutputFontSize)
+	}
+}
+
+func TestLoadConfigMobileFontMigrationUsesValidatedDesktopValue(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte("ui:\n  output_font_size: 6\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.UI.OutputFontSize != 14 || cfg.UI.MobileOutputFontSize != 14 {
+		t.Errorf("migrated sizes = desktop %d, mobile %d; want validated legacy value 14", cfg.UI.OutputFontSize, cfg.UI.MobileOutputFontSize)
+	}
+}
+
 func TestValidate_RequiredFields(t *testing.T) {
 	cfg := Defaults()
 	cfg.Server.Host = ""
@@ -274,6 +365,55 @@ func TestValidate_RequiredFields(t *testing.T) {
 	cfg.Server.LoginURL = ""
 	if err := cfg.Validate(); err == nil {
 		t.Error("expected error for empty login_url")
+	}
+}
+
+func TestCredentialBackendDefaultsAndValidation(t *testing.T) {
+	cfg := Defaults()
+	if cfg.Credentials.Backend != "keyring" || cfg.Credentials.EncryptedFile.KeyEnv != "PRAETOR_CREDENTIALS_KEY" {
+		t.Fatalf("credential defaults = %+v", cfg.Credentials)
+	}
+	for _, backend := range []string{"keyring", "encrypted_file", "disabled"} {
+		cfg := Defaults()
+		cfg.Credentials.Backend = backend
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("backend %q rejected: %v", backend, err)
+		}
+	}
+	cfg = Defaults()
+	cfg.Credentials.Backend = "automatic"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("implicit/fallback credential backend was accepted")
+	}
+	cfg = Defaults()
+	cfg.Credentials.EncryptedFile.KeyEnv = "BAD-NAME"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("invalid credential key environment name was accepted")
+	}
+}
+
+func TestExistingConfigDefaultsToKeyringWithoutWritingASecret(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("server:\n  host: game.example.com\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Credentials.Backend != "keyring" {
+		t.Fatalf("backend = %q, want keyring", cfg.Credentials.Backend)
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "credentials:") || !strings.Contains(text, "backend: keyring") || strings.Contains(text, "PRAETOR_CREDENTIALS_KEY=") {
+		t.Fatalf("saved credential configuration is wrong:\n%s", text)
 	}
 }
 
@@ -319,6 +459,35 @@ func TestValidate_ClampsValues(t *testing.T) {
 	}
 	if cfg.Logging.App.MaxSizeMB != 5 {
 		t.Errorf("MaxSizeMB = %d, want 5", cfg.Logging.App.MaxSizeMB)
+	}
+	if cfg.Logging.App.Retain {
+		t.Error("Retain = true, want false")
+	}
+}
+
+func TestValidateMobileOutputFontSizeRange(t *testing.T) {
+	tests := []struct {
+		name  string
+		value int
+		want  int
+	}{
+		{name: "below minimum", value: 5, want: 6},
+		{name: "minimum", value: 6, want: 6},
+		{name: "maximum", value: 40, want: 40},
+		{name: "above maximum", value: 41, want: 40},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := Defaults()
+			cfg.UI.MobileOutputFontSize = test.value
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() error: %v", err)
+			}
+			if cfg.UI.MobileOutputFontSize != test.want {
+				t.Errorf("MobileOutputFontSize = %d, want %d", cfg.UI.MobileOutputFontSize, test.want)
+			}
+		})
 	}
 }
 

@@ -5,8 +5,10 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSlogWriter_RoutesTranscriptToDebug(t *testing.T) {
@@ -157,10 +159,81 @@ func TestRotatingWriter_BackupOverwritten(t *testing.T) {
 	}
 }
 
+func TestArchiveWriter_RotationRetainsEveryFile(t *testing.T) {
+	dir := t.TempDir()
+	aw, err := newArchiveWriter(dir, "tec.log", 50)
+	if err != nil {
+		t.Fatalf("newArchiveWriter: %v", err)
+	}
+	defer aw.Close()
+
+	for i := 0; i < 5; i++ {
+		if _, err := aw.Write([]byte("this is a line of log text\n")); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+
+	names := archiveNames(t, dir, "tec_")
+	if len(names) != 5 {
+		t.Fatalf("expected 5 retained archives, got %d: %v", len(names), names)
+	}
+	for _, name := range names {
+		info, err := os.Stat(filepath.Join(dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() == 0 {
+			t.Errorf("archive %q should have content", name)
+		}
+	}
+}
+
+func TestArchiveWriter_SameSecondFilesAreCollisionSafe(t *testing.T) {
+	dir := t.TempDir()
+	fixed := time.Date(2026, 7, 23, 14, 30, 15, 0, time.UTC)
+	clock := func() time.Time { return fixed }
+	first, err := newArchiveWriterWithClock(dir, "tec.log", 1024, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := newArchiveWriterWithClock(dir, "tec.log", 1024, clock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer first.Close()
+	defer second.Close()
+
+	for _, want := range []string{
+		"tec_2026-07-23_14-30-15.log",
+		"tec_2026-07-23_14-30-15_01.log",
+	} {
+		if _, err := os.Stat(filepath.Join(dir, want)); err != nil {
+			t.Errorf("missing collision-safe archive %q: %v", want, err)
+		}
+	}
+}
+
+func TestArchiveWriter_PrivatePermissions(t *testing.T) {
+	dir := t.TempDir()
+	aw, err := newArchiveWriter(dir, "tec.log", 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer aw.Close()
+
+	info, err := os.Stat(aw.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("archive permissions = %o, want 600", got)
+	}
+}
+
 func TestLogger_New(t *testing.T) {
 	dir := t.TempDir()
 
-	l, err := New(dir, "app.log", "info", 5)
+	l, err := New(dir, "app.log", "info", 5, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -181,7 +254,7 @@ func TestLogger_New(t *testing.T) {
 func TestLogger_DebugLevel(t *testing.T) {
 	dir := t.TempDir()
 
-	l, err := New(dir, "app.log", "debug", 5)
+	l, err := New(dir, "app.log", "debug", 5, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -200,7 +273,7 @@ func TestLogger_DebugLevel(t *testing.T) {
 func TestLogger_InfoLevelFiltersDebug(t *testing.T) {
 	dir := t.TempDir()
 
-	l, err := New(dir, "app.log", "info", 5)
+	l, err := New(dir, "app.log", "info", 5, false)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -217,4 +290,41 @@ func TestLogger_InfoLevelFiltersDebug(t *testing.T) {
 	if !strings.Contains(content, "info msg") {
 		t.Errorf("info message should appear, got: %s", content)
 	}
+}
+
+func TestLogger_RetainedModeUsesSessionStyleTimestampedFilename(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir, "tec.log", "debug", 5, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	names := archiveNames(t, dir, "tec_")
+	if len(names) != 1 {
+		t.Fatalf("expected one startup archive, got %v", names)
+	}
+	pattern := regexp.MustCompile(`^tec_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.log$`)
+	if !pattern.MatchString(names[0]) {
+		t.Errorf("unexpected timestamped filename %q", names[0])
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tec.log")); !os.IsNotExist(err) {
+		t.Errorf("retained mode unexpectedly created tec.log: %v", err)
+	}
+}
+
+func archiveNames(t *testing.T, dir, prefix string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) &&
+			strings.HasSuffix(entry.Name(), ".log") {
+			names = append(names, entry.Name())
+		}
+	}
+	return names
 }

@@ -1,13 +1,199 @@
 package gui
 
 import (
+	"errors"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/gorilla/websocket"
 )
+
+type observingCredentialStore struct {
+	client           *client.Client
+	accounts         map[string]string
+	setErr           error
+	setCalls         int
+	connectedWhenSet bool
+}
+
+func (s *observingCredentialStore) Descriptor() session.CredentialStoreDescriptor {
+	return session.CredentialStoreDescriptor{Backend: "test", CanStore: true}
+}
+
+func (s *observingCredentialStore) ListAccounts() ([]string, error) {
+	names := make([]string, 0, len(s.accounts))
+	for name := range s.accounts {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func (s *observingCredentialStore) GetAccount(username string) (string, error) {
+	password, ok := s.accounts[username]
+	if !ok {
+		return "", session.ErrNoCredentials
+	}
+	return password, nil
+}
+
+func (s *observingCredentialStore) SetAccount(username, password string) error {
+	s.setCalls++
+	s.connectedWhenSet = s.client != nil && s.client.Session.IsConnected()
+	if s.setErr != nil {
+		return s.setErr
+	}
+	if s.accounts == nil {
+		s.accounts = make(map[string]string)
+	}
+	s.accounts[username] = password
+	return nil
+}
+
+func (s *observingCredentialStore) RepairAccounts(username, password string) error {
+	s.accounts = map[string]string{username: password}
+	return nil
+}
+
+func (s *observingCredentialStore) RemoveAccount(username string) error {
+	delete(s.accounts, username)
+	return nil
+}
+
+func newConnectedTestApp(t *testing.T, creds session.CredentialStore) (*GuiApp, func()) {
+	t.Helper()
+	loginServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			http.SetCookie(w, &http.Cookie{Name: "biscuit", Value: "test", Path: "/"})
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.SetCookie(w, &http.Cookie{Name: "user", Value: "alice", Path: "/"})
+		http.SetCookie(w, &http.Cookie{Name: "pass", Value: "server-token", Path: "/"})
+		w.WriteHeader(http.StatusOK)
+	}))
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	gameServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	parsed, err := url.Parse(gameServer.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, portText, err := net.SplitHostPort(parsed.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Server.LoginURL = loginServer.URL
+	cfg.Server.Protocol = "ws"
+	cfg.Server.Host = host
+	cfg.Server.Port = port
+	gameClient, err := client.NewClient(cfg, nil, t.TempDir(), creds)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := NewGuiApp(&Deps{
+		Client: gameClient,
+		Config: cfg,
+		Creds:  creds,
+	}, &captureEmitter{})
+	cleanup := func() {
+		app.Disconnect()
+		gameServer.Close()
+		loginServer.Close()
+	}
+	return app, cleanup
+}
+
+func TestConnectNewConnectsBeforeSavingCredentials(t *testing.T) {
+	store := &observingCredentialStore{}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", true)
+	if err != nil {
+		t.Fatalf("ConnectNew: %v", err)
+	}
+	if !result.Connected || !result.CredentialsSaved || result.Warning != "" {
+		t.Fatalf("result = %+v", result)
+	}
+	if store.setCalls != 1 || !store.connectedWhenSet {
+		t.Fatalf("save calls=%d connectedWhenSet=%v", store.setCalls, store.connectedWhenSet)
+	}
+}
+
+func TestConnectNewCredentialSaveFailureIsNonFatal(t *testing.T) {
+	store := &observingCredentialStore{setErr: errors.New("secret service unavailable")}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", true)
+	if err != nil {
+		t.Fatalf("ConnectNew returned a credential persistence error: %v", err)
+	}
+	if !result.Connected || result.CredentialsSaved || result.Warning == "" || result.AccountState == nil {
+		t.Fatalf("result = %+v", result)
+	}
+	if !store.connectedWhenSet || !app.client().Session.IsConnected() {
+		t.Fatal("game session was not kept connected after credential save failure")
+	}
+}
+
+func TestConnectNewWithoutRememberDoesNotTouchCredentialStore(t *testing.T) {
+	store := &observingCredentialStore{setErr: errors.New("must not be called")}
+	app, cleanup := newConnectedTestApp(t, store)
+	defer cleanup()
+	store.client = app.client()
+
+	result, err := app.ConnectNew("alice", "password", false)
+	if err != nil {
+		t.Fatalf("ConnectNew: %v", err)
+	}
+	if !result.Connected || result.Warning != "" || store.setCalls != 0 {
+		t.Fatalf("result=%+v save calls=%d", result, store.setCalls)
+	}
+}
+
+func TestListAccountsReportsUnavailableStore(t *testing.T) {
+	app := NewGuiApp(&Deps{
+		Config: config.Defaults(),
+		Creds:  &session.MockCredentialStore{Err: errors.New("keyring locked")},
+	}, &captureEmitter{})
+	state := app.ListAccounts()
+	if state.CredentialStore.Available || !state.CredentialStore.CanStore {
+		t.Fatalf("credential status = %+v", state.CredentialStore)
+	}
+	if len(state.Accounts) != 0 || state.CredentialStore.Message == "" {
+		t.Fatalf("account state = %+v", state)
+	}
+}
 
 func TestToWire_GameText(t *testing.T) {
 	ev := types.GameTextEvent{
@@ -31,6 +217,55 @@ func TestToWire_GameText(t *testing.T) {
 	}
 	if w.Text.Timestamp != 1234 {
 		t.Fatalf("timestamp = %d, want 1234", w.Text.Timestamp)
+	}
+}
+
+func TestLoggingSettingsReconfigureLiveLogger(t *testing.T) {
+	defaultDir := t.TempDir()
+	otherDir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Logging.Session.Enabled = false
+	cfg.Logging.Session.Path = ""
+	logger, err := client.NewSessionLogger(false, defaultDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deps := &Deps{
+		Config:      cfg,
+		ConfigPath:  filepath.Join(t.TempDir(), "config.yaml"),
+		SessionsDir: defaultDir,
+		SessionLog:  logger,
+	}
+	app := NewGuiApp(deps, &captureEmitter{})
+
+	if err := app.SetSessionLogging(true); err != nil {
+		t.Fatalf("enable logging: %v", err)
+	}
+	logger.Log(time.Now(), "default directory")
+	if err := app.SetLogPath(otherDir); err != nil {
+		t.Fatalf("change log path: %v", err)
+	}
+	logger.Log(time.Now(), "other directory")
+	if err := app.SetSessionLogging(false); err != nil {
+		t.Fatalf("disable logging: %v", err)
+	}
+
+	readOnlyLog := func(dir string) string {
+		entries, err := os.ReadDir(dir)
+		if err != nil || len(entries) == 0 {
+			t.Fatalf("no transcript in %s: entries=%v err=%v", dir, entries, err)
+		}
+		data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(data)
+	}
+	if text := readOnlyLog(defaultDir); !strings.Contains(text, "default directory") || strings.Contains(text, "other directory") {
+		t.Fatalf("default transcript contents:\n%s", text)
+	}
+	if text := readOnlyLog(otherDir); !strings.Contains(text, "other directory") || strings.Contains(text, "default directory") {
+		t.Fatalf("other transcript contents:\n%s", text)
 	}
 }
 
@@ -219,5 +454,76 @@ func TestSetActionSets(t *testing.T) {
 	}
 	if len(got.UI.ActionSets) != 1 || got.UI.ActionSets[0].Buttons[0].Command != "attack" {
 		t.Fatalf("persisted config wrong: %+v", got.UI.ActionSets)
+	}
+}
+
+func TestMobileWebSettingsPersist(t *testing.T) {
+	dir := t.TempDir()
+	deps := &Deps{
+		Config:     config.Defaults(),
+		ConfigPath: filepath.Join(dir, "config.yaml"),
+	}
+	a := NewGuiApp(deps, &captureEmitter{})
+
+	if err := a.SetMobileShowToolbar(false); err != nil {
+		t.Fatalf("SetMobileShowToolbar: %v", err)
+	}
+	if err := a.SetMobileShowTabBar(false); err != nil {
+		t.Fatalf("SetMobileShowTabBar: %v", err)
+	}
+	if err := a.SetMobileHideNavigationOnInput(true); err != nil {
+		t.Fatalf("SetMobileHideNavigationOnInput: %v", err)
+	}
+	if err := a.SetMobileLowercaseFirstLetter(true); err != nil {
+		t.Fatalf("SetMobileLowercaseFirstLetter: %v", err)
+	}
+	if err := a.SetMobileOutputFontSize(6); err != nil {
+		t.Fatalf("SetMobileOutputFontSize: %v", err)
+	}
+
+	got, err := config.Load(deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if got.UI.MobileShowToolbar || got.UI.MobileShowTabBar || !got.UI.MobileHideNavigationOnInput || !got.UI.MobileLowercaseFirstLetter {
+		t.Fatalf("persisted mobile web settings are wrong: %+v", got.UI)
+	}
+	if got.UI.MobileOutputFontSize != 6 {
+		t.Fatalf("persisted mobile font size = %d, want 6", got.UI.MobileOutputFontSize)
+	}
+}
+
+func TestGetConfigReturnsDeepSnapshot(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Scripts = []string{"one"}
+	cfg.UI.CustomTabs = []config.CustomTabConfig{{Name: "Original"}}
+	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
+
+	snapshot := app.GetConfig()
+	snapshot.Scripts[0] = "changed"
+	snapshot.UI.CustomTabs[0].Name = "Changed"
+
+	if cfg.Scripts[0] != "one" || cfg.UI.CustomTabs[0].Name != "Original" {
+		t.Fatalf("GetConfig returned mutable config storage: %#v", cfg)
+	}
+}
+
+func TestSettingsRejectInvalidWebValues(t *testing.T) {
+	cfg := config.Defaults()
+	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
+	for name, err := range map[string]error{
+		"display":     app.SetDisplayMode("floating"),
+		"numpad":      app.SetNumpadNavigation("sometimes"),
+		"minimap":     app.SetMinimapScale(0),
+		"compass":     app.SetCompassScale(9),
+		"font":        app.SetOutputFontSize(200),
+		"mobile font": app.SetMobileOutputFontSize(5),
+	} {
+		if err == nil {
+			t.Errorf("%s invalid value was accepted", name)
+		}
+	}
+	if cfg.UI.DisplayMode != "sidebar" || cfg.UI.MinimapScale != 1 || cfg.UI.CompassScale != 1 || cfg.UI.MobileOutputFontSize != 14 {
+		t.Fatalf("invalid settings mutated config: %#v", cfg.UI)
 	}
 }

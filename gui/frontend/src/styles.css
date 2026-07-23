@@ -64,6 +64,8 @@ body {
 
 #app {
   height: 100vh;
+  height: 100dvh;
+  height: var(--praetor-viewport-height, 100dvh);
   display: flex;
   flex-direction: column;
 }
@@ -222,6 +224,22 @@ select {
 input:focus,
 select:focus {
   border-color: var(--accent);
+}
+
+/* Keep form controls at the mobile browser's non-zooming text size. This
+   applies to login and modal fields as well as the command line. */
+@media (max-width: 899px), (pointer: coarse) {
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    /* Component-scoped login styles also set a font size. Keep this floor
+       authoritative so mobile Safari/WebKit does not auto-zoom the page when
+       the web-password or TEC-password field receives focus. This does not
+       restrict user-initiated pinch zoom. */
+    font-size: 16px !important;
+  }
 }
 
 /* Selects: drop the native chrome, use a flat ▾ marker. */

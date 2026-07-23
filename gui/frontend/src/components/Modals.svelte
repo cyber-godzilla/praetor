@@ -18,6 +18,7 @@
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
   import CRTEffectsModal from "./modals/CRTEffectsModal.svelte";
+  import MobileActionsModal from "./modals/MobileActionsModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -26,22 +27,26 @@
   // we must update store.config too — otherwise reopening the modal shows the
   // stale list (the backend persists correctly, but the frontend snapshot
   // wouldn't reflect it until the next launch).
-  function saveIgnoreOOC(v: string[]) {
+  async function saveIgnoreOOC(v: string[]) {
+    await api.setIgnoreOOC(v);
     if (store.config?.Ignorelist) store.config.Ignorelist.OOC = v;
-    return api.setIgnoreOOC(v);
   }
-  function saveIgnoreThink(v: string[]) {
+  async function saveIgnoreThink(v: string[]) {
+    await api.setIgnoreThink(v);
     if (store.config?.Ignorelist) store.config.Ignorelist.Think = v;
-    return api.setIgnoreThink(v);
   }
-  function saveScriptDirs(v: string[]) {
+  async function saveScriptDirs(v: string[]) {
+    await api.setScriptDirs(v);
     if (store.config) store.config.Scripts = v;
-    return api.setScriptDirs(v);
   }
-  function saveHighPriority(v: string[]) {
+  async function saveHighPriority(v: string[]) {
+    await api.setHighPriority(v);
     if (store.config?.Commands) store.config.Commands.HighPriority = v;
-    return api.setHighPriority(v);
   }
+
+  const browseScriptDir = api.inWeb()
+    ? undefined
+    : async () => (await api.pickScriptDir()) || null;
 </script>
 
 {#if m === "menu"}
@@ -81,10 +86,12 @@
 {:else if m === "scripts"}
   <StringListModal
     title="Script directories"
-    hint="Directories scanned for Lua modes. Reloads on save."
+    hint={api.inWeb()
+      ? "Directories on the praetor-web server host scanned for Lua modes. Reloads on save."
+      : "Directories scanned for Lua modes. Reloads on save."}
     initial={store.config?.Scripts ?? []}
     onsave={saveScriptDirs}
-    onBrowse={async () => (await api.pickScriptDir()) || null}
+    onBrowse={browseScriptDir}
   />
 {:else if m === "priority"}
   <StringListModal
@@ -109,4 +116,6 @@
   <PersistentDataModal />
 {:else if m === "notes"}
   <NotesModal />
+{:else if m === "mobile-actions"}
+  <MobileActionsModal />
 {/if}
