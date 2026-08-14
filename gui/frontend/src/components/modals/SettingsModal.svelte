@@ -15,6 +15,7 @@
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
+  let retainAppLogs = $state(seed?.Logging?.App?.Retain ?? false);
   let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
   let logPath = $state(seed?.Logging?.Session?.Path ?? "");
   let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
@@ -32,6 +33,7 @@
       await api.setHideIPs(hideIPs);
       await api.setInputSpellcheck(inputSpellcheck);
       await api.setUpdateCheck(updateCheck);
+      await api.setRetainAppLogs(retainAppLogs);
       await api.setSessionLogging(sessionLogging);
       await api.setLogPath(logPath);
       await api.setMinimapScale(minimapScale);
@@ -51,6 +53,7 @@
           NumpadNavigation: numpadNav,
         });
         store.config.Updates = { Check: updateCheck };
+        store.config.Logging.App.Retain = retainAppLogs;
         store.config.Logging.Session.Enabled = sessionLogging;
         store.config.Logging.Session.Path = logPath;
       }
@@ -71,6 +74,7 @@
     <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
     <label class="t"><span>Check for updates on startup</span><input type="checkbox" bind:checked={updateCheck} /></label>
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
+    <label class="t"><span>Retain application logs (applies next launch)</span><input type="checkbox" bind:checked={retainAppLogs} /></label>
 
     <div class="field">
       <span>Minimap scale</span>

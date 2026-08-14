@@ -50,6 +50,23 @@ func TestSetUpdateCheck_Persists(t *testing.T) {
 	}
 }
 
+func TestSetRetainAppLogs_PersistsForNextStartup(t *testing.T) {
+	a := newTestApp(t)
+	if a.cfg().Logging.App.Retain {
+		t.Fatal("application-log retention should default off")
+	}
+	if err := a.SetRetainAppLogs(true); err != nil {
+		t.Fatalf("SetRetainAppLogs: %v", err)
+	}
+	got, err := config.Load(a.deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !got.Logging.App.Retain {
+		t.Error("persisted config should have logging.app.retain=true")
+	}
+}
+
 func TestCheckForUpdate_DisabledSkipsNetwork(t *testing.T) {
 	a := newTestApp(t)
 	a.cfg().Updates.Check = false

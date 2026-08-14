@@ -21,6 +21,8 @@ import type {
   SendPreview,
   PlayPreview,
   PlayState,
+  AccountState,
+  ConnectResult,
 } from "./types";
 
 function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
@@ -50,6 +52,12 @@ export const getInitState = () =>
     version: "dev",
     debug: false,
     accounts: [],
+    credentialStore: {
+      backend: "unconfigured",
+      available: false,
+      canStore: false,
+      message: "Secure credential storage is not configured.",
+    },
     hasModes: false,
     modeNames: [],
     config: {} as AppConfig,
@@ -59,9 +67,21 @@ export const getConfig = () => call<AppConfig>("GetConfig", {} as AppConfig);
 export const start = () => call<void>("Start", undefined);
 
 // ---- Auth / connection ----
-export const listAccounts = () => call<string[]>("ListAccounts", []);
+export const listAccounts = () => call<AccountState>("ListAccounts", {
+  accounts: [],
+  credentialStore: {
+    backend: "unconfigured",
+    available: false,
+    canStore: false,
+    message: "Secure credential storage is not configured.",
+  },
+});
 export const connectNew = (u: string, p: string, store: boolean) =>
-  call<void>("ConnectNew", undefined, u, p, store);
+  call<ConnectResult>("ConnectNew", {
+    connected: false,
+    credentialSaveRequested: store,
+    credentialsSaved: false,
+  }, u, p, store);
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
 export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
@@ -89,6 +109,7 @@ export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefin
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
+export const setRetainAppLogs = (v: boolean) => call<void>("SetRetainAppLogs", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);

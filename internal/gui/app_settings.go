@@ -60,6 +60,13 @@ func (a *GuiApp) SetUpdateCheck(v bool) error {
 	return a.withConfig(func() { a.cfg().Updates.Check = v })
 }
 
+// SetRetainAppLogs selects permanent timestamped application-log archives.
+// The active writer cannot be replaced safely while other goroutines are
+// logging, so the new policy takes effect the next time Praetor starts.
+func (a *GuiApp) SetRetainAppLogs(v bool) error {
+	return a.withConfig(func() { a.cfg().Logging.App.Retain = v })
+}
+
 // SetSessionLogging toggles transcript logging.
 func (a *GuiApp) SetSessionLogging(v bool) error {
 	return a.withConfig(func() { a.cfg().Logging.Session.Enabled = v })

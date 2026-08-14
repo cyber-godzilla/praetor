@@ -30,6 +30,7 @@
       store.version = init.version;
       store.debug = init.debug;
       store.accounts = init.accounts ?? [];
+      if (init.credentialStore) store.credentialStore = init.credentialStore;
       store.config = init.config;
       store.modeNames = init.modeNames ?? [];
       store.hasModes = init.hasModes;
