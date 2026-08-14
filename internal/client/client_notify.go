@@ -21,6 +21,25 @@ type DesktopNotifier struct {
 	patterns []*compiledNotifyPattern
 	lastSent map[string]time.Time // dedup key → last send time
 	cooldown time.Duration
+	sink     NotificationSink
+}
+
+// NotificationSink receives notifications after rule evaluation and cooldown
+// handling. Native shells use NativeNotificationSink; the headless web shell
+// installs a projection sink so it never launches desktop helper processes on
+// the server host.
+type NotificationSink interface {
+	Notify(title, message string)
+}
+
+type NotificationSinkFunc func(title, message string)
+
+func (f NotificationSinkFunc) Notify(title, message string) { f(title, message) }
+
+type NativeNotificationSink struct{}
+
+func (NativeNotificationSink) Notify(title, message string) {
+	go sendDesktopNotification(title, message)
 }
 
 type compiledNotifyPattern struct {
@@ -37,6 +56,7 @@ func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier 
 		cfg:      cfg,
 		lastSent: make(map[string]time.Time),
 		cooldown: 30 * time.Second,
+		sink:     NativeNotificationSink{},
 	}
 
 	for _, p := range cfg.Patterns {
@@ -57,6 +77,14 @@ func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier 
 	}
 
 	return dn
+}
+
+// SetSink changes notification delivery without changing matching rules or
+// cooldown state. A nil sink intentionally discards native delivery.
+func (dn *DesktopNotifier) SetSink(sink NotificationSink) {
+	dn.mu.Lock()
+	dn.sink = sink
+	dn.mu.Unlock()
 }
 
 // UpdateConfig replaces the notifier's configuration and recompiles patterns.
@@ -141,6 +169,12 @@ func (dn *DesktopNotifier) CheckText(text string) {
 	}
 }
 
+// Notify delivers an explicit Lua/application notification through the active
+// shell sink, with the same cooldown protection as rule-generated alerts.
+func (dn *DesktopNotifier) Notify(title, message string) {
+	dn.send(title, message, "explicit:"+title+"\x00"+message)
+}
+
 // Prune removes stale dedup entries older than the cooldown window.
 func (dn *DesktopNotifier) Prune() {
 	dn.mu.Lock()
@@ -157,17 +191,21 @@ func (dn *DesktopNotifier) Prune() {
 // send dispatches a desktop notification with rate limiting.
 func (dn *DesktopNotifier) send(title, message, dedupKey string) {
 	dn.mu.Lock()
-	defer dn.mu.Unlock()
 
 	now := time.Now()
 	if last, ok := dn.lastSent[dedupKey]; ok {
 		if now.Sub(last) < dn.cooldown {
+			dn.mu.Unlock()
 			return
 		}
 	}
 	dn.lastSent[dedupKey] = now
+	sink := dn.sink
+	dn.mu.Unlock()
 
-	go sendDesktopNotification(title, message)
+	if sink != nil {
+		sink.Notify(title, message)
+	}
 }
 
 // sendDesktopNotification sends a notification using the platform's native mechanism.

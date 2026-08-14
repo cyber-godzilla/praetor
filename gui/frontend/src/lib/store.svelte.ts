@@ -15,6 +15,7 @@ import type {
   TextPayload,
   SuppressPayload,
   WireEvent,
+  CredentialStoreStatus,
 } from "./types";
 import { Kind } from "./types";
 
@@ -100,6 +101,12 @@ class AppStore {
   version = $state("dev");
   debug = $state(false);
   accounts = $state<string[]>([]);
+  credentialStore = $state<CredentialStoreStatus>({
+    backend: "unconfigured",
+    available: false,
+    canStore: false,
+    message: "Secure credential storage is not configured.",
+  });
   config = $state<AppConfig | null>(null);
   modeNames = $state<string[]>([]);
   hasModes = $state(false);
@@ -122,6 +129,11 @@ class AppStore {
   // Connection
   connState = $state<"connected" | "disconnected">("disconnected");
   connReason = $state("");
+  // Browser-to-Praetor transport health is separate from the shared TEC
+  // connection. Wails stays online; web mode updates this around snapshots and
+  // reconnects so commands cannot be issued against stale state.
+  transportReady = $state(true);
+  transportState = $state<"connecting" | "connected" | "reconnecting">("connected");
   // Set when a disconnect was NOT user-initiated (a drop). Rendered as a banner
   // on the bootup screen; cleared on user logout and on the next connect.
   disconnectNotice = $state("");
@@ -132,6 +144,9 @@ class AppStore {
 
   // UI chrome
   sidebarOpen = $state(true);
+  // Ephemeral focus signal shared only between InputLine and the mobile dock.
+  // It is never persisted or projected to another browser.
+  mobileCommandInputActive = $state(false);
   // Collapsed state of the sidebar's accordion sections. Session-only (resets to
   // all-expanded on restart); held here rather than in Frame so it survives an
   // Alt+S sidebar unmount/remount.
@@ -328,6 +343,7 @@ class AppStore {
     this.compass = "";
     this.connReason = "";
     this.expandAllSuppressed = false;
+    this.mobileCommandInputActive = false;
     this.openModal = null;
     this.contextMenuOpen = false;
     this.actionSetIndex = 0;
@@ -335,6 +351,24 @@ class AppStore {
     this.histSearchActive = false;
     this.notesInitial = null;
     this.notesEditorActive = false;
+  }
+
+  // installSnapshot replaces only shared game-session state. Config/account
+  // metadata is delivered separately, while browser-local UI state such as
+  // collapsed panels and input history remains owned by the browser.
+  installSnapshot(events: WireEvent[]) {
+    this.resetSession();
+    this.connState = "disconnected";
+    this.connReason = "";
+    this.apply(events);
+  }
+
+  installConfig(config: AppConfig) {
+    const oldTabs = this.config?.UI?.CustomTabs;
+    this.config = config;
+    if (config.UI?.CustomTabs !== oldTabs) {
+      this.rebuildTabs(config.UI?.CustomTabs);
+    }
   }
 
   private applyConn(c: ConnPayload) {

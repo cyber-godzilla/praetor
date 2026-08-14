@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { store } from "./store.svelte";
 import { Kind } from "./types";
 import type { WireEvent } from "./types";
+import { webFixtureEvents } from "./web-fixture";
 
 function conn(state: "connected" | "disconnected", reason?: string): WireEvent[] {
   return [{ kind: Kind.Conn, conn: { state, reason } }];
@@ -82,6 +83,25 @@ describe("store connection routing", () => {
     store.apply(conn("connected"));
     store.apply([{ kind: Kind.Status, status: { mode: "craft" } }]);
     expect(store.mode).toBe("craft");
+  });
+
+  it("installs the complete web fixture atomically and idempotently", () => {
+    store.debug = true;
+    store.rebuildTabs([]);
+    store.installSnapshot(webFixtureEvents);
+    const firstLineCount = store.tabs.find((tab) => tab.kind === "all")?.lines.length;
+    expect(store.connState).toBe("connected");
+    expect(store.mode).toBe("fixture");
+    expect(store.health).toBe(80);
+    expect(store.fatigue).toBe(60);
+    expect(store.encumbrance).toBe(40);
+    expect(store.satiation).toBe(20);
+    expect(store.lightingRaw).toBe(23);
+    expect(store.minimap).toContain("data:image/png");
+    expect(store.compass).toContain("data:image/png");
+
+    store.installSnapshot(webFixtureEvents);
+    expect(store.tabs.find((tab) => tab.kind === "all")?.lines.length).toBe(firstLineCount);
   });
 
   it("caps scrollback with a batched front-trim (never far above cap, newest kept)", () => {

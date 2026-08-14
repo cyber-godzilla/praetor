@@ -51,10 +51,15 @@
     },
     {
       name: "Session",
-      items: [
-        { label: "Logout", action: logout },
-        { label: "Exit", action: () => window.runtime?.Quit() },
-      ],
+      items: api.inWeb()
+        ? [
+            { label: "Disconnect shared game", action: logout },
+            { label: "Sign out of web UI", action: signOut },
+          ]
+        : [
+            { label: "Logout", action: logout },
+            { label: "Exit", action: () => void api.quit() },
+          ],
     },
   ];
 
@@ -69,11 +74,30 @@
     }
   }
 
-  function logout() {
+  async function logout() {
+    if (
+      api.inWeb() &&
+      !window.confirm("Disconnect the shared TEC game session for every connected browser?")
+    ) {
+      return;
+    }
     // Close the menu immediately; the resulting disconnected event drives the
     // screen back to the bootup screen.
     store.openModal = null;
-    api.disconnect();
+    try {
+      await api.disconnect();
+    } catch (error) {
+      store.addToast("Disconnect failed", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function signOut() {
+    store.openModal = null;
+    try {
+      await api.quit();
+    } catch (error) {
+      store.addToast("Sign out failed", error instanceof Error ? error.message : String(error));
+    }
   }
 
   function pick(it: Item) {

@@ -4,6 +4,15 @@
 
   let busy = $state("");
   let error = $state("");
+  const canManageAccounts = $derived(
+    store.credentialStore.available && store.credentialStore.canStore,
+  );
+
+  async function refreshAccounts() {
+    const state = await api.listAccounts();
+    store.accounts = state.accounts ?? [];
+    store.credentialStore = state.credentialStore;
+  }
 
   async function connect(username: string) {
     if (busy) return;
@@ -12,18 +21,36 @@
     store.disconnectNotice = "";
     try {
       await api.connectStored(username);
-      store.screen = "connecting";
+      // The shared connected event can arrive before the HTTP operation
+      // completes. Keep the game screen if that authoritative event won the
+      // race; otherwise wait on the normal connecting screen.
+      if (store.connState !== "connected") store.screen = "connecting";
     } catch (e: any) {
       error = e?.message ?? String(e);
       busy = "";
+      try {
+        await refreshAccounts();
+      } catch {
+        // Preserve the connection error; account health is best-effort here.
+      }
     }
   }
 
   async function remove(username: string, ev: MouseEvent) {
     ev.stopPropagation();
-    await api.removeAccount(username);
-    store.accounts = store.accounts.filter((a) => a !== username);
-    if (store.accounts.length === 0) store.screen = "login";
+    if (
+      api.inWeb() &&
+      !window.confirm(`Remove the stored TEC credentials for ${username} for every client?`)
+    ) {
+      return;
+    }
+    try {
+      await api.removeAccount(username);
+      await refreshAccounts();
+      if (store.accounts.length === 0) store.screen = "login";
+    } catch (cause: any) {
+      error = cause?.message ?? String(cause);
+    }
   }
 
 </script>
@@ -54,18 +81,27 @@
             {/if}
           </button>
           {#if busy !== acct}
-            <button class="del" onclick={(e) => remove(acct, e)} disabled={!!busy}
-              title="Remove account" aria-label="Remove account" type="button">✕</button>
+            <button class="del" onclick={(e) => remove(acct, e)} disabled={!!busy || !canManageAccounts}
+              title={canManageAccounts ? "Remove account" : "Credential storage unavailable"}
+              aria-label="Remove account" type="button">✕</button>
           {/if}
         </div>
       {/each}
     </div>
 
     {#if error}<div class="err">{error}</div>{/if}
+    {#if !canManageAccounts && store.credentialStore.message}
+      <div class="storage-note">{store.credentialStore.message}</div>
+    {/if}
 
     <button class="add" onclick={() => (store.screen = "login")} disabled={!!busy} type="button">
       + Add another account
     </button>
+    {#if api.inWeb()}
+      <button class="signout" onclick={() => void api.quit()} disabled={!!busy} type="button">
+        Sign out of web UI
+      </button>
+    {/if}
     <div class="ver">{store.version}</div>
   </div>
 </div>
@@ -77,9 +113,11 @@
     align-items: center;
     justify-content: center;
     background: var(--bg);
+    padding: 16px;
   }
   .card {
     width: 400px;
+    max-width: 100%;
     background: var(--bg-panel);
     border: 1px solid var(--accent);
     padding: 24px 24px 16px;
@@ -134,6 +172,12 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+  }
+  .storage-note {
+    margin-top: 12px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.4;
   }
   .acct {
     display: flex;
@@ -215,6 +259,13 @@
     margin-top: 18px;
     text-align: center;
     font-size: 11px;
+    color: var(--fg-dim);
+  }
+  .signout {
+    width: 100%;
+    margin-top: 8px;
+    border: none;
+    background: none;
     color: var(--fg-dim);
   }
 </style>

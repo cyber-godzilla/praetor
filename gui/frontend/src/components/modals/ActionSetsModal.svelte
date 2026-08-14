@@ -63,12 +63,12 @@
       // different set; reset it so it can't mis-target.
       store.actionSetIndex = 0;
       store.addToast("Action sets", "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     } finally {
       saving = false;
     }
-    store.openModal = null;
   }
 </script>
 

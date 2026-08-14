@@ -1,0 +1,19 @@
+services:
+  praetor-web:
+    build:
+      context: ../..
+      args:
+        VERSION: docker
+    image: praetor-web:local
+    restart: unless-stopped
+    environment:
+      PRAETOR_WEB_PASSWORD: ${PRAETOR_WEB_PASSWORD:?set PRAETOR_WEB_PASSWORD in .env}
+      PRAETOR_CREDENTIALS_KEY: ${PRAETOR_CREDENTIALS_KEY:?set PRAETOR_CREDENTIALS_KEY in .env}
+    ports:
+      - "${PRAETOR_PORT:-8787}:8787"
+    volumes:
+      - praetor-data:/data
+
+volumes:
+  praetor-data:
+    name: praetor-data

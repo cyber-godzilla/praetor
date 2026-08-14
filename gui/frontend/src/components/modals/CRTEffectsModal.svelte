@@ -18,10 +18,10 @@
         store.config.UI.CRTRoll = roll;
         store.config.UI.CRTBloom = bloom;
       }
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 

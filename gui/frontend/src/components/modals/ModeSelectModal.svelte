@@ -32,7 +32,7 @@
   {/if}
   <div class="modes">
     {#each modes as mode (mode)}
-      <button class="mode" class:current={store.mode === mode || (mode === "disable" && (store.mode === "" || store.mode === "disable"))} onclick={() => pick(mode)}>
+      <button class="mode" class:current={store.mode === mode || (mode === "disable" && (store.mode === "" || store.mode === "disable"))} onclick={() => pick(mode)} disabled={!store.transportReady}>
         <span class="name">{mode}</span>
         {#if store.mode === mode || (mode === "disable" && (store.mode === "" || store.mode === "disable"))}
           <span class="badge">active</span>

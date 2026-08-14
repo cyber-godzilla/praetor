@@ -56,19 +56,10 @@ func (d *Deps) Close() {
 // ensure config exists, load it, set up logging, and wire the client,
 // credential store, session logger, and desktop notifier.
 func Bootstrap(version string, debug bool) (*Deps, error) {
-	configDir := xdgPath("XDG_CONFIG_HOME", ".config", "praetor")
-	dataDir := xdgPath("XDG_DATA_HOME", ".local/share", "praetor")
-	stateDir := xdgPath("XDG_STATE_HOME", ".local/state", "praetor")
+	configDir := appDir("PRAETOR_CONFIG_DIR", "XDG_CONFIG_HOME", ".config", "praetor")
+	dataDir := appDir("PRAETOR_DATA_DIR", "XDG_DATA_HOME", ".local/share", "praetor")
+	stateDir := appDir("PRAETOR_STATE_DIR", "XDG_STATE_HOME", ".local/state", "praetor")
 	sessionsDir := filepath.Join(configDir, "logs")
-
-	logLevel := "info"
-	if debug {
-		logLevel = "debug"
-	}
-	appLog, err := logging.New(stateDir, "tec.log", logLevel, 5)
-	if err != nil {
-		return nil, err
-	}
 
 	cfgFile := filepath.Join(configDir, "config.yaml")
 	if _, statErr := os.Stat(cfgFile); os.IsNotExist(statErr) {
@@ -87,6 +78,21 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	logLevel := cfg.Logging.App.Level
+	if debug {
+		logLevel = "debug"
+	}
+	appLog, err := logging.New(
+		stateDir,
+		"tec.log",
+		logLevel,
+		cfg.Logging.App.MaxSizeMB,
+		cfg.Logging.App.Retain,
+	)
+	if err != nil {
+		return nil, err
+	}
 	for _, w := range cfg.TransportWarnings() {
 		log.Printf("[CONFIG] %s", w)
 	}
@@ -99,7 +105,20 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		scriptDirs = []string{filepath.Join(configDir, "scripts")}
 	}
 
-	creds := &session.KeyringStore{}
+	credentialPath := cfg.Credentials.EncryptedFile.Path
+	if credentialPath != "" {
+		credentialPath = expandPath(credentialPath)
+	}
+	creds, err := session.NewCredentialStore(session.CredentialStoreOptions{
+		Backend:  cfg.Credentials.Backend,
+		StateDir: stateDir,
+		FilePath: credentialPath,
+		KeyEnv:   cfg.Credentials.EncryptedFile.KeyEnv,
+	})
+	if err != nil {
+		appLog.Close()
+		return nil, err
+	}
 	gc, err := client.NewClient(cfg, scriptDirs, dataDir, creds)
 	if err != nil {
 		return nil, err
@@ -111,13 +130,16 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 
 	logDir := sessionsDir
 	if cfg.Logging.Session.Path != "" {
-		logDir = cfg.Logging.Session.Path
+		logDir = expandPath(cfg.Logging.Session.Path)
 	}
 	sessLog, err := client.NewSessionLogger(cfg.Logging.Session.Enabled, logDir)
 	if err != nil {
-		// Non-fatal: continue without session logging.
-		sessLog = nil
+		// Non-fatal: retain a disabled logger so a corrected path can be
+		// applied live from any shell without restarting the process.
+		sessLog, _ = client.NewSessionLogger(false, logDir)
 	}
+	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	gc.Engine.SetNotificationSink(desktopNotify.Notify)
 
 	notesStore := notes.New(filepath.Join(configDir, "notes"))
 
@@ -128,16 +150,28 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		ConfigDir:     configDir,
 		DataDir:       dataDir,
 		StateDir:      stateDir,
-		SessionsDir:   logDir,
+		SessionsDir:   sessionsDir,
 		Creds:         creds,
 		SessionLog:    sessLog,
-		DesktopNotify: client.NewDesktopNotifier(cfg.Notifications.Desktop),
+		DesktopNotify: desktopNotify,
 		ScriptDirs:    scriptDirs,
 		Notes:         notesStore,
 		Version:       version,
 		Debug:         debug,
 		appLog:        appLog,
 	}, nil
+}
+
+// appDir permits a service deployment to point Praetor at an exact application
+// directory. XDG variables name parent directories, so relying on them alone
+// always appends /praetor and cannot represent an existing direct layout such
+// as /srv/praetor/config. Desktop installs retain the normal XDG behavior when
+// the explicit override is absent.
+func appDir(overrideEnv, xdgEnv, defaultSuffix, appName string) string {
+	if dir := os.Getenv(overrideEnv); dir != "" {
+		return filepath.Clean(dir)
+	}
+	return xdgPath(xdgEnv, defaultSuffix, appName)
 }
 
 // xdgPath returns the XDG directory for the given env var, falling back to

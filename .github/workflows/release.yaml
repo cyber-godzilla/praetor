@@ -2,7 +2,8 @@ name: Release
 
 # Tag-triggered release. Because Wails links a native webview per OS and CANNOT
 # cross-compile, each platform builds on its own native runner and does the FULL
-# process for that OS: build both binaries (GUI `praetor` + TUI `praetor-tui`),
+# process for that OS: build the GUI (`praetor`), TUI (`praetor-tui`), and
+# headless shared web client (`praetor-web`),
 # package, and publish. A tiny coordinator job creates the GitHub release first
 # so every platform job can attach assets to it.
 #
@@ -95,6 +96,17 @@ jobs:
       - name: Build TUI (praetor-tui)
         run: go build -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-tui ./cmd/praetor
 
+      - name: Build shared web client (praetor-web)
+        run: |
+          cd gui/frontend
+          npm ci
+          npm run build
+          cd ../..
+          mkdir -p internal/webassets/dist
+          cp gui/frontend/dist/index.html internal/webassets/dist/index.html
+          cp -R gui/frontend/dist/assets internal/webassets/dist/assets
+          CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" -o praetor-web ./cmd/praetor-web
+
       - name: Build GUI (praetor)
         working-directory: gui
         run: wails build -tags webkit2_41 -ldflags "-X main.version=${GITHUB_REF_NAME}"
@@ -109,6 +121,7 @@ jobs:
           # A plain tarball of the GUI binary for non-packaged installs.
           tar -C gui/build/bin -czf "dist/praetor_${VERSION}_linux_${{ matrix.arch }}.tar.gz" praetor
           tar -czf "dist/praetor-tui_${VERSION}_linux_${{ matrix.arch }}.tar.gz" praetor-tui
+          tar -czf "dist/praetor-web_${VERSION}_linux_${{ matrix.arch }}.tar.gz" praetor-web
           ls -la dist
 
       - name: Upload release assets

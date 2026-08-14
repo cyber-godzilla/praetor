@@ -35,10 +35,15 @@
   async function clearSel() {
     const sel = selectedKeys();
     if (sel.length === 0) return;
-    await api.clearPersistentData(sel);
-    selected = new Set();
-    await refresh();
-    notice = "Cleared " + sel.length + " key(s)";
+    if (!window.confirm(`Permanently clear ${sel.length} selected persistent Lua key(s) for the shared client?`)) return;
+    try {
+      await api.clearPersistentData(sel);
+      selected = new Set();
+      await refresh();
+      notice = "Cleared " + sel.length + " key(s)";
+    } catch (error) {
+      store.addToast("Clear failed", error instanceof Error ? error.message : String(error));
+    }
   }
 </script>
 

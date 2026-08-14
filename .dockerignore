@@ -1,0 +1,9 @@
+/.git
+/praetor
+/praetor-tui
+/praetor-web
+/praetor-web-linux-amd64
+/gui/frontend/dist
+/gui/frontend/node_modules
+/internal/webassets/dist/*
+/packaging/docker/.env

@@ -1,6 +1,7 @@
-# nfpm config for the Linux deb/rpm packages. Bundles BOTH clients:
+# nfpm config for the Linux deb/rpm packages. Bundles all three clients:
 #   /usr/bin/praetor       -> the Wails desktop GUI (built by `wails build`)
 #   /usr/bin/praetor-tui   -> the terminal client (built by `go build`)
+#   /usr/bin/praetor-web  -> the shared headless browser client
 # plus a .desktop entry + icon so the GUI shows up in the applications menu.
 #
 # Rendered/consumed by `nfpm pkg` on the Linux release runner. VERSION and the
@@ -20,9 +21,10 @@ section: games
 priority: optional
 maintainer: CyberGodzilla 2099 <cg@cybergodzilla.com>
 description: |
-  Desktop and terminal client for The Eternal City (TEC).
-  Ships the Praetor GUI (praetor) and the terminal client (praetor-tui),
-  with authentication, Lua scripting automation, and a minimap renderer.
+  Desktop, terminal, and shared web clients for The Eternal City (TEC).
+  Ships the Praetor GUI (praetor), terminal client (praetor-tui), and headless
+  shared browser client (praetor-web), with authentication, Lua scripting
+  automation, and a minimap renderer.
 vendor: CyberGodzilla
 homepage: https://github.com/cyber-godzilla/praetor
 license: GPL-3.0
@@ -38,6 +40,10 @@ contents:
       mode: 0755
   - src: ./praetor-tui
     dst: /usr/bin/praetor-tui
+    file_info:
+      mode: 0755
+  - src: ./praetor-web
+    dst: /usr/bin/praetor-web
     file_info:
       mode: 0755
   - src: ./packaging/linux/praetor.desktop

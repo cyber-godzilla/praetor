@@ -21,6 +21,8 @@ type ModeChange struct {
 
 type Engine struct {
 	mu           sync.Mutex
+	notifyMu     sync.RWMutex
+	notifySink   func(title, message string)
 	vm           *LuaVM
 	state        *ModeState
 	queue        *CommandQueue
@@ -37,6 +39,15 @@ type Engine struct {
 
 	inSwitch bool           // true while setModeLocked's on_start/on_stop are running
 	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
+}
+
+// SetNotificationSink installs the shell-specific delivery path for Lua's
+// notify(title, message). It is independent of the engine lock because Lua
+// callbacks execute while that lock is already held.
+func (e *Engine) SetNotificationSink(sink func(title, message string)) {
+	e.notifyMu.Lock()
+	e.notifySink = sink
+	e.notifyMu.Unlock()
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -441,20 +452,23 @@ func (e *Engine) ReloadAllModes() error {
 func (e *Engine) rebuildVM(dirs []string) error {
 	prevMode := e.currentMode
 
-	// Retire the old manager before its VM is closed below: mark it dead and
-	// cancel its timers so no old goroutine fires against the closed state.
-	e.timers.Shutdown()
-
 	newVM := NewLuaVM(dirs)
 	L := newVM.State()
-	e.timers = NewTimerManager(L, &e.mu, &e.actionGen)
-	RegisterBridge(L, e, e.status, e.timers)
+	newTimers := NewTimerManager(L, &e.mu, &e.actionGen)
+	RegisterBridge(L, e, e.status, newTimers)
 	RegisterStateAPI(L, e.state)
 
 	if err := newVM.LoadModes(); err != nil {
+		newTimers.Shutdown()
 		newVM.Close()
 		return fmt.Errorf("loading modes: %w", err)
 	}
+
+	// Only retire the working VM/timers after the replacement has loaded
+	// successfully. A syntax error in a newly configured directory therefore
+	// leaves the current automation session intact.
+	e.timers.Shutdown()
+	e.timers = newTimers
 
 	// Cancel any delayed actions from the old VM before closing it.
 	e.actionGen++
@@ -524,9 +538,15 @@ func (e *Engine) OnSetMode(mode string, args []string) {
 	e.runSwitch(mode, args)
 }
 
-// OnNotify logs a notification.
+// OnNotify logs and delivers a notification through the active shell sink.
 func (e *Engine) OnNotify(title, message string) {
 	log.Printf("[NOTIFY] %s: %s", title, message)
+	e.notifyMu.RLock()
+	sink := e.notifySink
+	e.notifyMu.RUnlock()
+	if sink != nil {
+		sink(title, message)
+	}
 }
 
 // OnLog logs a message from Lua.

@@ -20,7 +20,7 @@
 <Frame title="Vitals" collapsible bind:collapsed={store.collapsed.vitals}>
   <div class="gauges">
     {#each bars as b (b.label)}
-      <button class="gauge" title="{b.label} — click to check condition" onclick={checkCond} tabindex="-1">
+      <button class="gauge" title="{b.label} — click to check condition" onclick={checkCond} tabindex="-1" disabled={!store.transportReady}>
         <span class="glabel dim">{b.label}</span>
         <span class="track">
           <span class="fill" style="height:{vitalFillPct(b.value)}%; background:{vitalColor(b.value)}"></span>
