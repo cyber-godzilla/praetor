@@ -286,8 +286,8 @@ func TestParseHTML_InventoryTablePreservesRowsAndCells(t *testing.T) {
 		`<tr><td>a food ration</td><td>Less than a pound.</td></tr>` +
 		`</tbody></table></font>`
 	want := "You are carrying:\n" +
-		"a long backpack  Approx. 55 lbs\n" +
-		"a food ration  Less than a pound."
+		"a long backpack │ Approx. 55 lbs\n" +
+		"a food ration   │ Less than a pound."
 
 	result := ParseHTML(input)
 	if result.Text != want {
@@ -302,15 +302,21 @@ func TestParseHTML_InventoryTablePreservesRowsAndCells(t *testing.T) {
 }
 
 func TestParseHTML_AttributeTablePreservesHeaderAndRows(t *testing.T) {
+	// Numeric cells carry TEC's baked-in layout padding ("141            ")
+	// exactly as production emits them; the drawn table must trim it and
+	// align every column to the widest trimmed cell.
 	input := `<table class="generictable"><tbody>` +
 		`<tr><th>Attribute</th><th>Description</th><th>Modified Value</th>` +
 		`<th>Base Value</th><th>Potential</th></tr>` +
-		`<tr><td>Agility</td><td>Good</td><td>141</td><td>135</td><td>0</td></tr>` +
-		`<tr><td>Charisma</td><td>Below average</td><td>72</td><td>121</td><td>10</td></tr>` +
+		`<tr><td>Agility</td><td>Good</td><td>141            </td>` +
+		`<td>135        </td><td>0         </td></tr>` +
+		`<tr><td>Charisma</td><td>Below average</td><td>72             </td>` +
+		`<td>121        </td><td>10        </td></tr>` +
 		`</tbody></table></font>`
-	want := "Attribute  Description  Modified Value  Base Value  Potential\n" +
-		"Agility  Good  141  135  0\n" +
-		"Charisma  Below average  72  121  10"
+	want := "Attribute │ Description   │ Modified Value │ Base Value │ Potential\n" +
+		"──────────┼───────────────┼────────────────┼────────────┼──────────\n" +
+		"Agility   │ Good          │ 141            │ 135        │ 0\n" +
+		"Charisma  │ Below average │ 72             │ 121        │ 10"
 
 	result := ParseHTML(input)
 	if result.Text != want {

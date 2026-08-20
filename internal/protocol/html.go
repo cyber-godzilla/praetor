@@ -32,7 +32,9 @@ type styleState struct {
 //   - <font color="#hex"> → Color
 //   - <xch_cmd>  → Underline
 //   - <xch_page clear="text"> → ClearPage=true
-//   - <table>    → Captions and rows on separate lines, cells separated by spaces
+//   - <table>    → Drawn as a monospace table: caption on its own line,
+//     columns padded to a shared width with │ borders, and a ─┼─ rule
+//     under a full header row
 //   - <th>       → Bold table cell
 //   - Other tags  → stripped, content preserved
 //
@@ -68,8 +70,17 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 	cur := styleState{}
 	indentLevel := startIndent // tracks <ul> nesting depth, carried from prior lines
 	tableDepth := 0
-	tableCells := 0
 	tableBreakPending := false
+	// Table capture: TEC emits a complete table in one protocol record, so
+	// the whole grid is buffered and drawn with aligned columns at </table>.
+	type htmlTableCell struct {
+		header   bool
+		segments []types.StyledSegment
+	}
+	var tableRows [][]htmlTableCell
+	var tableCaption []types.StyledSegment
+	tableCellOpen := false
+	tableCaptionOpen := false
 
 	// segBuf accumulates text for the current styled segment.
 	var segBuf strings.Builder
@@ -117,6 +128,116 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 				cur.color = e.color
 			}
 		}
+	}
+
+	// trimTableCell strips the layout padding TEC bakes into numeric cells
+	// ("141            ") without touching interior whitespace or styling.
+	trimTableCell := func(cell []types.StyledSegment) []types.StyledSegment {
+		trimmed := append([]types.StyledSegment(nil), cell...)
+		for len(trimmed) > 0 {
+			trimmed[0].Text = strings.TrimLeft(trimmed[0].Text, " \t")
+			if trimmed[0].Text != "" {
+				break
+			}
+			trimmed = trimmed[1:]
+		}
+		for len(trimmed) > 0 {
+			last := len(trimmed) - 1
+			trimmed[last].Text = strings.TrimRight(trimmed[last].Text, " \t")
+			if trimmed[last].Text != "" {
+				break
+			}
+			trimmed = trimmed[:last]
+		}
+		return trimmed
+	}
+	segmentsWidth := func(segments []types.StyledSegment) int {
+		width := 0
+		for _, segment := range segments {
+			width += len([]rune(segment.Text))
+		}
+		return width
+	}
+
+	// renderTable draws the buffered grid the way Orchil renders the same
+	// HTML: the caption on its own line, columns padded to a shared width,
+	// cell borders between columns, and a rule under a full header row.
+	renderTable := func() {
+		flushSeg()
+		appendPlain := func(text string) {
+			if text == "" {
+				return
+			}
+			textBuf.WriteString(text)
+			segments = append(segments, types.StyledSegment{Text: text})
+		}
+		appendStyled := func(segment types.StyledSegment) {
+			if segment.Text == "" {
+				return
+			}
+			textBuf.WriteString(segment.Text)
+			segments = append(segments, segment)
+		}
+		if caption := trimTableCell(tableCaption); len(caption) > 0 {
+			ensureLineBreak()
+			for _, segment := range caption {
+				appendStyled(segment)
+			}
+		}
+		var widths []int
+		rows := make([][]htmlTableCell, 0, len(tableRows))
+		for _, row := range tableRows {
+			cells := make([]htmlTableCell, 0, len(row))
+			for _, cell := range row {
+				cells = append(cells, htmlTableCell{
+					header:   cell.header,
+					segments: trimTableCell(cell.segments),
+				})
+			}
+			if len(cells) == 0 {
+				continue
+			}
+			rows = append(rows, cells)
+			for index, cell := range cells {
+				for index >= len(widths) {
+					widths = append(widths, 0)
+				}
+				if width := segmentsWidth(cell.segments); width > widths[index] {
+					widths[index] = width
+				}
+			}
+		}
+		for rowIndex, row := range rows {
+			ensureLineBreak()
+			for index, cell := range row {
+				if index > 0 {
+					appendPlain(" │ ")
+				}
+				for _, segment := range cell.segments {
+					appendStyled(segment)
+				}
+				if index < len(row)-1 {
+					padding := widths[index] - segmentsWidth(cell.segments)
+					appendPlain(strings.Repeat(" ", padding))
+				}
+			}
+			headerRow := rowIndex == 0 && len(rows) > 1
+			for _, cell := range row {
+				if !cell.header {
+					headerRow = false
+				}
+			}
+			if headerRow {
+				ensureLineBreak()
+				rule := make([]string, 0, len(widths))
+				for _, width := range widths {
+					rule = append(rule, strings.Repeat("─", width))
+				}
+				appendPlain(strings.Join(rule, "─┼─"))
+			}
+		}
+		tableRows = nil
+		tableCaption = nil
 	}
 
 	i := 0
@@ -181,7 +302,18 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 				if closeName == "table" && tableDepth > 0 {
 					tableDepth--
 					if tableDepth == 0 {
+						tableCellOpen = false
+						tableCaptionOpen = false
+						renderTable()
 						tableBreakPending = true
+					}
+				}
+				if tableDepth > 0 {
+					switch closeName {
+					case "td", "th", "tr":
+						tableCellOpen = false
+					case "caption":
+						tableCaptionOpen = false
 					}
 				}
 				// Pop matching stack entry.
@@ -215,28 +347,41 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 			}
 
 			// TEC emits complete inventory and attribute tables in one protocol
-			// record. Preserve their block, row, and cell boundaries in the shared
-			// text projection so every renderer remains readable without accepting
-			// server HTML into a browser DOM.
+			// record. Buffer the grid and draw it with aligned, bordered
+			// columns at </table> so every renderer shows the table Orchil
+			// draws, without accepting server HTML into a browser DOM.
 			switch tagName {
 			case "table":
 				if tableDepth == 0 {
 					ensureLineBreak()
 					tableBreakPending = false
+					tableRows = nil
+					tableCaption = nil
+					tableCellOpen = false
+					tableCaptionOpen = false
 				}
 				tableDepth++
-				tableCells = 0
+			case "caption":
+				if tableDepth > 0 {
+					tableCaptionOpen = true
+					tableCellOpen = false
+				}
 			case "tr":
 				if tableDepth > 0 {
-					ensureLineBreak()
-					tableCells = 0
+					tableRows = append(tableRows, nil)
+					tableCellOpen = false
 				}
 			case "td", "th":
 				if tableDepth > 0 {
-					if tableCells > 0 {
-						appendLayout("  ")
+					if len(tableRows) == 0 {
+						tableRows = append(tableRows, nil)
 					}
-					tableCells++
+					last := len(tableRows) - 1
+					tableRows[last] = append(
+						tableRows[last],
+						htmlTableCell{header: tagName == "th"},
+					)
+					tableCellOpen = true
 				}
 			}
 
@@ -290,6 +435,30 @@ func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 				i = i + next
 			}
 			decoded := html.UnescapeString(chunk)
+			if tableDepth > 0 {
+				segment := types.StyledSegment{
+					Text:      decoded,
+					Bold:      cur.bold,
+					Italic:    cur.italic,
+					Underline: cur.underline,
+					Color:     cur.color,
+				}
+				switch {
+				case tableCaptionOpen:
+					tableCaption = append(tableCaption, segment)
+				case tableCellOpen && len(tableRows) > 0:
+					last := len(tableRows) - 1
+					row := tableRows[last]
+					row[len(row)-1].segments = append(
+						row[len(row)-1].segments, segment,
+					)
+				case strings.TrimSpace(decoded) != "":
+					// Content between cells has no reviewed layout slot;
+					// keep it with the caption so nothing is dropped.
+					tableCaption = append(tableCaption, segment)
+				}
+				continue
+			}
 			if tableBreakPending && strings.TrimSpace(decoded) != "" {
 				ensureLineBreak()
 				tableBreakPending = false
