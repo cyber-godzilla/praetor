@@ -204,12 +204,24 @@
   }
 
   function pushHistory(line: string) {
-    if (line.trim() !== "") {
+    // Skip consecutive duplicates: with keep-input-on-send, re-sending the
+    // same line is the normal workflow and must not flood ArrowUp history.
+    if (line.trim() !== "" && line !== history[history.length - 1]) {
       history.push(line);
       if (history.length > 200) history.shift();
     }
     histIdx = -1;
-    value = "";
+    if (store.config?.UI?.KeepInputOnSend && line !== "") {
+      // Keep the sent line and select it all: Enter re-sends it verbatim,
+      // while any typing or Backspace replaces the whole thing. Assigning
+      // `line` (not leaving `value` be) makes the kept text exactly what was
+      // sent, even if the field changed during submit()'s awaits. Selection is
+      // deferred: the bound textarea has not taken the value yet.
+      value = line;
+      queueMicrotask(() => inputEl?.select());
+    } else {
+      value = "";
+    }
   }
 
   async function submit() {

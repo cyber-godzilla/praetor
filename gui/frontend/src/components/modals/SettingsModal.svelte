@@ -14,6 +14,7 @@
   let colorWords = $state(seed?.UI?.ColorWords ?? false);
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
+  let keepInputOnSend = $state(seed?.UI?.KeepInputOnSend ?? false);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
   let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
   let logPath = $state(seed?.Logging?.Session?.Path ?? "");
@@ -31,6 +32,7 @@
       await api.setColorWords(colorWords);
       await api.setHideIPs(hideIPs);
       await api.setInputSpellcheck(inputSpellcheck);
+      await api.setKeepInputOnSend(keepInputOnSend);
       await api.setUpdateCheck(updateCheck);
       await api.setSessionLogging(sessionLogging);
       await api.setLogPath(logPath);
@@ -45,6 +47,7 @@
           ColorWords: colorWords,
           HideIPs: hideIPs,
           InputSpellcheck: inputSpellcheck,
+          KeepInputOnSend: keepInputOnSend,
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
@@ -69,6 +72,7 @@
     <label class="t"><span>Color words</span><input type="checkbox" bind:checked={colorWords} /></label>
     <label class="t"><span>Hide IP addresses</span><input type="checkbox" bind:checked={hideIPs} /></label>
     <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
+    <label class="t"><span>Retain Input After Send</span><input type="checkbox" bind:checked={keepInputOnSend} /></label>
     <label class="t"><span>Check for updates on startup</span><input type="checkbox" bind:checked={updateCheck} /></label>
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
 

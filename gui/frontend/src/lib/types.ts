@@ -197,6 +197,7 @@ export interface UIConfig {
   EchoScript: boolean;
   HideIPs: boolean;
   InputSpellcheck: boolean;
+  KeepInputOnSend: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;

@@ -91,6 +91,7 @@ export const setEchoScript = (v: boolean) => call<void>("SetEchoScript", undefin
 export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefined, v);
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
+export const setKeepInputOnSend = (v: boolean) => call<void>("SetKeepInputOnSend", undefined, v);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);

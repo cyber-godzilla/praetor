@@ -346,6 +346,7 @@ ui:
   echo_script_commands: true
   hide_ips: false
   input_spellcheck: true       # GUI: webview spellcheck on the command input
+  keep_input_on_send: false    # GUI: keep the sent command selected in the input instead of clearing
   numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
   custom_tabs: []
   action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons

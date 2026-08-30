@@ -228,6 +228,10 @@ type UIConfig struct {
 	// command input (red squiggles under misspelled words while composing says
 	// and emotes). Engine support varies by platform webview.
 	InputSpellcheck bool `yaml:"input_spellcheck"`
+	// KeepInputOnSend keeps the sent command in the GUI input, selected,
+	// instead of clearing it: Enter re-sends it, and any typing or Backspace
+	// replaces the whole line (native select-all semantics).
+	KeepInputOnSend bool `yaml:"keep_input_on_send"`
 	// NumpadNavigation controls the GUI numpad-walking behavior:
 	//   "numlock" — move when NumLock is off; type digits when on (default)
 	//   "always"  — numpad always sends movement (needed on macOS, which has

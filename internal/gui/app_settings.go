@@ -55,6 +55,12 @@ func (a *GuiApp) SetInputSpellcheck(v bool) error {
 	return a.withConfig(func() { a.cfg().UI.InputSpellcheck = v })
 }
 
+// SetKeepInputOnSend toggles keeping the sent command in the input (selected)
+// instead of clearing it. Applied live in the frontend's submit path.
+func (a *GuiApp) SetKeepInputOnSend(v bool) error {
+	return a.withConfig(func() { a.cfg().UI.KeepInputOnSend = v })
+}
+
 // SetUpdateCheck toggles the startup check for newer releases.
 func (a *GuiApp) SetUpdateCheck(v bool) error {
 	return a.withConfig(func() { a.cfg().Updates.Check = v })
