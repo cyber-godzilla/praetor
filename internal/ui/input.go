@@ -83,9 +83,13 @@ func (i Input) Update(msg tea.Msg) (Input, tea.Cmd) {
 		switch msg.Type {
 		case tea.KeyEnter:
 			val := i.textinput.Value()
-			// Add non-empty commands to history.
+			// Add non-empty commands to history, skipping consecutive
+			// duplicates so re-sends don't stack copies to arrow back through
+			// (mirrors the GUI's pushHistory).
 			if val != "" {
-				i.history = append(i.history, val)
+				if n := len(i.history); n == 0 || i.history[n-1] != val {
+					i.history = append(i.history, val)
+				}
 				i.histIdx = -1
 			}
 			i.textinput.SetValue("")
