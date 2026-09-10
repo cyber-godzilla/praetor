@@ -42,6 +42,11 @@ cd "$here/../.."   # nfpm.yaml paths are relative to the repo root
 PKG="praetor-${VERSION}-1.x86_64.pkg.tar.zst"
 
 if [[ -z "${PUBLISH_ONLY:-}" ]]; then
+  # repo-add validates packages with bsdtar (libarchive-tools) and, lacking
+  # it, reports "not a package file" — fail with the real reason instead.
+  for tool in nfpm repo-add bsdtar; do
+    command -v "$tool" >/dev/null || { echo "$tool is required (bsdtar comes from libarchive-tools)" >&2; exit 1; }
+  done
   rm -rf "$DIST" && mkdir -p "$DIST"
   PKG_ARCH=amd64 VERSION="$VERSION" \
     nfpm pkg --config packaging/linux/nfpm.yaml --packager archlinux --target "$DIST/"
