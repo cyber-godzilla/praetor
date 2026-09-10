@@ -372,7 +372,7 @@
       <button type="button" tabindex="-1" title="Close (Esc)" onclick={closeSearch}>✕</button>
     </div>
   {/if}
-  <div class="pane" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
+  <div class="pane" data-testid="e2e-output" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
     {#each tab.lines as line (line.id)}
       {#if isBlank(line)}
         <div class="line blank">&nbsp;</div>
