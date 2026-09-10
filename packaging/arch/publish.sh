@@ -61,4 +61,47 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   exit 0
 fi
 
-# ---- network half (Task 2) ------------------------------------------------
+# ---- publish ------------------------------------------------------------
+: "${BUILDKITE_FILES_TOKEN:?}"
+command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
+API="https://api.buildkite.com/v2/packages/organizations/${BK_ORG}/registries/${BK_REGISTRY}/packages"
+
+# bk <ok-status-regex> <curl args...> — prints the body; fails (with the
+# API's message on stderr) unless the HTTP status matches. The token only
+# ever travels in the header and is never printed.
+bk() {
+  local want="$1"; shift
+  local out status body
+  out="$(curl -sS -w $'\n%{http_code}' -H "Authorization: Bearer ${BUILDKITE_FILES_TOKEN}" "$@")"
+  status="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  if [[ ! "$status" =~ ^(${want})$ ]]; then
+    echo "buildkite: HTTP ${status} from $*: ${body}" >&2
+    return 1
+  fi
+  printf '%s' "$body"
+}
+
+echo "Uploading ${PKG} to ${BK_ORG}/${BK_REGISTRY}"
+# 409 = this exact name is already there (a re-run of the same tag); fine.
+bk '201|409' -X POST "$API" -F "file=@${DIST}/${PKG}" >/dev/null
+
+# The db has a fixed name, so every existing copy must go first. The
+# registry parses praetor-1.0.0.db as family "praetor", release "1.0.0";
+# the package is release "<ver>-1", so the two can never be confused.
+db_family="${REPO_DB%-*}"
+db_release="${REPO_DB##*-}"
+page="${API}?per_page=100"
+while [[ -n "$page" && "$page" != "null" ]]; do
+  resp="$(bk 200 "$page")"
+  for id in $(jq -r --arg n "$db_family" --arg v "$db_release" \
+      '.items[] | select(.name == $n and .version == $v) | .id' <<<"$resp"); do
+    echo "Deleting old ${REPO_DB}.db (${id})"
+    bk 200 -X DELETE "${API}/${id}" >/dev/null
+  done
+  page="$(jq -r '.links.next // empty' <<<"$resp")"
+done
+
+echo "Uploading ${REPO_DB}.db"
+bk 201 -X POST "$API" -F "file=@${DIST}/${REPO_DB}.db" >/dev/null
+echo "Published ${PKG} + ${REPO_DB}.db to ${BK_ORG}/${BK_REGISTRY}."
