@@ -123,23 +123,17 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.rpm dist/*.tar.gz --clobber
 
+      # The Buildkite pushes tolerate 409 (version already published) so a
+      # re-run of this job for an existing tag gets past them to later steps.
       - name: Push .deb to Buildkite
-        run: |
-          for f in dist/*.deb; do
-            curl -f -X POST \
-              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-debian/packages" \
-              -H "Authorization: Bearer ${{ secrets.BUILDKITE_DEB_TOKEN }}" \
-              -F "file=@$f"
-          done
+        env:
+          BUILDKITE_TOKEN: ${{ secrets.BUILDKITE_DEB_TOKEN }}
+        run: bash packaging/buildkite-push.sh praetor-debian dist/*.deb
 
       - name: Push .rpm to Buildkite
-        run: |
-          for f in dist/*.rpm; do
-            curl -f -X POST \
-              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-rpm/packages" \
-              -H "Authorization: Bearer ${{ secrets.BUILDKITE_RPM_TOKEN }}" \
-              -F "file=@$f"
-          done
+        env:
+          BUILDKITE_TOKEN: ${{ secrets.BUILDKITE_RPM_TOKEN }}
+        run: bash packaging/buildkite-push.sh praetor-rpm dist/*.rpm
 
       # ── Arch (amd64 only): build → attach to release → publish to Buildkite Files.
       # Ordered last so an Arch publish failure can't block deb/rpm. The build
@@ -280,8 +274,17 @@ jobs:
 
       - name: Push .nupkg to Buildkite NuGet
         run: |
+          # Tolerate 409 (version already published) so a re-run of this job
+          # for an existing tag doesn't fail here; any other error still does.
           for f in dist/*.nupkg; do
-            choco push "$f" \
-              --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
-              --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}"
+            if out="$(choco push "$f" \
+                --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
+                --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}" 2>&1)"; then
+              echo "$out" | tail -n 2
+            elif grep -qE '409|Conflict' <<<"$out"; then
+              echo "already in praetor-nuget, skipping: $f (409)"
+            else
+              echo "$out" >&2
+              exit 1
+            fi
           done
