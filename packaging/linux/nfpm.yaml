@@ -1,4 +1,4 @@
-# nfpm config for the Linux deb/rpm packages. Bundles BOTH clients:
+# nfpm config for the Linux deb/rpm/Arch packages. Bundles BOTH clients:
 #   /usr/bin/praetor       -> the Wails desktop GUI (built by `wails build`)
 #   /usr/bin/praetor-tui   -> the terminal client (built by `go build`)
 # plus a .desktop entry + icon so the GUI shows up in the applications menu.
@@ -62,3 +62,13 @@ overrides:
     depends:
       - gtk3
       - webkit2gtk4.1
+  archlinux:
+    depends:
+      - gtk3
+      - webkit2gtk-4.1
+
+# Arch Linux (pacman) package, built by packaging/arch/publish.sh from the
+# same amd64 binaries as the deb/rpm. Arch's glibc is newer than the Ubuntu
+# runner's, and gtk3/webkit2gtk-4.1 are the Arch names for what Wails links.
+archlinux:
+  packager: CyberGodzilla 2099 <cg@cybergodzilla.com>
