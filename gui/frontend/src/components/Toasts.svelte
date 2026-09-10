@@ -2,7 +2,7 @@
   import { store } from "../lib/store.svelte";
 </script>
 
-<div class="toasts">
+<div class="toasts" data-testid="e2e-toasts">
   {#each store.toasts as t (t.id)}
     <div class="toast">
       <div class="title">{t.title}</div>
