@@ -67,6 +67,7 @@ The GUI lives in a **nested Go module** (`gui/go.mod` with a `replace` directive
 - `make -C gui build` — builds `gui/build/bin/praetor`
 - `make -C gui installer` — Windows NSIS installer
 - `make -C gui check` — frontend build + facade tests + dev-mode compile (no webview)
+- `make -C gui e2e` — Playwright smoke suite against the built frontend with a fake Wails bridge (Chromium; `make -C gui e2e-deps` once). Separate from `check`; CI runs it as the `e2e` job. See `gui/frontend/e2e/README.md`.
 
 When changing shared core behavior, verify **both** clients: `make check` at the root and the relevant `gui/` build/tests.
 
@@ -386,6 +387,7 @@ Tests across the project:
 - `internal/config/` — YAML loading with defaults
 - `internal/colorwords/` — color word detection, adjectives, suffixes, plurals, rainbow
 - `internal/client/` — session logging
+- `gui/frontend/e2e/` — Playwright smoke tests (15) over the built GUI: boot/login, output rendering + burst tail-follow, input/multiline/history/hint, menu/sidebar/tabs/toasts, Ctrl+F search, numpad
 
 
 ## Known Limitations
