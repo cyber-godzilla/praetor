@@ -107,6 +107,26 @@ EOF
 sudo yum install praetor
 ```
 
+### Pacman (Arch Linux)
+
+x86_64 only. Add the repository to `/etc/pacman.conf` (the `1.0.0` in the
+section name is the repository layout version, not the Praetor version, and
+does not change between releases):
+
+```ini
+[praetor-1.0.0]
+SigLevel = Never
+Server = https://packages.buildkite.com/cybergodzilla-2099/praetor-arch/files
+```
+
+```bash
+# Install (provides both `praetor` GUI and `praetor-tui`)
+sudo pacman -Sy praetor
+```
+
+The package depends on Arch's `gtk3` and `webkit2gtk-4.1`. The `.pkg.tar.zst`
+is also attached to each GitHub release for `pacman -U`.
+
 ### Chocolatey (Windows)
 
 ```powershell

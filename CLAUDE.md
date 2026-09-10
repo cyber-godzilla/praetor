@@ -371,6 +371,12 @@ logging:
     path: ""
 ```
 
+## Packaging
+
+Tag-triggered (`v*`) release pipeline in `.github/workflows/release.yaml`; one native job per OS because Wails cannot cross-compile. Channels: Homebrew tap (`packaging/homebrew/`), deb + rpm via nfpm (`packaging/linux/`) pushed to Buildkite deb/rpm registries, Chocolatey (`packaging/choco/`) pushed to a Buildkite NuGet registry, and an Arch package (`packaging/arch/`).
+
+**Arch:** Buildkite has no pacman registry, so `packaging/arch/publish.sh` builds the package with nfpm's `archlinux` packager, builds a one-package repo db with `repo-add`, and pushes both to the **Files** registry `praetor-arch`. Files-registry rules dictate the naming: every filename must match `{BASENAME}-{SEMVER}.{EXT}`, so the package is renamed to `praetor-<ver>-1.x86_64.pkg.tar.zst` (nfpm's default with `-x86_64` is rejected), and the repo db is `praetor-1.0.0.db` — users reference it as `[praetor-1.0.0]`, where `1.0.0` is the repo *layout* version, not the app version. Same-name re-upload is a 409, so the script deletes the old db before uploading (token needs `delete_packages`). x86_64 only; amd64 leg of the Linux job. `DRY_RUN=1` builds without network; `packaging/arch/verify-local.sh` installs the result in an `archlinux` container; `Dockerfile.pacman-test` checks the live registry after a release.
+
 ## Testing
 
 Tests across the project:
