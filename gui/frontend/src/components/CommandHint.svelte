@@ -25,7 +25,7 @@
   <span class="desc">{c.desc}</span>
 {/snippet}
 
-<div class="hint" style="font-size:{fontSize}px">
+<div class="hint" data-testid="e2e-hint" style="font-size:{fontSize}px">
   {#each matches as c (c.name)}
     {@const fill = completionFor(input, c)}
     {#if fill}
