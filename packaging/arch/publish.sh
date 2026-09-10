@@ -98,11 +98,11 @@ db_family="${REPO_DB%-*}"
 db_release="${REPO_DB##*-}"
 page="${API}?per_page=100"
 while [[ -n "$page" && "$page" != "null" ]]; do
-  resp="$(bk 200 "$page")"
+  resp="$(bk '200|201' "$page")"   # the list endpoint really answers 201
   for id in $(jq -r --arg n "$db_family" --arg v "$db_release" \
       '.items[] | select(.name == $n and .version == $v) | .id' <<<"$resp"); do
     echo "Deleting old ${REPO_DB}.db (${id})"
-    bk 200 -X DELETE "${API}/${id}" >/dev/null
+    bk '200|204' -X DELETE "${API}/${id}" >/dev/null
   done
   page="$(jq -r '.links.next // empty' <<<"$resp")"
 done
