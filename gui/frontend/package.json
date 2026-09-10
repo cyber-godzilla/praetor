@@ -9,9 +9,11 @@
     "build:fast": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "e2e": "tsc --noEmit -p e2e && playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^5.0.3",
     "@tsconfig/svelte": "^5.0.4",
     "@types/node": "^22.13.1",

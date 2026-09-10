@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, configDefaults } from "vitest/config";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 
 // Wails serves the built assets from frontend/dist. Emit a relative base so
@@ -9,5 +9,9 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+  },
+  test: {
+    // Playwright specs live in e2e/ and must never run under vitest.
+    exclude: [...configDefaults.exclude, "e2e/**"],
   },
 });
