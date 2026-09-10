@@ -1,6 +1,6 @@
 # GUI smoke tests (Playwright)
 
-Boots the **built** frontend (`vite build` + `vite preview` on :4173) in
+Boots the **built** frontend (`vite build` + `vite preview` on :4321) in
 Chromium with a fake Wails bridge and checks every major surface still
 works. Nothing here talks to the real game server.
 
@@ -13,18 +13,22 @@ works. Nothing here talks to the real game server.
 runner; `npx playwright show-report` opens the last HTML report.
 
 `make -C gui check` does **not** run this suite; CI runs it as the `e2e` job
-in `.github/workflows/gui.yaml`.
+in `.github/workflows/gui.yaml`, which fails the build on a flaky test (not
+just an outright failure) via `--fail-on-flaky-tests`.
 
 ## How it works
 
 - `fake-backend.ts` installs `window.go.gui.GuiApp` and `window.runtime`
   before the page loads. Readers answer from `fixtures.ts`; writers record
-  their calls; `ConnectNew`/`ConnectStored` emit a `conn:connected` event so
-  the real store performs the screen transition.
+  their calls; `ConnectNew`/`ConnectStored` emit a `praetor:events` batch
+  carrying `{ kind: "conn", conn: { state: "connected" } }` so the real store
+  performs the screen transition.
 - Tests push wire events (`backend.text(...)`, `backend.events(...)`) and
   read recorded calls (`backend.args("Send")`).
-- `test.ts` fails a test on any `pageerror` or on the console line
-  `fake-backend: unhandled GuiApp.<name>` — add new Go bindings to the fake
+- `test.ts` fails a test on any `pageerror`, on the console line
+  `fake-backend: unhandled GuiApp.<name>`, or on an unhandled promise
+  rejection in the page (logged by the fake as
+  `fake-backend: unhandledrejection ...`) — add new Go bindings to the fake
   deliberately (readers / writers / connectors in `fake-backend.ts`).
 - Wire shapes are typed against `src/lib/types.ts`; a payload rename on the
   Go side fails `tsc` before any test runs.
@@ -42,3 +46,7 @@ in `.github/workflows/gui.yaml`.
   2.5 s startup check never adds a toast.
 - Test ids are added only where no accessible handle exists, named
   `e2e-<thing>`: `e2e-output`, `e2e-hint`, `e2e-toasts`.
+- **Disconnected event drops:** the store drops text/status/graphics events
+  while disconnected, so calling `backend.text(...)` before `backend.connect()`
+  renders nothing — the test then fails on a missing-text assertion with no
+  other clue. Connect first.

@@ -12,15 +12,18 @@ export default defineConfig({
   workers: process.env.CI ? 2 : undefined,
   reporter: [["list"], ["html", { open: "never" }]],
   use: {
-    baseURL: "http://localhost:4173",
+    baseURL: "http://localhost:4321",
     trace: "retain-on-failure",
     viewport: { width: 1280, height: 800 },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     // build:fast skips svelte-check (make -C gui check already runs it).
-    command: "npm run build:fast && npx vite preview --port 4173 --strictPort",
-    url: "http://localhost:4173",
+    // Port 4321, not Vite preview's default 4173: with reuseExistingServer
+    // on locally, a developer's stray `npm run preview` (which binds 4173)
+    // would make Playwright skip the build and test a stale dist/.
+    command: "npm run build:fast && npx vite preview --port 4321 --strictPort",
+    url: "http://localhost:4321",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },

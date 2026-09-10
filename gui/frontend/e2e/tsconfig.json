@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "isolatedModules": true
   },
-  "include": ["./**/*.ts", "../src/lib/types.ts", "../src/lib/wails.d.ts"]
+  "include": ["./**/*.ts", "../src/lib/types.ts", "../src/lib/wails.d.ts", "../playwright.config.ts"]
 }

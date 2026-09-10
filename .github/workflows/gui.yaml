@@ -110,7 +110,7 @@ jobs:
 
       - name: Smoke tests
         working-directory: gui/frontend
-        run: npm run e2e
+        run: npm run e2e -- --fail-on-flaky-tests
 
       - name: Upload Playwright report
         if: failure()

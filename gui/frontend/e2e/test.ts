@@ -17,7 +17,10 @@ export const test = base.extend<Fixtures>({
     const problems: string[] = [];
     page.on("pageerror", (err) => problems.push(`pageerror: ${err.message}`));
     page.on("console", (msg) => {
-      if (msg.text().includes("fake-backend: unhandled")) problems.push(msg.text());
+      const text = msg.text();
+      if (text.includes("fake-backend: unhandled") || text.includes("fake-backend: unhandledrejection")) {
+        problems.push(text);
+      }
     });
     const backend = await installFakeBackend(page, init);
     await use(backend);

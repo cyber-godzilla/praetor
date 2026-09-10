@@ -53,5 +53,10 @@ test("/mode hint lists the loaded modes and Tab completes a unique prefix", asyn
   await expect(hint).not.toContainText("disable");
   await page.keyboard.press("Tab");
   await expect(backend.input).toHaveValue(/^\/mode hunt_wolves/);
-  expect(await backend.args("Send")).toEqual([]); // completion never sends
+  // completion never sends. This is a synchronous read, not expect.poll: a
+  // poll's first sample would pass trivially even if completion secretly
+  // queued a send, because the preceding `toHaveValue` round trip already
+  // flushed the microtask chain a stray send would ride — polling again
+  // afterward proves nothing a synchronous check doesn't already prove.
+  expect(await backend.args("Send")).toEqual([]);
 });

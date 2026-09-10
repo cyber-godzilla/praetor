@@ -24,7 +24,6 @@ export interface FakeBackend {
   connect(): Promise<void>;
   events(batch: WireEvent[]): Promise<void>;
   text(items: (string | TextPayload)[]): Promise<void>;
-  status(mode: string): Promise<void>;
   calls(method?: string): Promise<FakeCall[]>;
   args(method: string): Promise<unknown[][]>;
   input: Locator;
@@ -68,27 +67,37 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       ClipboardGet: "",
       PickScriptDir: "",
       AddKudosFavorite: false,
+      // src/lib/bridge.ts declares this returning a string, not void.
+      ExportPersistentData: "",
     };
     const writers = new Set([
       "Start", "Send", "SetMode", "SaveAccount", "RemoveAccount", "Disconnect",
       "ReloadScripts", "RefreshGraphics", "ClipboardSet", "OpenURL", "OpenWikiSlug",
       "SaveNote", "DeleteNote", "StartFileSend", "StartPlay", "ClearPersistentData",
-      "ExportPersistentData", "AddKudosQueue",
+      "AddKudosQueue",
     ]);
     const connectors = new Set(["ConnectNew", "ConnectStored"]);
 
     const guiApp = new Proxy({} as Record<string, (...a: unknown[]) => Promise<unknown>>, {
       get(_target, name) {
         if (typeof name !== "string") return undefined;
+        // The Proxy is awaited transitively (e.g. `await guiApp` in some call
+        // site) — without this, `then`/`catch`/`finally` resolve to functions
+        // that don't behave like a thenable's, and anything awaiting the
+        // object itself (not a call result) hangs forever.
+        if (name === "then" || name === "catch" || name === "finally") return undefined;
         return (...args: unknown[]) => {
           calls.push({ method: name, args });
-          if (name in readers) return Promise.resolve(readers[name]);
+          if (Object.hasOwn(readers, name)) return Promise.resolve(readers[name]);
           if (connectors.has(name)) {
             // Next macrotask, like a real async connect; the real store then
             // runs its own screen transition on the conn event.
             setTimeout(() => emit("praetor:events", [{ kind: "conn", conn: { state: "connected" } }]), 0);
             return Promise.resolve(undefined);
           }
+          // Every Go `Set*` binding returns void. A `Set*` binding that
+          // returns a value must be added to `readers` above, or it will
+          // silently resolve `undefined` here instead of its real value.
           if (writers.has(name) || name.startsWith("Set")) return Promise.resolve(undefined);
           console.warn(`fake-backend: unhandled GuiApp.${name}`);
           return Promise.resolve(undefined);
@@ -118,6 +127,11 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       calls: (m?: string) => (m ? calls.filter((c) => c.method === m) : calls.slice()),
       listeners: (event) => listeners.get(event)?.size ?? 0,
     };
+    // test.ts fails a test on this console line, same as an unhandled GuiApp
+    // call — a swallowed rejection in the app would otherwise pass silently.
+    window.addEventListener("unhandledrejection", (e) =>
+      console.error("fake-backend: unhandledrejection " + String(e.reason)),
+    );
   }, init);
 
   const input = page.locator(".inputbar textarea");
@@ -152,9 +166,6 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
         return { kind: "text", text: p };
       });
       await events(batch);
-    },
-    async status(mode) {
-      await events([{ kind: "status", status: { mode } }]);
     },
     async calls(method) {
       return page.evaluate((m) => window.__praetorFake!.calls(m), method);
