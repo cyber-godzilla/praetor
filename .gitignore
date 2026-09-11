@@ -12,3 +12,5 @@
 # Local design artifacts (specs and implementation plans); working notes, not
 # product documentation. User-facing docs live directly under /docs.
 /docs/superpowers/
+# Local paste sources for the TEC wiki pages (published copy lives on the wiki)
+docs/wiki/
