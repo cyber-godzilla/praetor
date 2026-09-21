@@ -39,7 +39,7 @@ jobs:
 
       - name: GUI dev-mode compile (no webview link)
         working-directory: gui
-        run: go build ./...
+        run: CGO_ENABLED=0 go build ./...
 
   # Full desktop builds + installers per OS.
   build:
