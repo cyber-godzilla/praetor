@@ -137,19 +137,20 @@ func TestRenderer_Reset(t *testing.T) {
 	}
 }
 
-func TestProcessBatch_DisconnectResetsGuiState(t *testing.T) {
+func TestProcessBatch_DisconnectResetsRendererButWaitsToRefreshKudos(t *testing.T) {
 	deps := &Deps{Config: config.Defaults()}
 	em := &captureEmitter{}
 	a := NewGuiApp(deps, em)
 
-	// Seed the state a disconnect must clear.
+	// Renderer state belongs to the connection and must be cleared. Kudos state
+	// is refreshed by the next Connected event, not by the disconnect itself.
 	a.kudosPromptShown = true
 	a.render.haveExits = true
 
 	a.processBatch([]types.Event{types.DisconnectedEvent{Reason: "connection closed"}})
 
-	if a.kudosPromptShown {
-		t.Error("kudosPromptShown should be reset on disconnect")
+	if !a.kudosPromptShown {
+		t.Error("disconnect should not reset kudosPromptShown before a fresh connection snapshots the queue")
 	}
 	a.render.mu.Lock()
 	he := a.render.haveExits
@@ -173,6 +174,113 @@ func TestProcessBatch_DisconnectResetsGuiState(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected a Conn wire event with State == \"disconnected\" to be emitted")
+	}
+}
+
+func TestProcessBatch_ReconnectRefreshesKudosPromptFromCurrentQueue(t *testing.T) {
+	tests := []struct {
+		name        string
+		reconnectQ  []config.KudosQueueEntry
+		wantPrompts int
+	}{
+		{name: "queue cleared while disconnected", reconnectQ: nil, wantPrompts: 1},
+		{name: "queue still populated", reconnectQ: []config.KudosQueueEntry{{Name: "Marcus", Message: "Thank you"}}, wantPrompts: 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Defaults()
+			cfg.Kudos.Queue = []config.KudosQueueEntry{{Name: "Marcus", Message: "Thank you"}}
+			em := &captureEmitter{}
+			a := NewGuiApp(&Deps{Config: cfg}, em)
+
+			// The first room data after initial login presents the queued-kudos dialog.
+			a.processBatch([]types.Event{skootRooms()})
+			a.processBatch([]types.Event{types.DisconnectedEvent{Reason: "connection closed"}})
+
+			// Model edits made after the original prompt and before reconnecting.
+			a.mu.Lock()
+			a.cfg().Kudos.Queue = tt.reconnectQ
+			a.mu.Unlock()
+
+			// Reconnect takes a fresh queue snapshot; room data performs that
+			// connection's one-time check against the refreshed state.
+			a.processBatch([]types.Event{types.ConnectedEvent{}, skootRooms()})
+
+			var prompts int
+			for _, emitted := range em.snapshot() {
+				batch, ok := emitted.data.([]WireEvent)
+				if !ok {
+					continue
+				}
+				for _, w := range batch {
+					if w.Kind == KindOpenMenu && w.OpenMenu == "kudos-login" {
+						prompts++
+					}
+				}
+			}
+			if prompts != tt.wantPrompts {
+				t.Fatalf("queued-kudos prompts = %d, want %d", prompts, tt.wantPrompts)
+			}
+		})
+	}
+}
+
+func TestProcessBatch_FirstConnectionShowsNewUserWelcomeOnce(t *testing.T) {
+	cfg := config.Defaults()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := config.Save(cfg, path); err != nil {
+		t.Fatalf("save fresh config: %v", err)
+	}
+	em := &captureEmitter{}
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path}, em)
+
+	a.processBatch([]types.Event{types.ConnectedEvent{}})
+
+	countWelcomes := func(events []capturedEmit) int {
+		count := 0
+		for _, emitted := range events {
+			batch, ok := emitted.data.([]WireEvent)
+			if !ok {
+				continue
+			}
+			for _, w := range batch {
+				if w.Kind == KindOpenMenu && w.OpenMenu == "new-user" {
+					count++
+				}
+			}
+		}
+		return count
+	}
+
+	for _, emitted := range em.snapshot() {
+		batch, ok := emitted.data.([]WireEvent)
+		if !ok {
+			continue
+		}
+		for i, w := range batch {
+			if w.Kind == KindOpenMenu && w.OpenMenu == "new-user" {
+				if i == 0 || batch[i-1].Kind != KindConn || batch[i-1].Conn == nil || batch[i-1].Conn.State != "connected" {
+					t.Error("new-user modal request must follow the connected event in the same batch")
+				}
+			}
+		}
+	}
+	if got := countWelcomes(em.snapshot()); got != 1 {
+		t.Fatalf("new-user welcome requests = %d, want 1", got)
+	}
+	persisted, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if !persisted.Onboarding.WelcomeShown {
+		t.Error("first-login welcome completion was not persisted")
+	}
+
+	// Reconnects and later launches use the persisted/in-memory marker.
+	a.processBatch([]types.Event{types.DisconnectedEvent{}, types.ConnectedEvent{}})
+	if got := countWelcomes(em.snapshot()); got != 1 {
+		t.Fatalf("reconnect repeated the new-user welcome; requests = %d, want 1", got)
 	}
 }
 

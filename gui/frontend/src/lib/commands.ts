@@ -71,6 +71,7 @@ const DURING_PLAY = ["/pause", "/resume", "/stop", "/next"];
 
 export const COMMANDS: CommandSpec[] = [
   { name: "/help", desc: "Show key bindings and commands" },
+  { name: "/guide", desc: "Open the Praetor wiki links" },
   { name: "/list", desc: "List available Lua modes" },
   { name: "/mode", aliases: ["/sm"], args: "<name> [args…]", desc: "Switch Lua mode" },
   { name: "/toggle", args: "<label>", desc: "Toggle a mode state value" },

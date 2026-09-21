@@ -132,6 +132,12 @@ func main() {
 			deps.Clipboard = &wailsClipboard{ctx: ctx}
 			deps.Dialogs = &wailsDialogs{ctx: ctx}
 		},
+		OnDomReady: func(context.Context) {
+			// WebKitGTK requires its shared context to be enabled separately;
+			// this is a no-op on platforms whose webviews honor the HTML
+			// spellcheck attribute directly.
+			enableSpellcheck()
+		},
 		Bind: []any{
 			app,
 		},

@@ -60,6 +60,7 @@ export function makeConfig(): AppConfig {
     },
     Logging: { Session: { Enabled: false, Path: "" } },
     Updates: { Check: false },
+    Onboarding: { WelcomeShown: true },
   };
 }
 
@@ -79,6 +80,18 @@ export const withAccounts: InitState = { ...baseInit, accounts: ["hero"] };
 // a burst test can locate the last one.
 export function lines(n: number): string[] {
   return Array.from({ length: n }, (_, i) => `line ${String(i + 1).padStart(4, "0")}`);
+}
+
+// Sanitized shape of the 333-line inventory burst captured on 2026-09-20.
+// The real output contained 111 identical tiara rows; generic placeholders
+// preserve its size and repetition without committing session-log contents.
+export function largeInventoryLines(): string[] {
+  const result = ["You are wearing:"];
+  result.push(...Array.from({ length: 110 }, () => "        a generic inventory item"));
+  result.push(...Array.from({ length: 111 }, () => "        a gold tiara"));
+  result.push(...Array.from({ length: 110 }, () => "        another generic inventory item"));
+  result.push("End of inventory.");
+  return result;
 }
 
 // One line with bold, italic, and colored segments.

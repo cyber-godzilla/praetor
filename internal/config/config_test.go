@@ -546,6 +546,52 @@ server:
 	}
 }
 
+func TestLoad_OnboardingWelcomeMigration(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{
+			name: "legacy config is already onboarded",
+			yaml: "server:\n  host: game.example.com\n",
+			want: true,
+		},
+		{
+			name: "fresh install explicitly remains pending",
+			yaml: "server:\n  host: game.example.com\nonboarding:\n  welcome_shown: false\n",
+			want: false,
+		},
+		{
+			name: "completed onboarding stays complete",
+			yaml: "server:\n  host: game.example.com\nonboarding:\n  welcome_shown: true\n",
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.yaml), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Onboarding.WelcomeShown != tt.want {
+				t.Fatalf("WelcomeShown = %v, want %v", cfg.Onboarding.WelcomeShown, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaults_NewInstallHasPendingWelcome(t *testing.T) {
+	if Defaults().Onboarding.WelcomeShown {
+		t.Fatal("new-install defaults should leave the welcome popup pending")
+	}
+}
+
 func TestSaveAndLoad_KudosRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

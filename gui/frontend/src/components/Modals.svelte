@@ -20,6 +20,7 @@
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
   import CRTEffectsModal from "./modals/CRTEffectsModal.svelte";
+  import NewUserModal from "./modals/NewUserModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -48,6 +49,8 @@
 
 {#if m === "menu"}
   <MenuModal />
+{:else if m === "new-user"}
+  <NewUserModal />
 {:else if m === "help"}
   <HelpModal />
 {:else if m === "modeselect"}

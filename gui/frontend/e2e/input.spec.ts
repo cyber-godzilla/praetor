@@ -5,12 +5,25 @@ test.beforeEach(async ({ backend }) => {
   await backend.connect();
 });
 
+test("spellcheck setting reaches the command input", async ({ backend }) => {
+  await expect(backend.input).toHaveAttribute("spellcheck", "false");
+});
+
 test("Enter sends the typed command and clears the input", async ({ page, backend }) => {
   await backend.input.click();
   await page.keyboard.type("look");
   await page.keyboard.press("Enter");
   await expect.poll(() => backend.args("Send")).toEqual([["look"]]);
   await expect(backend.input).toHaveValue("");
+});
+
+test("/guide opens the welcome wiki links without navigating automatically", async ({ page, backend }) => {
+  await backend.input.click();
+  await page.keyboard.type("/guide");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByText("Welcome to Praetor", { exact: true })).toBeVisible();
+  expect(await backend.args("OpenURL")).toEqual([]);
 });
 
 test("Shift+Enter inserts a newline; Enter sends the block as one message", async ({ page, backend }) => {

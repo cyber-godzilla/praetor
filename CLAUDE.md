@@ -346,7 +346,7 @@ ui:
   echo_typed_commands: true
   echo_script_commands: true
   hide_ips: false
-  input_spellcheck: true       # GUI: webview spellcheck on the command input
+  input_spellcheck: true       # GUI: native spellcheck on the command input
   keep_input_on_send: false    # GUI: keep the sent command selected in the input instead of clearing
   numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
   custom_tabs: []
@@ -370,7 +370,15 @@ logging:
   session:
     enabled: true
     path: ""
+onboarding:
+  welcome_shown: false  # GUI internal marker for the one-time first-login wiki popup
 ```
+
+On a new GUI installation, the first successful login shows a one-time welcome
+popup linking to the Praetor overview, guide, and scripts wiki pages. Links open
+only when clicked. Configs from older releases are migrated as already welcomed,
+so upgrading does not show the popup unexpectedly. This is GUI shell behavior;
+the TUI is unchanged. The GUI-only `/guide` command reopens the same popup.
 
 ## Packaging
 

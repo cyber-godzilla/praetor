@@ -49,7 +49,8 @@ contents:
     file_info:
       mode: 0644
 
-# GUI runtime dependencies. Wails links libgtk-3 + libwebkit2gtk at runtime.
+# GUI runtime dependencies. Wails links libgtk-3 + libwebkit2gtk at runtime;
+# WebKitGTK's spellchecker also needs an installed Hunspell dictionary.
 # Debian 13+/Ubuntu 24.04+ renamed these libs to the 64-bit-time_t ABI
 # (t64 suffix); list the t64 name first with the pre-t64 name as an
 # alternative so the package installs on both old and new releases.
@@ -58,14 +59,17 @@ overrides:
     depends:
       - libgtk-3-0t64 | libgtk-3-0
       - libwebkit2gtk-4.1-0t64 | libwebkit2gtk-4.1-0
+      - hunspell-en-us
   rpm:
     depends:
       - gtk3
       - webkit2gtk4.1
+      - hunspell-en-US
   archlinux:
     depends:
       - gtk3
       - webkit2gtk-4.1
+      - hunspell-en_us
 
 # Arch Linux (pacman) package, built by packaging/arch/publish.sh from the
 # same amd64 binaries as the deb/rpm. Arch's glibc is newer than the Ubuntu

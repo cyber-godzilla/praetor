@@ -21,6 +21,24 @@ test("login form connects and reaches the game view", async ({ page, backend }) 
   expect(await backend.args("ConnectNew")).toEqual([["tester", "secret", true]]);
 });
 
+test("first-login welcome offers wiki links without opening them automatically", async ({ page, backend }) => {
+  await backend.boot();
+  await backend.connect();
+  await backend.events([{ kind: "openMenu", openMenu: "new-user" }]);
+
+  await expect(page.getByText("Welcome to Praetor", { exact: true })).toBeVisible();
+  expect(await backend.args("OpenURL")).toEqual([]);
+
+  await page.getByRole("button", { name: "Praetor overview" }).click();
+  await page.getByRole("button", { name: "Praetor guide" }).click();
+  await page.getByRole("button", { name: "Praetor scripts" }).click();
+  expect(await backend.args("OpenURL")).toEqual([
+    ["https://eternal-city.wikidot.com/praetor"],
+    ["https://eternal-city.wikidot.com/praetor-guide"],
+    ["https://eternal-city.wikidot.com/praetor-scripts"],
+  ]);
+});
+
 test.describe("with a stored account", () => {
   test.use({ init: withAccounts });
 

@@ -217,6 +217,7 @@ export interface AppConfig {
     [k: string]: unknown;
   };
   Updates: { Check: boolean };
+  Onboarding: { WelcomeShown: boolean };
 }
 
 // UpdateInfo mirrors internal/update.Info (json tags).

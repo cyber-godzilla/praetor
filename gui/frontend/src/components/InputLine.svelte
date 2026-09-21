@@ -272,6 +272,11 @@
       pushHistory(line);
       return;
     }
+    if (lower === "/guide") {
+      store.openModal = "new-user";
+      pushHistory(line);
+      return;
+    }
     if (lower === "/list") {
       // Open the mode selector (a columnar, clickable list) rather than a
       // comma-separated toast.

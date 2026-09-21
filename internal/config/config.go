@@ -50,6 +50,7 @@ type Config struct {
 	Logging       LoggingConfig       `yaml:"logging"`
 	Updates       UpdatesConfig       `yaml:"updates"`
 	Play          PlayConfig          `yaml:"play"`
+	Onboarding    OnboardingConfig    `yaml:"onboarding"`
 }
 
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
@@ -63,6 +64,13 @@ type PlayConfig struct {
 	// override. Unbounded cue-waiting would strand the performer, since input is
 	// locked down during playback.
 	WaitForTimeout Duration `yaml:"wait_for_timeout"`
+}
+
+// OnboardingConfig records one-time first-login experiences. It is persisted
+// separately from user-facing UI preferences so reconnects and later launches
+// cannot repeat them.
+type OnboardingConfig struct {
+	WelcomeShown bool `yaml:"welcome_shown"`
 }
 
 type ServerConfig struct {
@@ -335,6 +343,9 @@ func Defaults() *Config {
 		Play: PlayConfig{
 			WaitForTimeout: Duration{60 * time.Second},
 		},
+		Onboarding: OnboardingConfig{
+			WelcomeShown: false,
+		},
 	}
 }
 
@@ -376,12 +387,27 @@ func Load(path string) (*Config, error) {
 
 	migrateLegacyEcho(cfg, data)
 	migrateLegacyDisplay(cfg, data)
+	migrateLegacyOnboarding(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// migrateLegacyOnboarding prevents the first-login welcome popup from
+// surprising existing installations after an upgrade. Fresh configs are saved
+// with an explicit onboarding section and false marker; only configs predating
+// the feature lack the section and are treated as already onboarded.
+func migrateLegacyOnboarding(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if _, ok := raw["onboarding"]; !ok {
+		cfg.Onboarding.WelcomeShown = true
+	}
 }
 
 // migrateLegacyEcho copies the deprecated ui.echo_commands value into the

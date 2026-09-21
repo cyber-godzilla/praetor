@@ -30,9 +30,10 @@ type GuiApp struct {
 	// colorWords is read on the per-line hot path in the event loop and
 	// written by SetColorWords, so it is atomic to avoid a data race.
 	colorWords atomic.Bool
-	// initialKudosQueue snapshots the queued-kudos count at startup, used for
-	// the one-time login prompt without racing the live config.
-	initialKudosQueue int
+	// kudosQueueAtConnect snapshots the queued-kudos count for the current
+	// connection. It is refreshed on ConnectedEvent under mu so the event loop
+	// can check it without racing Wails config mutations.
+	kudosQueueAtConnect int
 
 	// sendMu guards the in-flight /send driver. sendCancel is non-nil exactly
 	// while a send is running; closing it stops the driver before its next batch.
@@ -58,10 +59,10 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 	r := newRenderer()
 	r.setScale(deps.Config.UI.MinimapScale)
 	a := &GuiApp{
-		deps:              deps,
-		render:            r,
-		emitter:           emitter,
-		initialKudosQueue: len(deps.Config.Kudos.Queue),
+		deps:                deps,
+		render:              r,
+		emitter:             emitter,
+		kudosQueueAtConnect: len(deps.Config.Kudos.Queue),
 	}
 	a.colorWords.Store(deps.Config.UI.ColorWords)
 	return a
@@ -133,6 +134,7 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 	// frontend guard so both sides agree by construction.
 	disconnected := false
 	for _, ev := range batch {
+		showNewUserWelcome := false
 		if disconnected {
 			switch ev.(type) {
 			case types.SKOOTUpdateEvent, types.GameTextEvent, types.SuppressedGameTextEvent,
@@ -142,6 +144,11 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 		}
 		switch e := ev.(type) {
 		case types.ConnectedEvent:
+			a.mu.Lock()
+			a.kudosPromptShown = false
+			a.kudosQueueAtConnect = len(a.cfg().Kudos.Queue)
+			a.mu.Unlock()
+			showNewUserWelcome = a.claimNewUserWelcome()
 			disconnected = false
 		case types.GameTextEvent:
 			if a.deps.SessionLog != nil {
@@ -190,13 +197,10 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 
 		case types.DisconnectedEvent:
 			// Session ended (user logout, server close, or a dropped link). Clear
-			// the GUI's cached graphics and the one-time kudos prompt so a reconnect
-			// starts fresh. This lives here (not in GuiApp.Disconnect) so it covers
-			// every disconnect cause — Disconnect() only runs on user logout.
+			// connection-scoped graphics for every disconnect cause. Kudos state is
+			// refreshed by the next Connected event, when the live queue can be
+			// snapshotted for the new session.
 			a.render.reset()
-			a.mu.Lock()
-			a.kudosPromptShown = false
-			a.mu.Unlock()
 			disconnected = true
 		}
 
@@ -211,17 +215,51 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 		if w, ok := toWire(ev); ok {
 			wire = append(wire, w)
 		}
+		if showNewUserWelcome {
+			// Append after the Connected wire event so the frontend has entered the
+			// game screen before it handles the modal request.
+			wire = append(wire, WireEvent{Kind: KindOpenMenu, OpenMenu: "new-user"})
+		}
 	}
 	a.emit(wire)
 }
 
-// maybeKudosPrompt emits a one-time "kudos-login" menu request when the player
-// first enters the game (rooms present) and there were queued kudos at startup.
+// claimNewUserWelcome persists and claims the one-time welcome popup after a
+// new GUI user's first successful connection. The frontend supplies explicit
+// links; nothing is opened automatically. Legacy configs are migrated to
+// completed during config.Load.
+func (a *GuiApp) claimNewUserWelcome() bool {
+	if a.deps.ConfigPath == "" {
+		return false
+	}
+
+	a.mu.Lock()
+	if a.cfg().Onboarding.WelcomeShown {
+		a.mu.Unlock()
+		return false
+	}
+	a.cfg().Onboarding.WelcomeShown = true
+	if err := config.Save(a.cfg(), a.deps.ConfigPath); err != nil {
+		a.cfg().Onboarding.WelcomeShown = false
+		a.mu.Unlock()
+		log.Printf("[ONBOARDING] save completion marker: %v", err)
+		return false
+	}
+	a.mu.Unlock()
+	return true
+}
+
+// maybeKudosPrompt emits one "kudos-login" menu request per connection when
+// the player first enters the game (rooms present) and that connection's fresh
+// queue snapshot contains pending kudos.
 func (a *GuiApp) maybeKudosPrompt(roomCount int) {
-	if a.kudosPromptShown || roomCount == 0 || a.initialKudosQueue == 0 {
+	a.mu.Lock()
+	if a.kudosPromptShown || roomCount == 0 || a.kudosQueueAtConnect == 0 {
+		a.mu.Unlock()
 		return
 	}
 	a.kudosPromptShown = true
+	a.mu.Unlock()
 	a.emit([]WireEvent{{Kind: KindOpenMenu, OpenMenu: "kudos-login"}})
 }
 

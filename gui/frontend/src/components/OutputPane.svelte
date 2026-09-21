@@ -124,12 +124,22 @@
 
   // Coalesce all appends within a frame into a single scroll-to-bottom.
   let scrollQueued = false;
-  function followTail() {
+  // A front trim removes old DOM rows and makes scrollTop fall even though the
+  // user did not scroll. The resulting scroll event can temporarily mark the
+  // pane detached before this frame runs. Preserve the pre-trim follow intent
+  // through that one layout transition, including when a normal follow was
+  // already queued for the same frame.
+  let forceFollowQueued = false;
+  function followTail(force = false) {
+    if (force) forceFollowQueued = true;
     if (scrollQueued) return;
     scrollQueued = true;
     requestAnimationFrame(() => {
       scrollQueued = false;
-      if (viewport && autoFollow) {
+      const forceThisFrame = forceFollowQueued;
+      forceFollowQueued = false;
+      if (viewport && (autoFollow || forceThisFrame)) {
+        autoFollow = true;
         viewport.scrollTop = viewport.scrollHeight;
         lastTop = viewport.scrollTop;
       }
@@ -161,10 +171,14 @@
     else onScroll();
   }
 
+  let firstLineID: number | undefined;
   $effect(() => {
     // Touch length so the effect re-runs on append.
     void tab.lines.length;
-    if (autoFollow) followTail();
+    const nextFirstLineID = tab.lines[0]?.id;
+    const frontTrimmed = firstLineID !== undefined && nextFirstLineID !== firstLineID;
+    firstLineID = nextFirstLineID;
+    if (autoFollow) followTail(frontTrimmed);
     sampleMetrics();
   });
 

@@ -55,11 +55,17 @@ ui:
   echo_typed_commands: true       # Echo commands you type
   echo_script_commands: true      # Echo commands sent by Lua scripts
   hide_ips: false                 # Scramble IP addresses in text
-  input_spellcheck: true          # GUI: spellcheck the command input (webview native)
+  input_spellcheck: true          # GUI: spellcheck the command input
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
 All UI toggles are available via the Esc menu and saved automatically.
+
+`input_spellcheck` controls the native spellchecker for the command textarea.
+On Linux, Praetor enables WebKitGTK spellchecking with the first usable locale
+from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG` (falling back to `en_US`).
+The Linux packages include the English Hunspell dictionary; source builds need
+a Hunspell/Enchant dictionary installed for the selected locale.
 
 ### Custom Tabs
 
@@ -177,6 +183,20 @@ When enabled, the desktop GUI makes a single anonymous request to the GitHub
 releases API shortly after launch and shows a toast if a newer version exists.
 Nothing is downloaded or installed automatically, and failures are silent.
 Toggleable in the GUI under Settings → "Check for updates on startup".
+
+## Onboarding
+
+```yaml
+onboarding:
+  welcome_shown: false             # Internal one-time GUI welcome marker
+```
+
+On a new installation, Praetor sets this to `true` when the first successful
+GUI login displays the welcome popup. The popup links to the Praetor overview,
+guide, and scripts wiki pages; it never opens a page until the user clicks a
+link. Existing configs that predate this setting are treated as already
+welcomed so an upgrade does not trigger the popup. The GUI-only `/guide`
+command reopens the same popup without changing this marker.
 
 ## File Locations
 
