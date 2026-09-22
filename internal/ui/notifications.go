@@ -21,7 +21,8 @@ type NotificationSettingsCloseMsg struct {
 type notifyItemKind int
 
 const (
-	notifyItemThreshold notifyItemKind = iota
+	notifyItemSound notifyItemKind = iota
+	notifyItemThreshold
 	notifyItemPattern
 	notifyItemAdd
 )
@@ -43,6 +44,7 @@ const (
 
 // NotificationSettingsScreen manages notification threshold and pattern settings.
 type NotificationSettingsScreen struct {
+	sound        bool
 	healthBelow  config.ThresholdConfig
 	fatigueBelow config.ThresholdConfig
 	patterns     []config.NotifyPatternConfig
@@ -66,6 +68,7 @@ func NewNotificationSettingsScreen(cfg config.DesktopNotificationsConfig) Notifi
 	copy(patterns, cfg.Patterns)
 
 	s := NotificationSettingsScreen{
+		sound:        cfg.Sound,
 		healthBelow:  cfg.HealthBelow,
 		fatigueBelow: cfg.FatigueBelow,
 		patterns:     patterns,
@@ -76,6 +79,7 @@ func NewNotificationSettingsScreen(cfg config.DesktopNotificationsConfig) Notifi
 
 func (s *NotificationSettingsScreen) rebuildItems() {
 	s.items = nil
+	s.items = append(s.items, notifyItem{kind: notifyItemSound})
 	s.items = append(s.items, notifyItem{kind: notifyItemThreshold, index: 0})
 	s.items = append(s.items, notifyItem{kind: notifyItemThreshold, index: 1})
 	for i := range s.patterns {
@@ -93,6 +97,7 @@ func (s *NotificationSettingsScreen) currentConfig() config.DesktopNotifications
 	patterns := make([]config.NotifyPatternConfig, len(s.patterns))
 	copy(patterns, s.patterns)
 	return config.DesktopNotificationsConfig{
+		Sound:        s.sound,
 		HealthBelow:  s.healthBelow,
 		FatigueBelow: s.fatigueBelow,
 		Patterns:     patterns,
@@ -142,6 +147,9 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 	case tea.KeySpace:
 		item := s.items[s.cursor]
 		switch item.kind {
+		case notifyItemSound:
+			s.sound = !s.sound
+			s.changed = true
 		case notifyItemThreshold:
 			t := s.thresholdByIndex(item.index)
 			t.Enabled = !t.Enabled
@@ -155,6 +163,9 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 	case tea.KeyEnter:
 		item := s.items[s.cursor]
 		switch item.kind {
+		case notifyItemSound:
+			s.sound = !s.sound
+			s.changed = true
 		case notifyItemThreshold:
 			t := s.thresholdByIndex(item.index)
 			s.editing = true
@@ -186,6 +197,9 @@ func (s NotificationSettingsScreen) Update(msg tea.KeyMsg) (NotificationSettings
 				// Toggle (fallback for terminals that send space as rune).
 				item := s.items[s.cursor]
 				switch item.kind {
+				case notifyItemSound:
+					s.sound = !s.sound
+					s.changed = true
 				case notifyItemThreshold:
 					t := s.thresholdByIndex(item.index)
 					t.Enabled = !t.Enabled
@@ -349,13 +363,22 @@ func (s NotificationSettingsScreen) View() string {
 		end = totalItems
 	}
 
+	thresholdHeaderPrinted := false
 	patternHeaderPrinted := false
 
 	for idx := start; idx < end; idx++ {
 		item := s.items[idx]
 
 		// Print section headers as needed.
-		if idx == start && item.kind == notifyItemThreshold {
+		if idx == start && item.kind == notifyItemSound {
+			b.WriteString(headerStyle.Render("  General"))
+			b.WriteByte('\n')
+		}
+		if !thresholdHeaderPrinted && item.kind == notifyItemThreshold {
+			thresholdHeaderPrinted = true
+			if idx != start {
+				b.WriteByte('\n')
+			}
 			b.WriteString(headerStyle.Render("  Thresholds"))
 			b.WriteByte('\n')
 		}
@@ -374,6 +397,17 @@ func (s NotificationSettingsScreen) View() string {
 		}
 
 		switch item.kind {
+		case notifyItemSound:
+			indicator := disabledStyle.Render("○")
+			if s.sound {
+				indicator = enabledStyle.Render("●")
+			}
+			b.WriteString(cursorStyle.Render(cursor))
+			b.WriteString(indicator)
+			b.WriteString(" ")
+			b.WriteString(cursorStyle.Render("Play OS default notification sound"))
+			b.WriteByte('\n')
+
 		case notifyItemThreshold:
 			t := s.thresholdByIndex(item.index)
 			indicator := disabledStyle.Render("○")

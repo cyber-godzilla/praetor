@@ -387,10 +387,25 @@ func (a *GuiApp) RemoveAccount(username string) error {
 // Input & modes
 // ---------------------------------------------------------------------------
 
-// Send handles one submission from the command input. A block containing
-// newlines (paste or modifier+Enter) goes out whole via SendBlock; a single line
-// keeps the existing path, which also interprets slash commands.
+// Send handles a command from direct UI controls such as numpad navigation and
+// status buttons. It deliberately bypasses typed-input variables and ;;
+// splitting; Action-set buttons use SendInput instead.
 func (a *GuiApp) Send(input string) {
+	if err := a.send(input, false); err != nil {
+		a.emit([]WireEvent{{Kind: KindNotify, Notify: &NotifyPayload{
+			Title: "Send failed", Message: err.Error(),
+		}}})
+	}
+}
+
+// SendInput handles one submission from the command input. A block containing
+// newlines (paste or modifier+Enter) goes out whole via SendBlock; a single line
+// receives ${name} substitution and ;; splitting before dispatch.
+func (a *GuiApp) SendInput(input string) error {
+	return a.send(input, true)
+}
+
+func (a *GuiApp) send(input string, processInput bool) error {
 	// Every path that reaches the game funnels through here — the command
 	// input, numpad navigation, sidebar buttons, action sets, the status bar.
 	// The frontend lockout covers only the command input, so the authoritative
@@ -399,7 +414,7 @@ func (a *GuiApp) Send(input string) {
 	// their own bindings and never reach Send, so this is purely additive.
 	if a.PlayActive() {
 		log.Printf("[PLAY] rejected input during performance: %q", input)
-		return
+		return nil
 	}
 	// Route on the input minus any trailing line terminators: a single command
 	// pasted with a trailing newline ("/mode aggro\n") is still single-line
@@ -414,13 +429,15 @@ func (a *GuiApp) Send(input string) {
 		// entirely (they call SendBlock directly from sendBatch), so that path
 		// keeps its trailing blank intact.
 		if err := a.client().SendBlock(trimmed); err != nil {
-			a.emit([]WireEvent{{Kind: KindNotify, Notify: &NotifyPayload{
-				Title: "Send failed", Message: err.Error(),
-			}}})
+			return err
 		}
-		return
+		return nil
+	}
+	if processInput {
+		return a.client().SendInput(trimmed)
 	}
 	a.client().SendCommand(trimmed)
+	return nil
 }
 
 // ModeNames returns the available Lua mode names.

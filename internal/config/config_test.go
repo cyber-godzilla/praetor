@@ -359,6 +359,55 @@ func TestValidate_NotificationThresholds(t *testing.T) {
 	}
 }
 
+func TestDefaults_NotificationSoundIsOptIn(t *testing.T) {
+	if Defaults().Notifications.Desktop.Sound {
+		t.Fatal("notification sound should default off")
+	}
+}
+
+func TestDefaults_CommandVariablesEmpty(t *testing.T) {
+	vars := Defaults().Commands.Variables
+	if vars == nil || len(vars) != 0 {
+		t.Fatalf("Commands.Variables = %#v, want initialized empty map", vars)
+	}
+}
+
+func TestCommandVariablesRoundTripAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := Defaults()
+	cfg.Commands.Variables = map[string]string{
+		"target":   "scarred bandit",
+		"weapon_2": "short sword; polished",
+		"bad-name": "dropped",
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Commands.Variables) != 2 {
+		t.Fatalf("Commands.Variables = %#v, want two valid entries", got.Commands.Variables)
+	}
+	if got.Commands.Variables["target"] != "scarred bandit" || got.Commands.Variables["weapon_2"] != "short sword; polished" {
+		t.Fatalf("Commands.Variables = %#v", got.Commands.Variables)
+	}
+}
+
+func TestValidVariableName(t *testing.T) {
+	for _, name := range []string{"target", "Target2", "_weapon"} {
+		if !ValidVariableName(name) {
+			t.Errorf("ValidVariableName(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "2target", "bad-name", "two words", "na.me"} {
+		if ValidVariableName(name) {
+			t.Errorf("ValidVariableName(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestConfigDefaultsMinimapFields(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")

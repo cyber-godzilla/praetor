@@ -333,6 +333,7 @@ commands:
   min_interval: 400ms
   max_queue_size: 20
   high_priority: []
+  variables: {}           # sidebar-managed ${name} substitutions for typed input
 ui:
   sidebar_open: true
   default_tab: all
@@ -356,6 +357,7 @@ updates:
   check: true           # GUI: startup check against GitHub releases (toast on newer)
 notifications:
   desktop:
+    sound: false          # all-or-nothing OS default notification sound
     health_below:
       enabled: true
       threshold: 25
@@ -373,6 +375,15 @@ logging:
 onboarding:
   welcome_shown: false  # GUI internal marker for the one-time first-login wiki popup
 ```
+
+Single-line typed input supports `${name}` substitution from
+`commands.variables` and `;;` command separators. Expansion is non-recursive,
+the line is validated before anything is sent, and splitting occurs before
+substitution so variable values cannot inject commands. `\${` and `\;;` send
+the corresponding syntax literally. Action-set buttons use the same processing
+and read current variables on every invocation. Split commands have a fixed 900
+ms delay between sends. Other UI buttons, navigation, scripts, playback, and
+multiline blocks bypass typed-input processing.
 
 On a new GUI installation, the first successful login shows a one-time welcome
 popup linking to the Praetor overview, guide, and scripts wiki pages. Links open

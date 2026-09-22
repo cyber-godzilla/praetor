@@ -35,9 +35,28 @@ commands:
   min_interval: 400ms             # Minimum time between any two sends
   max_queue_size: 20              # Maximum commands in queue
   high_priority: []               # Commands that jump to front of queue
+  variables:                      # Typed-input substitutions
+    target: scarred bandit
 ```
 
 High priority commands can be configured via Esc → Priority Commands. When a high-priority command is queued, it's inserted at the front (after other high-priority items) instead of the back.
+
+Variables can also be managed in the sidebar's **Variables** tab. Reference one
+as `${name}` in a typed command, such as `attack ${target}`. References are
+case-sensitive and values are substituted once rather than recursively. An
+unknown or malformed reference rejects the entire input line without sending
+any part of it. Use `\${` to send a literal `${`.
+
+Separate multiple typed commands with `;;`, for example
+`stand;;get sword;;attack ${target}`. A single `;` remains ordinary text, and
+`\;;` sends a literal `;;`. Praetor splits the line before substituting
+variables, so a variable value containing `;;` cannot create extra commands.
+These features apply to single-line command-input submissions and Action-set
+buttons. Variables are read afresh every time either is invoked, so edits take
+effect immediately. Commands split by `;;` are sent in order with a fixed 900
+ms delay between sends. Other sidebar buttons, numpad movement, scripts,
+playback, and multiline blocks are sent unchanged. A single line is limited to
+100 commands.
 
 ## UI
 
@@ -108,6 +127,7 @@ Case-insensitive substring matching. Highlighted text appears with colored backg
 ```yaml
 notifications:
   desktop:
+    sound: false                   # Play the OS default sound for every notification
     health_below:
       enabled: true
       threshold: 25               # Notify when health drops below this %
@@ -121,7 +141,12 @@ notifications:
         enabled: true
 ```
 
-Desktop notifications use the system's native notification mechanism (`notify-send` on Linux, `osascript` on macOS, PowerShell toast on Windows).
+Desktop notifications use the system's native notification mechanism
+(`notify-send` on Linux, `osascript` on macOS, PowerShell toast on Windows).
+`sound` is a single global switch for notification audio. When enabled, every
+desktop notification requests the OS-managed default alert sound; when
+disabled, Praetor suppresses notification sounds. System volume, notification
+preferences, and Do Not Disturb settings still take precedence.
 
 ## Logging
 

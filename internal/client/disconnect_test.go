@@ -162,6 +162,41 @@ func TestClient_DrainQueue_DoesNotSendStaleCommandToReconnectedSession(t *testin
 	}
 }
 
+func TestClient_SendInput_DoesNotContinueChainAfterReconnect(t *testing.T) {
+	srvA, urlA, recvA := newRecordingServer(t)
+	defer srvA.Close()
+	srvB, urlB, recvB := newRecordingServer(t)
+	defer srvB.Close()
+
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, urlA)
+	if err := c.SendInput("first;;stale-second"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	select {
+	case cmd := <-recvA:
+		if cmd != "first" {
+			t.Fatalf("server A received %q, want first", cmd)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server A never received the first command")
+	}
+
+	next := session.New()
+	if err := next.Connect(urlB, nil); err != nil {
+		t.Fatalf("connect B: %v", err)
+	}
+	c.setSession(next)
+
+	select {
+	case cmd := <-recvA:
+		t.Fatalf("server A unexpectedly received %q after the chain's connection was replaced", cmd)
+	case cmd := <-recvB:
+		t.Fatalf("server B unexpectedly received %q from the old command chain", cmd)
+	case <-time.After(InputCommandDelay + 250*time.Millisecond):
+	}
+}
+
 func TestClient_Run_JoinsDrainerBeforeReturning(t *testing.T) {
 	drop := make(chan struct{})
 	srv, wsURL := newDiscServer(t, drop)

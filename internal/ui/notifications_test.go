@@ -10,6 +10,7 @@ import (
 
 func notifyCfg() config.DesktopNotificationsConfig {
 	return config.DesktopNotificationsConfig{
+		Sound:        true,
 		HealthBelow:  config.ThresholdConfig{Enabled: true, Threshold: 25},
 		FatigueBelow: config.ThresholdConfig{Enabled: false, Threshold: 10},
 		Patterns: []config.NotifyPatternConfig{
@@ -27,9 +28,27 @@ func runeMsg(r rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }
 
+func TestToggleSound(t *testing.T) {
+	s := NewNotificationSettingsScreen(notifyCfg())
+	if !s.sound {
+		t.Fatal("expected sound to start enabled")
+	}
+
+	s, _ = s.Update(keyMsg(tea.KeySpace))
+	if s.sound {
+		t.Fatal("expected sound to be disabled after toggle")
+	}
+
+	s, _ = s.Update(keyMsg(tea.KeyEnter))
+	if !s.sound {
+		t.Fatal("expected Enter to re-enable sound")
+	}
+}
+
 func TestToggleThreshold(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
-	// Cursor starts at 0 (health threshold), which is enabled.
+	// Move past the global sound setting to the health threshold.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	if !s.healthBelow.Enabled {
 		t.Fatal("expected healthBelow to start enabled")
 	}
@@ -50,7 +69,8 @@ func TestToggleThreshold(t *testing.T) {
 func TestTogglePattern(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 
-	// Navigate past 2 thresholds to reach first pattern (index 2).
+	// Navigate past the sound setting and 2 thresholds to reach the first pattern.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 
@@ -73,7 +93,8 @@ func TestTogglePattern(t *testing.T) {
 
 func TestEditThresholdValue(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
-	// Cursor at 0 (health threshold=25). Enter to edit.
+	// Move past the global sound setting to the health threshold, then edit.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyEnter))
 	if !s.editing {
 		t.Fatal("expected editing to be true after Enter on threshold")
@@ -109,6 +130,7 @@ func TestEditThresholdValue(t *testing.T) {
 func TestEditThresholdClamp(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 	// Enter edit on health threshold.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyEnter))
 
 	// Clear current value.
@@ -131,8 +153,8 @@ func TestAddPattern(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 	initialCount := len(s.patterns)
 
-	// Navigate to "Add new pattern..." which is at index: 2 thresholds + 2 patterns = index 4.
-	for i := 0; i < 4; i++ {
+	// Navigate past sound, 2 thresholds, and 2 patterns to "Add new pattern...".
+	for i := 0; i < 5; i++ {
 		s, _ = s.Update(keyMsg(tea.KeyDown))
 	}
 	if s.items[s.cursor].kind != notifyItemAdd {
@@ -205,7 +227,7 @@ func TestAddEmptyPatternRemoves(t *testing.T) {
 	initialCount := len(s.patterns)
 
 	// Navigate to "Add new pattern...".
-	for i := 0; i < 4; i++ {
+	for i := 0; i < 5; i++ {
 		s, _ = s.Update(keyMsg(tea.KeyDown))
 	}
 
@@ -225,7 +247,8 @@ func TestAddEmptyPatternRemoves(t *testing.T) {
 func TestDeletePatternWithConfirmation(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 
-	// Navigate to first pattern (index 2).
+	// Navigate past sound and thresholds to the first pattern.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 
@@ -268,7 +291,8 @@ func TestDeletePatternWithConfirmation(t *testing.T) {
 
 func TestDeleteOnThresholdDoesNothing(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
-	// Cursor starts on threshold (index 0).
+	// Move past the global sound setting to the health threshold.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(runeMsg('d'))
 	if s.confirm {
 		t.Fatal("expected confirm to remain false when pressing d on a threshold")
@@ -279,6 +303,7 @@ func TestEscReturnsConfig(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 
 	// Toggle health off.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeySpace))
 	if s.healthBelow.Enabled {
 		t.Fatal("expected healthBelow to be disabled")
@@ -297,6 +322,9 @@ func TestEscReturnsConfig(t *testing.T) {
 	}
 	if closeMsg.Config.HealthBelow.Enabled {
 		t.Fatal("expected config HealthBelow to be disabled")
+	}
+	if !closeMsg.Config.Sound {
+		t.Fatal("expected config Sound to remain enabled")
 	}
 	if closeMsg.Config.FatigueBelow.Threshold != 10 {
 		t.Fatalf("expected fatigue threshold 10, got %d", closeMsg.Config.FatigueBelow.Threshold)
@@ -333,6 +361,7 @@ func TestEscDuringEditCancels(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 
 	// Enter edit on health threshold.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyEnter))
 	if !s.editing {
 		t.Fatal("expected editing to be true")
@@ -360,7 +389,8 @@ func TestEscDuringEditCancels(t *testing.T) {
 func TestPatternFieldCycling(t *testing.T) {
 	s := NewNotificationSettingsScreen(notifyCfg())
 
-	// Navigate to first pattern (index 2).
+	// Navigate past sound and thresholds to the first pattern.
+	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 	s, _ = s.Update(keyMsg(tea.KeyDown))
 
@@ -408,6 +438,7 @@ func TestViewRenders(t *testing.T) {
 
 	for _, want := range []string{
 		"Notification Settings",
+		"Play OS default notification sound",
 		"Thresholds",
 		"Patterns",
 		"Add new pattern",

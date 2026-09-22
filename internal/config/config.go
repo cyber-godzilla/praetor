@@ -85,6 +85,10 @@ type CommandsConfig struct {
 	MinInterval  Duration `yaml:"min_interval"`
 	MaxQueueSize int      `yaml:"max_queue_size"`
 	HighPriority []string `yaml:"high_priority"`
+	// Variables are substituted in typed command-line input using ${name}.
+	// They are deliberately separate from Lua mode state and never expand
+	// recursively.
+	Variables map[string]string `yaml:"variables"`
 }
 
 type HighlightConfig struct {
@@ -178,6 +182,7 @@ type NotificationsConfig struct {
 }
 
 type DesktopNotificationsConfig struct {
+	Sound        bool                  `yaml:"sound"`
 	HealthBelow  ThresholdConfig       `yaml:"health_below"`
 	FatigueBelow ThresholdConfig       `yaml:"fatigue_below"`
 	Patterns     []NotifyPatternConfig `yaml:"patterns"`
@@ -289,6 +294,7 @@ func Defaults() *Config {
 			MinInterval:  Duration{500 * time.Millisecond},
 			MaxQueueSize: 20,
 			HighPriority: []string{},
+			Variables:    map[string]string{},
 		},
 		Scripts: []string{},
 		UI: UIConfig{
@@ -316,6 +322,7 @@ func Defaults() *Config {
 		},
 		Notifications: NotificationsConfig{
 			Desktop: DesktopNotificationsConfig{
+				Sound: false,
 				HealthBelow: ThresholdConfig{
 					Enabled:   true,
 					Threshold: 25,
@@ -517,6 +524,15 @@ func (c *Config) Validate() error {
 	if c.Commands.MaxQueueSize < 1 {
 		c.Commands.MaxQueueSize = 20
 	}
+	if c.Commands.Variables == nil {
+		c.Commands.Variables = map[string]string{}
+	}
+	for name := range c.Commands.Variables {
+		if !ValidVariableName(name) {
+			log.Printf("[CONFIG] dropping command variable with invalid name %q", name)
+			delete(c.Commands.Variables, name)
+		}
+	}
 
 	// Play
 	if c.Play.WaitForTimeout.Duration <= 0 {
@@ -598,4 +614,20 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ValidVariableName reports whether name can be referenced as ${name} in the
+// command input. Keeping the grammar identifier-like makes references
+// unambiguous and portable across the GUI, YAML, and future clients.
+func ValidVariableName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }

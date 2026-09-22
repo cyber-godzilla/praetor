@@ -6,6 +6,7 @@
 
   const src = store.config?.Notifications?.Desktop;
   let cfg = $state<DesktopNotificationsConfig>({
+    Sound: src?.Sound ?? false,
     HealthBelow: { ...(src?.HealthBelow ?? { Enabled: false, Threshold: 25 }) },
     FatigueBelow: { ...(src?.FatigueBelow ?? { Enabled: false, Threshold: 10 }) },
     Patterns: (src?.Patterns ?? []).map((p) => ({ ...p })),
@@ -32,6 +33,9 @@
 </script>
 
 <Modal title="Desktop Notifications" wide back onsave={save}>
+  <div class="section">
+    <label class="chk"><input type="checkbox" bind:checked={cfg.Sound} /> Play the OS default sound for notifications</label>
+  </div>
   <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.HealthBelow.Enabled} /> Notify when health below</label>
     <input class="num" type="number" min="0" max="100" bind:value={cfg.HealthBelow.Threshold} />

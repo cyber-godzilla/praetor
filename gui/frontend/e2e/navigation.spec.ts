@@ -24,7 +24,7 @@ test("numpad 8 with NumLock off sends north", async ({ page, backend }) => {
   // Seed history so a leaked ArrowUp would visibly recall "look".
   await page.keyboard.type("look");
   await page.keyboard.press("Enter");
-  await expect.poll(() => backend.args("Send")).toEqual([["look"]]);
+  await expect.poll(() => backend.args("SendInput")).toEqual([["look"]]);
   // Playwright cannot set NumLock; keyboard.press("Numpad8") reports key "8"
   // (NumLock ON). Dispatch exactly what WebKitGTK delivers with NumLock OFF.
   await page.evaluate(() => {
@@ -32,6 +32,6 @@ test("numpad 8 with NumLock off sends north", async ({ page, backend }) => {
       new KeyboardEvent("keydown", { code: "Numpad8", key: "ArrowUp", bubbles: true, cancelable: true }),
     );
   });
-  await expect.poll(() => backend.args("Send")).toEqual([["look"], ["n"]]);
+  await expect.poll(() => backend.args("Send")).toEqual([["n"]]);
   await expect(backend.input).toHaveValue(""); // ArrowUp never reached the input's history handler
 });

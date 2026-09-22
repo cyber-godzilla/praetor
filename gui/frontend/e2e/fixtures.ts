@@ -14,7 +14,7 @@ export const modeSpecs: ModeSpec[] = [
 export function makeConfig(): AppConfig {
   return {
     Server: {},
-    Commands: { HighPriority: [] },
+    Commands: { HighPriority: [], Variables: {} },
     Scripts: ["/tmp/e2e-scripts"],
     UI: {
       DisplayMode: "sidebar",
@@ -46,13 +46,19 @@ export function makeConfig(): AppConfig {
           Rules: [{ Pattern: "says,", Include: true, Active: true }],
         },
       ],
-      ActionSets: [],
+      ActionSets: [
+        {
+          Name: "Combat",
+          Buttons: [{ Label: "Attack target", Command: "attack ${target};;look" }],
+        },
+      ],
     },
     Highlights: [],
     Kudos: { Favorites: [], Queue: [] },
     Ignorelist: { OOC: [], Think: [] },
     Notifications: {
       Desktop: {
+        Sound: false,
         HealthBelow: { Enabled: false, Threshold: 25 },
         FatigueBelow: { Enabled: false, Threshold: 10 },
         Patterns: [],

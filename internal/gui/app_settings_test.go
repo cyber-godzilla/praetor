@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
 
@@ -35,5 +36,37 @@ func TestFacadeSettings_ConcurrentSettersDoNotRace(t *testing.T) {
 
 	if _, err := config.Load(deps.ConfigPath); err != nil {
 		t.Fatalf("config unreadable after concurrent setters: %v", err)
+	}
+}
+
+func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	variables := map[string]string{"target": "scarred bandit"}
+	if err := a.SetInputVariables(variables); err != nil {
+		t.Fatalf("SetInputVariables: %v", err)
+	}
+	variables["target"] = "changed by caller"
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.Variables["target"]; got != "scarred bandit" {
+		t.Fatalf("persisted target = %q, want %q", got, "scarred bandit")
+	}
+
+	if err := a.SetInputVariables(map[string]string{"bad-name": "value"}); err == nil {
+		t.Fatal("SetInputVariables accepted an invalid name")
+	}
+	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
+		t.Fatalf("invalid update changed live variables to %q", got)
 	}
 }

@@ -71,6 +71,7 @@ export const disconnect = () => call<void>("Disconnect", undefined);
 
 // ---- Input / modes ----
 export const send = (input: string) => call<void>("Send", undefined, input);
+export const sendInput = (input: string) => call<void>("SendInput", undefined, input);
 export const modeNames = () => call<string[]>("ModeNames", []);
 export const modeSpecs = () => call<ModeSpec[]>("ModeSpecs", []);
 export const currentMode = () => call<string>("CurrentMode", "");
@@ -109,6 +110,8 @@ export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs
 export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);
 export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", undefined, c);
+export const setInputVariables = (v: Record<string, string>) =>
+  call<void>("SetInputVariables", undefined, v);
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);
 export const setIgnoreThink = (n: string[]) => call<void>("SetIgnoreThink", undefined, n);
 export const setScriptDirs = (d: string[]) => call<void>("SetScriptDirs", undefined, d);

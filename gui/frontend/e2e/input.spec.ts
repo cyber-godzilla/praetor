@@ -13,7 +13,7 @@ test("Enter sends the typed command and clears the input", async ({ page, backen
   await backend.input.click();
   await page.keyboard.type("look");
   await page.keyboard.press("Enter");
-  await expect.poll(() => backend.args("Send")).toEqual([["look"]]);
+  await expect.poll(() => backend.args("SendInput")).toEqual([["look"]]);
   await expect(backend.input).toHaveValue("");
 });
 
@@ -33,7 +33,7 @@ test("Shift+Enter inserts a newline; Enter sends the block as one message", asyn
   await page.keyboard.type("there");
   await expect(backend.input).toHaveValue("say hello\nthere");
   await page.keyboard.press("Enter");
-  await expect.poll(() => backend.args("Send")).toEqual([["say hello\nthere"]]);
+  await expect.poll(() => backend.args("SendInput")).toEqual([["say hello\nthere"]]);
 });
 
 test("Ctrl+R filters history and Enter sends the match", async ({ page, backend }) => {
@@ -42,7 +42,7 @@ test("Ctrl+R filters history and Enter sends the match", async ({ page, backend 
   await page.keyboard.press("Enter");
   await page.keyboard.type("get sword");
   await page.keyboard.press("Enter");
-  await expect.poll(() => backend.args("Send")).toEqual([["look"], ["get sword"]]);
+  await expect.poll(() => backend.args("SendInput")).toEqual([["look"], ["get sword"]]);
 
   await page.keyboard.press("Control+r");
   await expect(page.locator(".rsearch")).toBeVisible();
@@ -50,7 +50,7 @@ test("Ctrl+R filters history and Enter sends the match", async ({ page, backend 
   await expect(page.locator(".rsearch")).toContainText("lo");
   await expect(backend.input).toHaveValue("look");
   await page.keyboard.press("Enter");
-  await expect.poll(() => backend.args("Send")).toEqual([["look"], ["get sword"], ["look"]]);
+  await expect.poll(() => backend.args("SendInput")).toEqual([["look"], ["get sword"], ["look"]]);
   await expect(page.locator(".rsearch")).toHaveCount(0);
 });
 
@@ -71,5 +71,5 @@ test("/mode hint lists the loaded modes and Tab completes a unique prefix", asyn
   // queued a send, because the preceding `toHaveValue` round trip already
   // flushed the microtask chain a stray send would ride — polling again
   // afterward proves nothing a synchronous check doesn't already prove.
-  expect(await backend.args("Send")).toEqual([]);
+  expect(await backend.args("SendInput")).toEqual([]);
 });

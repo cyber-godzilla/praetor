@@ -228,3 +228,83 @@ func TestSend_InteriorNewlinePlusTrailingNewlineStillRoutesAsBlock(t *testing.T)
 		t.Fatal("server never received the block")
 	}
 }
+
+func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	if err := a.SendInput("kill ${target};;look"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+
+	var receivedAt []time.Time
+	for _, want := range []string{"kill scarred bandit", "look"} {
+		select {
+		case got := <-recv:
+			receivedAt = append(receivedAt, time.Now())
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+	if gap := receivedAt[1].Sub(receivedAt[0]); gap < client.InputCommandDelay-50*time.Millisecond {
+		t.Fatalf("command gap = %s, want approximately %s or longer", gap, client.InputCommandDelay)
+	}
+}
+
+func TestSendInput_UsesCurrentVariablesOnEveryCall(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "first bandit"})
+	if err := a.SendInput("attack ${target}"); err != nil {
+		t.Fatalf("first SendInput: %v", err)
+	}
+	a.client().SetInputVariables(map[string]string{"target": "second bandit"})
+	if err := a.SendInput("attack ${target}"); err != nil {
+		t.Fatalf("second SendInput: %v", err)
+	}
+
+	for _, want := range []string{"attack first bandit", "attack second bandit"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+}
+
+func TestSendInput_ValidationIsAtomic(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("look;;kill ${missing}")
+	if err == nil {
+		t.Fatal("SendInput returned nil, want unknown-variable error")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before the later command failed validation", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSendInput_MultilineBlockBypassesExpansion(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	input := "say ${target};;look\nsecond line"
+	if err := a.SendInput(input); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	select {
+	case got := <-recv:
+		if got != input {
+			t.Fatalf("server received %q, want unchanged block %q", got, input)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received multiline block")
+	}
+}

@@ -71,7 +71,7 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       ExportPersistentData: "",
     };
     const writers = new Set([
-      "Start", "Send", "SetMode", "SaveAccount", "RemoveAccount", "Disconnect",
+      "Start", "Send", "SendInput", "SetMode", "SaveAccount", "RemoveAccount", "Disconnect",
       "ReloadScripts", "RefreshGraphics", "ClipboardSet", "OpenURL", "OpenWikiSlug",
       "SaveNote", "DeleteNote", "StartFileSend", "StartPlay", "ClearPersistentData",
       "AddKudosQueue",

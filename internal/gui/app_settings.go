@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"fmt"
+
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
 
@@ -152,6 +154,24 @@ func (a *GuiApp) SetHighPriority(cmds []string) error {
 	return a.withConfig(func() {
 		a.cfg().Commands.HighPriority = cmds
 		a.client().Engine.SetHighPriority(cmds)
+	})
+}
+
+// SetInputVariables replaces the name/value map used for ${name}
+// substitutions in typed command-line input and applies it live.
+func (a *GuiApp) SetInputVariables(variables map[string]string) error {
+	for name := range variables {
+		if !config.ValidVariableName(name) {
+			return fmt.Errorf("invalid variable name %q", name)
+		}
+	}
+	cloned := make(map[string]string, len(variables))
+	for name, value := range variables {
+		cloned[name] = value
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.Variables = cloned
+		a.client().SetInputVariables(cloned)
 	})
 }
 

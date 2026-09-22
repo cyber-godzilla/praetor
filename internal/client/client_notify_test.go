@@ -1,11 +1,49 @@
 package client
 
 import (
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
+
+func TestDesktopNotificationCommandSoundPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		goos      string
+		sound     bool
+		want      string
+		doNotWant string
+	}{
+		{name: "linux sound", goos: "linux", sound: true, want: "string:sound-name:message-new-instant", doNotWant: "suppress-sound"},
+		{name: "linux silent", goos: "linux", sound: false, want: "boolean:suppress-sound:true", doNotWant: "sound-name"},
+		{name: "macOS sound", goos: "darwin", sound: true, want: `sound name "default"`},
+		{name: "macOS silent", goos: "darwin", sound: false, doNotWant: "sound name"},
+		{name: "Windows sound", goos: "windows", sound: true, want: "ms-winsoundevent:Notification.Default", doNotWant: "silent', 'true"},
+		{name: "Windows silent", goos: "windows", sound: false, want: "silent', 'true", doNotWant: "ms-winsoundevent:Notification.Default"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := desktopNotificationCommand(tc.goos, "Title", "Message", tc.sound)
+			if cmd == nil {
+				t.Fatal("expected a notification command")
+			}
+			args := strings.Join(cmd.Args, " ")
+			if tc.want != "" && !strings.Contains(args, tc.want) {
+				t.Errorf("command %q does not contain %q", args, tc.want)
+			}
+			if tc.doNotWant != "" && strings.Contains(args, tc.doNotWant) {
+				t.Errorf("command %q unexpectedly contains %q", args, tc.doNotWant)
+			}
+		})
+	}
+
+	if cmd := desktopNotificationCommand("plan9", "Title", "Message", true); cmd != nil {
+		t.Fatalf("unsupported OS returned command: %v", cmd.Args)
+	}
+}
 
 func TestUpdateConfig_RecompilesPatterns(t *testing.T) {
 	// Start with one pattern.
@@ -25,6 +63,7 @@ func TestUpdateConfig_RecompilesPatterns(t *testing.T) {
 
 	// Update with two different patterns.
 	updated := config.DesktopNotificationsConfig{
+		Sound:       true,
 		HealthBelow: config.ThresholdConfig{Enabled: true, Threshold: 15},
 		Patterns: []config.NotifyPatternConfig{
 			{Pattern: "attack*", Title: "Combat", Message: "Combat started", Enabled: true},
@@ -39,6 +78,9 @@ func TestUpdateConfig_RecompilesPatterns(t *testing.T) {
 	}
 	if dn.cfg.HealthBelow.Threshold != 15 {
 		t.Errorf("expected HealthBelow.Threshold=15, got %d", dn.cfg.HealthBelow.Threshold)
+	}
+	if !dn.cfg.Sound {
+		t.Error("expected Sound=true after UpdateConfig")
 	}
 
 	// Verify patterns recompiled.

@@ -249,8 +249,12 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return w, nil
 		}
-		// Route user commands to the client
-		w.gc.SendCommand(msg.Value)
+		// Route typed input through variable substitution and ;; splitting.
+		// Shell-local commands above retain precedence and are never produced by
+		// substitution, which keeps expansion non-recursive.
+		if err := w.gc.SendInput(msg.Value); err != nil {
+			log.Printf("[INPUT] %v", err)
+		}
 		// Still let the app process it (for state tracking)
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/commandinput"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/engine"
 	"github.com/cyber-godzilla/praetor/internal/protocol"
@@ -53,6 +54,11 @@ type Client struct {
 	// It is hot-swappable via SetIgnoreOOC / SetIgnoreThink.
 	ignore *IgnoreFilter
 
+	// inputVariables is a hot-swappable snapshot used only for text submitted
+	// through SendInput. Script sends and other UI command sources bypass it.
+	inputMu        sync.RWMutex
+	inputVariables map[string]string
+
 	// authUser and authPassCookie are set by Login and used by handleSecret.
 	authUser       string
 	authPassCookie string
@@ -77,14 +83,15 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 	}
 
 	return &Client{
-		Config:   cfg,
-		Session:  session.New(),
-		Engine:   eng,
-		Creds:    creds,
-		Settings: Settings{EchoTyped: true, EchoScript: true},
-		events:   make(chan types.Event, 256),
-		ignore:   NewIgnoreFilter(),
-		openURL:  func(u string) { go OpenBrowser(u) },
+		Config:         cfg,
+		Session:        session.New(),
+		Engine:         eng,
+		Creds:          creds,
+		Settings:       Settings{EchoTyped: true, EchoScript: true},
+		events:         make(chan types.Event, 256),
+		ignore:         NewIgnoreFilter(),
+		inputVariables: cloneVariables(cfg.Commands.Variables),
+		openURL:        func(u string) { go OpenBrowser(u) },
 	}, nil
 }
 
@@ -115,6 +122,22 @@ func (c *Client) SetIgnoreOOC(names []string) {
 // SetIgnoreThink replaces the Think ignorelist (character names).
 func (c *Client) SetIgnoreThink(names []string) {
 	c.ignore.SetThink(names)
+}
+
+// SetInputVariables replaces the typed-input variable snapshot. The copy keeps
+// command expansion race-free while the GUI persists a newly edited map.
+func (c *Client) SetInputVariables(variables map[string]string) {
+	c.inputMu.Lock()
+	c.inputVariables = cloneVariables(variables)
+	c.inputMu.Unlock()
+}
+
+func cloneVariables(variables map[string]string) map[string]string {
+	cloned := make(map[string]string, len(variables))
+	for name, value := range variables {
+		cloned[name] = value
+	}
+	return cloned
 }
 
 // Login performs HTTP login and stores the session cookies for auth.
@@ -291,14 +314,22 @@ func (c *Client) Disconnect() {
 // SendCommand handles user input. Strings starting with "/" are interpreted
 // as local commands; everything else is sent to the game server.
 func (c *Client) SendCommand(input string) {
+	_ = c.sendCommand(c.session(), input)
+}
+
+// sendCommand is SendCommand bound to a particular connection. Delayed input
+// chains capture the active session when invoked so their remaining commands
+// cannot leak into a later reconnect.
+func (c *Client) sendCommand(sess *session.Session, input string) error {
 	if strings.HasPrefix(input, "/") {
 		log.Printf("[SEND:CMD] %s", input)
 		c.handleLocalCommand(input)
-		return
+		return nil
 	}
 	log.Printf("[SEND:GAME] %s", input)
-	if err := c.session().Send(input); err != nil {
-		log.Printf("[CLIENT] send error: %v", err)
+	sendErr := sess.Send(input)
+	if sendErr != nil {
+		log.Printf("[CLIENT] send error: %v", sendErr)
 	}
 
 	// Echo the sent command in the output pane as italic text.
@@ -312,6 +343,52 @@ func (c *Client) SendCommand(input string) {
 			IsEcho:    true,
 		})
 	}
+	return sendErr
+}
+
+// InputCommandDelay is the fixed delay between commands split from one input
+// line. It is intentionally a constant until command-chain pacing becomes a
+// user-facing setting.
+const InputCommandDelay = 900 * time.Millisecond
+
+// SendInput processes one single-line command submitted by a user. It expands
+// ${name} variables and ;; command separators atomically before sending any
+// result. Variables are snapshotted afresh for every call, so saved changes are
+// immediately visible to typed input and action sets. Generated commands skip
+// further input expansion, so variables cannot recurse and an expanded value
+// cannot inject a separator. The first command sends immediately; remaining
+// commands send asynchronously with InputCommandDelay between them.
+func (c *Client) SendInput(input string) error {
+	c.inputMu.RLock()
+	variables := cloneVariables(c.inputVariables)
+	c.inputMu.RUnlock()
+
+	commands, err := commandinput.Expand(input, variables)
+	if err != nil {
+		return err
+	}
+	if len(commands) == 0 {
+		return nil
+	}
+
+	sess := c.session()
+	if err := c.sendCommand(sess, commands[0]); err != nil {
+		return err
+	}
+	if len(commands) > 1 {
+		go func(remaining []string) {
+			for _, command := range remaining {
+				time.Sleep(InputCommandDelay)
+				if c.session() != sess {
+					return
+				}
+				if err := c.sendCommand(sess, command); err != nil {
+					return
+				}
+			}
+		}(commands[1:])
+	}
+	return nil
 }
 
 // emit delivers an event to the events channel. Guaranteed events block until
@@ -649,7 +726,7 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 
 // sendNotification sends a desktop notification and emits a NotificationEvent.
 func (c *Client) sendNotification(title, message string) {
-	go sendDesktopNotification(title, message)
+	go sendDesktopNotification(title, message, c.Config.Notifications.Desktop.Sound)
 	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
 

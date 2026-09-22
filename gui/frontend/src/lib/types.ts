@@ -164,6 +164,7 @@ export interface NotifyPatternConfig {
 }
 
 export interface DesktopNotificationsConfig {
+  Sound: boolean;
   HealthBelow: ThresholdConfig;
   FatigueBelow: ThresholdConfig;
   Patterns: NotifyPatternConfig[] | null;
@@ -205,7 +206,11 @@ export interface UIConfig {
 
 export interface AppConfig {
   Server: Record<string, unknown>;
-  Commands: { HighPriority: string[] | null; [k: string]: unknown };
+  Commands: {
+    HighPriority: string[] | null;
+    Variables: Record<string, string> | null;
+    [k: string]: unknown;
+  };
   Scripts: string[] | null;
   UI: UIConfig;
   Highlights: HighlightConfig[] | null;

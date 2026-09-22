@@ -331,8 +331,14 @@
       return;
     }
 
-    // Everything else routes to the core (which interprets other /slash cmds).
-    api.send(line);
+    // Everything else routes through the typed-input processor. It expands
+    // ${name} variables and splits ;; only for command-line submissions; UI
+    // buttons, numpad movement, scripts, and file/playback sends bypass it.
+    try {
+      await api.sendInput(line);
+    } catch (e) {
+      store.addToast("Input error", String(e));
+    }
     pushHistory(line);
   }
 

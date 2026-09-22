@@ -27,6 +27,25 @@ test("the sidebar Modes tab lists the loaded modes", async ({ page }) => {
   await expect(modes.getByRole("button", { name: "hunt_wolves" })).toBeVisible();
 });
 
+test("the sidebar Variables tab saves command variables", async ({ page, backend }) => {
+  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Variables" }).click();
+  await page.getByRole("button", { name: "Add variable" }).click();
+  await page.getByRole("textbox", { name: "Variable name" }).fill("target");
+  await page.getByRole("textbox", { name: "Value for target" }).fill("scarred bandit");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect.poll(() => backend.args("SetInputVariables")).toEqual([
+    [{ target: "scarred bandit" }],
+  ]);
+});
+
+test("action-set commands use live variable substitution and command chaining", async ({ page, backend }) => {
+  await page.getByRole("button", { name: "Attack target" }).click();
+  await expect.poll(() => backend.args("SendInput")).toEqual([
+    ["attack ${target};;look"],
+  ]);
+});
+
 test("a custom tab routes matching lines and Tab cycles tabs", async ({ page, backend }) => {
   const tabbar = page.locator(".tabbar");
   await expect(tabbar.getByRole("button", { name: /^Chat/ })).toBeVisible();
@@ -48,4 +67,22 @@ test("a notify event shows a toast", async ({ page, backend }) => {
   const toasts = page.getByTestId("e2e-toasts");
   await expect(toasts).toContainText("Ping");
   await expect(toasts).toContainText("someone waved");
+});
+
+test("notification sounds are controlled by one global switch", async ({ page, backend }) => {
+  await page.keyboard.press("Escape");
+  let dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
+
+  dialog = page.getByRole("dialog");
+  const sound = dialog.getByRole("checkbox", {
+    name: "Play the OS default sound for notifications",
+  });
+  await expect(sound).not.toBeChecked();
+  await sound.check();
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+
+  const calls = await backend.args("SetNotifications");
+  expect(calls).toHaveLength(1);
+  expect(calls[0][0]).toMatchObject({ Sound: true });
 });
