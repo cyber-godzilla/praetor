@@ -60,6 +60,7 @@ export function makeConfig(): AppConfig {
     Ignorelist: { OOC: [], Think: [] },
     Notifications: {
       Desktop: {
+        AllowScriptNotifications: false,
         Sound: false,
         HealthBelow: { Enabled: false, Threshold: 25 },
         FatigueBelow: { Enabled: false, Threshold: 10 },

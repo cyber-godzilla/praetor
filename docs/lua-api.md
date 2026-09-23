@@ -130,6 +130,9 @@ notify(title, message)     -- Send a desktop notification
 log(message)               -- Write to the application log
 ```
 
+`notify()` is ignored unless **Allow Script Notifications** is enabled under
+Notifications. The permission is off by default.
+
 ### Utilities
 
 ```lua

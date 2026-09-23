@@ -6,6 +6,7 @@
 
   const src = store.config?.Notifications?.Desktop;
   let cfg = $state<DesktopNotificationsConfig>({
+    AllowScriptNotifications: src?.AllowScriptNotifications ?? false,
     Sound: src?.Sound ?? false,
     HealthBelow: { ...(src?.HealthBelow ?? { Enabled: false, Threshold: 25 }) },
     FatigueBelow: { ...(src?.FatigueBelow ?? { Enabled: false, Threshold: 10 }) },
@@ -33,6 +34,9 @@
 </script>
 
 <Modal title="Desktop Notifications" wide back onsave={save}>
+  <div class="section">
+    <label class="chk"><input type="checkbox" bind:checked={cfg.AllowScriptNotifications} /> Allow Script Notifications</label>
+  </div>
   <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.Sound} /> Play the OS default sound for notifications</label>
   </div>

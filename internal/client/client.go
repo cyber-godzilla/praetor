@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/commandinput"
@@ -103,6 +104,11 @@ type Client struct {
 
 	// desktopNotify launches the platform notification. Overridable in tests.
 	desktopNotify func(title, message string, sound bool)
+
+	// Script notification preferences are hot-swappable from the settings UI.
+	// Atomics keep Lua notify callbacks race-free while settings are saved.
+	allowScriptNotifications atomic.Bool
+	notificationSound        atomic.Bool
 }
 
 // NewClient creates a fully wired Client. Pass scriptDirs for the
@@ -125,6 +131,8 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		openURL:        func(u string) { go OpenBrowser(u) },
 		desktopNotify:  sendDesktopNotification,
 	}
+	c.allowScriptNotifications.Store(cfg.Notifications.Desktop.AllowScriptNotifications)
+	c.notificationSound.Store(cfg.Notifications.Desktop.Sound)
 	eng.SetNotifyHandler(c.sendNotification)
 	return c, nil
 }
@@ -174,6 +182,12 @@ func (c *Client) SetInputVariables(variables map[string]string) {
 	c.inputMu.Lock()
 	c.inputVariables = cloneVariables(variables)
 	c.inputMu.Unlock()
+}
+
+// SetScriptNotificationPreferences applies script-notification settings live.
+func (c *Client) SetScriptNotificationPreferences(allow, sound bool) {
+	c.allowScriptNotifications.Store(allow)
+	c.notificationSound.Store(sound)
 }
 
 func cloneVariables(variables map[string]string) map[string]string {
@@ -937,10 +951,14 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 	}
 }
 
-// sendNotification sends a desktop notification and emits a NotificationEvent.
+// sendNotification handles Lua notify() calls. Script notifications are
+// opt-in and, when disabled, produce neither an OS notification nor a GUI toast.
 func (c *Client) sendNotification(title, message string) {
+	if !c.allowScriptNotifications.Load() {
+		return
+	}
 	if c.desktopNotify != nil {
-		go c.desktopNotify(title, message, c.Config.Notifications.Desktop.Sound)
+		go c.desktopNotify(title, message, c.notificationSound.Load())
 	}
 	c.emit(types.NotificationEvent{Title: title, Message: message})
 }

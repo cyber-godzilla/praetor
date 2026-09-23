@@ -365,6 +365,12 @@ func TestDefaults_NotificationSoundIsOptIn(t *testing.T) {
 	}
 }
 
+func TestDefaults_ScriptNotificationsAreOptIn(t *testing.T) {
+	if Defaults().Notifications.Desktop.AllowScriptNotifications {
+		t.Fatal("script notifications should default off")
+	}
+}
+
 func TestDefaults_CommandVariablesEmpty(t *testing.T) {
 	vars := Defaults().Commands.Variables
 	if vars == nil || len(vars) != 0 {

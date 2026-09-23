@@ -160,7 +160,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 ```lua
 send(command [, delay_ms])           -- queue game command
 set_mode(name [, {args}])           -- switch mode
-notify(title, message)               -- desktop notification
+notify(title, message)               -- desktop notification (when allowed in Notifications)
 log(message)
 random_item(table)
 time.now() / time.since(ms)

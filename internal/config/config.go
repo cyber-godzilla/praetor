@@ -182,10 +182,11 @@ type NotificationsConfig struct {
 }
 
 type DesktopNotificationsConfig struct {
-	Sound        bool                  `yaml:"sound"`
-	HealthBelow  ThresholdConfig       `yaml:"health_below"`
-	FatigueBelow ThresholdConfig       `yaml:"fatigue_below"`
-	Patterns     []NotifyPatternConfig `yaml:"patterns"`
+	AllowScriptNotifications bool                  `yaml:"allow_script_notifications"`
+	Sound                    bool                  `yaml:"sound"`
+	HealthBelow              ThresholdConfig       `yaml:"health_below"`
+	FatigueBelow             ThresholdConfig       `yaml:"fatigue_below"`
+	Patterns                 []NotifyPatternConfig `yaml:"patterns"`
 }
 
 type ThresholdConfig struct {

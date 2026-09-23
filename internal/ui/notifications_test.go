@@ -10,9 +10,10 @@ import (
 
 func notifyCfg() config.DesktopNotificationsConfig {
 	return config.DesktopNotificationsConfig{
-		Sound:        true,
-		HealthBelow:  config.ThresholdConfig{Enabled: true, Threshold: 25},
-		FatigueBelow: config.ThresholdConfig{Enabled: false, Threshold: 10},
+		AllowScriptNotifications: true,
+		Sound:                    true,
+		HealthBelow:              config.ThresholdConfig{Enabled: true, Threshold: 25},
+		FatigueBelow:             config.ThresholdConfig{Enabled: false, Threshold: 10},
 		Patterns: []config.NotifyPatternConfig{
 			{Pattern: "dragon", Title: "Dragon!", Message: "A dragon appeared", Enabled: true},
 			{Pattern: "treasure", Enabled: false},
@@ -325,6 +326,9 @@ func TestEscReturnsConfig(t *testing.T) {
 	}
 	if !closeMsg.Config.Sound {
 		t.Fatal("expected config Sound to remain enabled")
+	}
+	if !closeMsg.Config.AllowScriptNotifications {
+		t.Fatal("expected script notification permission to be preserved")
 	}
 	if closeMsg.Config.FatigueBelow.Threshold != 10 {
 		t.Fatalf("expected fatigue threshold 10, got %d", closeMsg.Config.FatigueBelow.Threshold)

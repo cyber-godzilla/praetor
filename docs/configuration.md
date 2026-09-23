@@ -138,6 +138,7 @@ Case-insensitive substring matching. Highlighted text appears with colored backg
 ```yaml
 notifications:
   desktop:
+    allow_script_notifications: false # Permit Lua notify() desktop alerts and GUI toasts
     sound: false                   # Play the OS default sound for every notification
     health_below:
       enabled: true
@@ -158,6 +159,11 @@ Desktop notifications use the system's native notification mechanism
 desktop notification requests the OS-managed default alert sound; when
 disabled, Praetor suppresses notification sounds. System volume, notification
 preferences, and Do Not Disturb settings still take precedence.
+
+`allow_script_notifications` is off by default. Enable it to permit Lua
+scripts' `notify()` calls to create desktop alerts and in-app notification
+toasts. Health, fatigue, and text-pattern notifications remain controlled by
+their own settings.
 
 ## Logging
 

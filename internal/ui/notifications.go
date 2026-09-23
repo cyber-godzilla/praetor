@@ -44,10 +44,11 @@ const (
 
 // NotificationSettingsScreen manages notification threshold and pattern settings.
 type NotificationSettingsScreen struct {
-	sound        bool
-	healthBelow  config.ThresholdConfig
-	fatigueBelow config.ThresholdConfig
-	patterns     []config.NotifyPatternConfig
+	allowScriptNotifications bool
+	sound                    bool
+	healthBelow              config.ThresholdConfig
+	fatigueBelow             config.ThresholdConfig
+	patterns                 []config.NotifyPatternConfig
 
 	items  []notifyItem
 	cursor int
@@ -68,10 +69,11 @@ func NewNotificationSettingsScreen(cfg config.DesktopNotificationsConfig) Notifi
 	copy(patterns, cfg.Patterns)
 
 	s := NotificationSettingsScreen{
-		sound:        cfg.Sound,
-		healthBelow:  cfg.HealthBelow,
-		fatigueBelow: cfg.FatigueBelow,
-		patterns:     patterns,
+		allowScriptNotifications: cfg.AllowScriptNotifications,
+		sound:                    cfg.Sound,
+		healthBelow:              cfg.HealthBelow,
+		fatigueBelow:             cfg.FatigueBelow,
+		patterns:                 patterns,
 	}
 	s.rebuildItems()
 	return s
@@ -97,10 +99,11 @@ func (s *NotificationSettingsScreen) currentConfig() config.DesktopNotifications
 	patterns := make([]config.NotifyPatternConfig, len(s.patterns))
 	copy(patterns, s.patterns)
 	return config.DesktopNotificationsConfig{
-		Sound:        s.sound,
-		HealthBelow:  s.healthBelow,
-		FatigueBelow: s.fatigueBelow,
-		Patterns:     patterns,
+		AllowScriptNotifications: s.allowScriptNotifications,
+		Sound:                    s.sound,
+		HealthBelow:              s.healthBelow,
+		FatigueBelow:             s.fatigueBelow,
+		Patterns:                 patterns,
 	}
 }
 

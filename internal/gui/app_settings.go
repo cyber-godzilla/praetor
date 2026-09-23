@@ -215,10 +215,16 @@ func (a *GuiApp) SetIgnoreThink(names []string) error {
 
 // SetNotifications replaces desktop notification settings and applies them.
 func (a *GuiApp) SetNotifications(cfg config.DesktopNotificationsConfig) error {
-	return a.withConfig(func() {
+	if err := a.withConfig(func() {
 		a.cfg().Notifications.Desktop = cfg
+	}); err != nil {
+		return err
+	}
+	a.client().SetScriptNotificationPreferences(cfg.AllowScriptNotifications, cfg.Sound)
+	if a.deps.DesktopNotify != nil {
 		a.deps.DesktopNotify.UpdateConfig(cfg)
-	})
+	}
+	return nil
 }
 
 // SetScriptDirs replaces the Lua script directories and reloads modes from the

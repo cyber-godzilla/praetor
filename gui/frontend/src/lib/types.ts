@@ -162,6 +162,7 @@ export interface NotifyPatternConfig {
 }
 
 export interface DesktopNotificationsConfig {
+  AllowScriptNotifications: boolean;
   Sound: boolean;
   HealthBelow: ThresholdConfig;
   FatigueBelow: ThresholdConfig;

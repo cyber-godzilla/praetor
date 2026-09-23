@@ -470,6 +470,7 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if w.desktopNotify != nil {
 				w.desktopNotify.UpdateConfig(msg.Config)
 			}
+			w.gc.SetScriptNotificationPreferences(msg.Config.AllowScriptNotifications, msg.Config.Sound)
 		}
 		return w, cmd
 

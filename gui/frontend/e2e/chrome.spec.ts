@@ -152,22 +152,25 @@ test("a notify event shows a toast", async ({ page, backend }) => {
   await expect(toasts).toContainText("someone waved");
 });
 
-test("notification sounds are controlled by one global switch", async ({ page, backend }) => {
+test("notification permissions and sounds are controlled independently", async ({ page, backend }) => {
   await page.keyboard.press("Escape");
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Notifications", exact: true }).click();
 
   dialog = page.getByRole("dialog");
+  const scripts = dialog.getByRole("checkbox", { name: "Allow Script Notifications" });
   const sound = dialog.getByRole("checkbox", {
     name: "Play the OS default sound for notifications",
   });
+  await expect(scripts).not.toBeChecked();
   await expect(sound).not.toBeChecked();
+  await scripts.check();
   await sound.check();
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
   const calls = await backend.args("SetNotifications");
   expect(calls).toHaveLength(1);
-  expect(calls[0][0]).toMatchObject({ Sound: true });
+  expect(calls[0][0]).toMatchObject({ AllowScriptNotifications: true, Sound: true });
 });
 
 test("notification patterns save their custom message", async ({ page, backend }) => {
