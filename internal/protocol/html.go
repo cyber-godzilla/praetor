@@ -25,7 +25,7 @@ type styleState struct {
 	color     string
 }
 
-// ParseHTML parses ALICECOMPAT HTML into plain text and styled segments.
+// ParseHTMLWithIndent parses ALICECOMPAT HTML into plain text and styled segments.
 // Recognized tags:
 //   - <b>        → Bold
 //   - <i>        → Italic
@@ -39,15 +39,10 @@ type styleState struct {
 //   - Other tags  → stripped, content preserved
 //
 // HTML entities (&lt; &gt; &amp; &quot;) are decoded.
-// ParseHTML parses a single line of ALICECOMPAT HTML. The indentLevel parameter
+// The startIndent parameter
 // carries the current <ul> nesting depth from previous lines, since <ul> tags
 // can span multiple protocol lines. The resulting IndentLevel should be passed
 // to the next call.
-func ParseHTML(input string) HTMLResult {
-	return ParseHTMLWithIndent(input, 0)
-}
-
-// ParseHTMLWithIndent parses HTML with an initial indent level from prior lines.
 func ParseHTMLWithIndent(input string, startIndent int) HTMLResult {
 	if input == "" {
 		return HTMLResult{IndentLevel: startIndent}

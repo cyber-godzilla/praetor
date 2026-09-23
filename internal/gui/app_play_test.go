@@ -659,7 +659,7 @@ func TestSend_RejectedDuringPerformance(t *testing.T) {
 	// A slash command must be blocked too, not just plain text: Send must
 	// return before it ever inspects the input for a leading "/".
 	a.Send("/mode aggro")
-	if got := a.CurrentMode(); got == "aggro" {
+	if got := a.client().Engine.CurrentMode(); got == "aggro" {
 		t.Fatalf("CurrentMode() = %q — Send must not process a slash command during a performance either", got)
 	}
 
@@ -754,7 +754,7 @@ func TestStartPlay_SlashLineReachesGameNotLocalCommand(t *testing.T) {
 		t.Fatal("server never received the script line — /mode must not be handled locally by a play script")
 	}
 
-	if got := a.CurrentMode(); got == "aggro" {
+	if got := a.client().Engine.CurrentMode(); got == "aggro" {
 		t.Fatalf("CurrentMode() = %q — a play-script line must never fire a client command like /mode", got)
 	}
 }

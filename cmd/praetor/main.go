@@ -37,7 +37,6 @@ var version = ""
 type wrapper struct {
 	app           ui.App
 	gc            *client.Client
-	prog          *tea.Program
 	cfg           *config.Config
 	cfgPath       string
 	fromLogin     bool   // true if auth came from login form (not account select)
@@ -249,7 +248,8 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return w, nil
 		}
-		// Route typed input through variable substitution and ;; splitting.
+		// Route typed input through variable substitution plus ;; paced and &&
+		// unbusy-aware chaining.
 		// Shell-local commands above retain precedence and are never produced by
 		// substitution, which keeps expansion non-recursive.
 		if err := w.gc.SendInput(msg.Value); err != nil {

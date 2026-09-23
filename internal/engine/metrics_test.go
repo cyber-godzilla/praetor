@@ -129,7 +129,7 @@ func TestMetrics_JSONSerializable(t *testing.T) {
 	m.Set("crits", 5)
 
 	cur := m.Current()
-	data, err := cur.JSON()
+	data, err := json.Marshal(cur)
 	if err != nil {
 		t.Fatalf("JSON() error: %v", err)
 	}

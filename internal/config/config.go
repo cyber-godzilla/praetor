@@ -221,22 +221,24 @@ type UIConfig struct {
 	//   "topbar"  — horizontal strip across the top
 	//   "off"     — game pane only, sidebar/topbar hidden
 	// Migrated from the legacy sidebar_open bool by migrateLegacyDisplay.
-	DisplayMode     string   `yaml:"display_mode"`
-	DefaultTab      string   `yaml:"default_tab"`
-	Scrollback      int      `yaml:"scrollback"`
-	SidebarWidth    int      `yaml:"sidebar_width"`
-	MinimapScale    float64  `yaml:"minimap_scale"`
-	MinimapHeight   int      `yaml:"minimap_height"`
-	CompassScale    float64  `yaml:"compass_scale"`
-	OutputFontSize  int      `yaml:"output_font_size"`
-	CRTScanlines    bool     `yaml:"crt_scanlines"`
-	CRTRoll         bool     `yaml:"crt_roll"`
-	CRTBloom        bool     `yaml:"crt_bloom"`
-	QuickCycleModes []string `yaml:"quick_cycle_modes"`
-	ColorWords      bool     `yaml:"color_words"`
-	EchoTyped       bool     `yaml:"echo_typed_commands"`
-	EchoScript      bool     `yaml:"echo_script_commands"`
-	HideIPs         bool     `yaml:"hide_ips"`
+	DisplayMode      string   `yaml:"display_mode"`
+	DefaultTab       string   `yaml:"default_tab"`
+	Scrollback       int      `yaml:"scrollback"`
+	SidebarWidth     int      `yaml:"sidebar_width"`
+	GUISidebarWidth  int      `yaml:"gui_sidebar_width"` // pixels
+	MinimapScale     float64  `yaml:"minimap_scale"`
+	MinimapHeight    int      `yaml:"minimap_height"`
+	GUIMinimapHeight int      `yaml:"gui_minimap_height"` // pixels
+	CompassScale     float64  `yaml:"compass_scale"`
+	OutputFontSize   int      `yaml:"output_font_size"`
+	CRTScanlines     bool     `yaml:"crt_scanlines"`
+	CRTRoll          bool     `yaml:"crt_roll"`
+	CRTBloom         bool     `yaml:"crt_bloom"`
+	QuickCycleModes  []string `yaml:"quick_cycle_modes"`
+	ColorWords       bool     `yaml:"color_words"`
+	EchoTyped        bool     `yaml:"echo_typed_commands"`
+	EchoScript       bool     `yaml:"echo_script_commands"`
+	HideIPs          bool     `yaml:"hide_ips"`
 	// InputSpellcheck enables the webview's native spellchecker on the GUI
 	// command input (red squiggles under misspelled words while composing says
 	// and emotes). Engine support varies by platform webview.
@@ -302,8 +304,10 @@ func Defaults() *Config {
 			DefaultTab:       "all",
 			Scrollback:       5000,
 			SidebarWidth:     40,
+			GUISidebarWidth:  260,
 			MinimapScale:     1.0,
 			MinimapHeight:    12,
+			GUIMinimapHeight: 160,
 			CompassScale:     1.0,
 			OutputFontSize:   14,
 			CRTScanlines:     true,
@@ -554,11 +558,21 @@ func (c *Config) Validate() error {
 	if c.UI.SidebarWidth < 20 {
 		c.UI.SidebarWidth = 40
 	}
+	if c.UI.GUISidebarWidth < 180 {
+		c.UI.GUISidebarWidth = 260
+	} else if c.UI.GUISidebarWidth > 600 {
+		c.UI.GUISidebarWidth = 600
+	}
 	if c.UI.MinimapScale <= 0 {
 		c.UI.MinimapScale = 1.0
 	}
 	if c.UI.MinimapHeight < 4 {
 		c.UI.MinimapHeight = 12
+	}
+	if c.UI.GUIMinimapHeight < 80 {
+		c.UI.GUIMinimapHeight = 160
+	} else if c.UI.GUIMinimapHeight > 400 {
+		c.UI.GUIMinimapHeight = 400
 	}
 	if c.UI.CompassScale <= 0 {
 		c.UI.CompassScale = 1.0

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"encoding/json"
 	"sync"
 	"time"
 )
@@ -27,11 +26,6 @@ func (ms *MetricSession) Duration() time.Duration {
 		return time.Since(ms.StartTime)
 	}
 	return ms.EndTime.Sub(ms.StartTime)
-}
-
-// JSON returns the session as a JSON byte slice.
-func (ms *MetricSession) JSON() ([]byte, error) {
-	return json.Marshal(ms)
 }
 
 // findEntry returns the index of an entry by key, or -1 if not found.

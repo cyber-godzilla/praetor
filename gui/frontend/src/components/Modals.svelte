@@ -2,6 +2,7 @@
   import { store } from "../lib/store.svelte";
   import MenuModal from "./modals/MenuModal.svelte";
   import SettingsModal from "./modals/SettingsModal.svelte";
+  import VariablesModal from "./modals/VariablesModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
   import CustomTabsModal from "./modals/CustomTabsModal.svelte";
   import ActionSetsModal from "./modals/ActionSetsModal.svelte";
@@ -57,6 +58,8 @@
   <ModeSelectModal />
 {:else if m === "settings"}
   <SettingsModal />
+{:else if m === "variables"}
+  <VariablesModal />
 {:else if m === "crt"}
   <CRTEffectsModal />
 {:else if m === "highlights"}

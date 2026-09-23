@@ -204,11 +204,13 @@ To clear data: select keys with **Space**, then press **D** and confirm with **Y
 Praetor can send help queries directly to the game server.
 
 1. Type `/help` to open the help screen
-2. Press **S** to enter search mode
-3. Type your search term (e.g., `combat`) and press **Enter**
-4. Praetor sends `?combat` to the game server, and the response appears in your output
+2. In the GUI, enter a topic in **Game help** and click **Search**. In the TUI,
+   press **S**, type the topic, and press **Enter**.
+3. Praetor sends the query (for example, `?combat`) to the game server, and the
+   response appears in your output.
 
-You can also press **W** from the help screen to open the [TEC Wiki](https://eternal-city.wikidot.com) in your browser.
+Use **Open TEC Wiki** in the GUI, or press **W** in the TUI, to open the
+[TEC Wiki](https://eternal-city.wikidot.com) in your browser.
 
 ---
 
@@ -242,9 +244,9 @@ These key bindings are always available during gameplay:
 |-----|--------|
 | **Tab** / **Shift+Tab** | Next / previous tab |
 | **Alt+1** through **Alt+9**, **Alt+0** | Jump directly to a tab (0 = 10th) |
-| **Alt+S** | Toggle the sidebar (minimap, compass, status bars) |
+| **Alt+S** | Toggle the sidebar (GUI); cycle sidebar, top bar, and hidden modes (TUI) |
 | **Alt+M** | Cycle to the next automation mode |
-| **Alt+X** | Disable all automation |
+| **Alt+X** | Stop sends, queued chains, and scripts (GUI); disable automation (TUI) |
 | **Esc** | Open the menu |
 | **Ctrl+C** | Clear input line, or press twice to quit |
 | **PgUp** / **PgDn** | Scroll output |

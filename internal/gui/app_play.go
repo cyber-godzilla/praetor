@@ -124,6 +124,10 @@ func (a *GuiApp) playPreflight() error {
 		return fmt.Errorf(
 			"a /send is in flight — it would interleave with the performance on the wire; press Alt+X, or wait for the send to finish")
 	}
+	if c.InputChainActive() {
+		return fmt.Errorf(
+			"a typed command chain is still queued — it would interleave with the performance; stop the chain, press Alt+X, or wait for it to finish")
+	}
 	if c.Engine != nil {
 		if mode := c.Engine.CurrentMode(); mode != "" && mode != "disable" {
 			return fmt.Errorf(

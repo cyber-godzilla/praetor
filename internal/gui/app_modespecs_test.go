@@ -14,11 +14,10 @@ import (
 // GetInitState, which lists accounts before assembling the payload.
 type stubCreds struct{}
 
-func (stubCreds) ListAccounts() ([]string, error)     { return nil, nil }
-func (stubCreds) GetAccount(string) (string, error)   { return "", nil }
-func (stubCreds) SetAccount(string, string) error     { return nil }
-func (stubCreds) RemoveAccount(string) error          { return nil }
-func (stubCreds) RepairAccounts(string, string) error { return nil }
+func (stubCreds) ListAccounts() ([]string, error)   { return nil, nil }
+func (stubCreds) GetAccount(string) (string, error) { return "", nil }
+func (stubCreds) SetAccount(string, string) error   { return nil }
+func (stubCreds) RemoveAccount(string) error        { return nil }
 
 // newModeSpecApp builds a GuiApp over a real client whose engine has loaded a
 // script directory, so the metadata under test travels the same path it does in

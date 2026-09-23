@@ -21,6 +21,8 @@ type ModeChange struct {
 
 type Engine struct {
 	mu           sync.Mutex
+	notifyMu     sync.RWMutex
+	notify       func(title, message string)
 	vm           *LuaVM
 	state        *ModeState
 	queue        *CommandQueue
@@ -37,6 +39,14 @@ type Engine struct {
 
 	inSwitch bool           // true while setModeLocked's on_start/on_stop are running
 	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
+}
+
+// SetNotifyHandler sets the application callback used by Lua's notify().
+// It may be replaced at runtime; passing nil restores log-only behavior.
+func (e *Engine) SetNotifyHandler(fn func(title, message string)) {
+	e.notifyMu.Lock()
+	e.notify = fn
+	e.notifyMu.Unlock()
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -538,8 +548,16 @@ func (e *Engine) OnSetMode(mode string, args []string) {
 	e.runSwitch(mode, args)
 }
 
-// OnNotify logs a notification.
+// OnNotify forwards a Lua notification request to the application. Engines
+// constructed directly by tests or tools retain a log-only fallback.
 func (e *Engine) OnNotify(title, message string) {
+	e.notifyMu.RLock()
+	notify := e.notify
+	e.notifyMu.RUnlock()
+	if notify != nil {
+		notify(title, message)
+		return
+	}
 	log.Printf("[NOTIFY] %s: %s", title, message)
 }
 

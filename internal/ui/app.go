@@ -1320,26 +1320,6 @@ func (a *App) ShowKudosLoginPrompt(count int) {
 	}})
 }
 
-// findTabByKind returns the index of the first tab with the given kind, or -1.
-func (a App) findTabByKind(kind TabKind) int {
-	for i, t := range a.tabs {
-		if t.Kind == kind {
-			return i
-		}
-	}
-	return -1
-}
-
-// SwitchToDebug switches to the debug tab and enables debug mode.
-func (a *App) SwitchToDebug() {
-	a.debugMode = true
-	idx := a.findTabByKind(TabKindDebug)
-	if idx >= 0 {
-		a.tabs[idx].Visible = true
-		a.switchTab(idx)
-	}
-}
-
 // switchTab switches to the given tab and clears its unread flag.
 func (a *App) switchTab(idx int) {
 	if idx < 0 || idx >= len(a.tabs) {

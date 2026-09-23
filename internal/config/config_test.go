@@ -433,6 +433,12 @@ server:
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("default MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)
 	}
+	if cfg.UI.GUISidebarWidth != 260 {
+		t.Errorf("default GUISidebarWidth = %d, want 260", cfg.UI.GUISidebarWidth)
+	}
+	if cfg.UI.GUIMinimapHeight != 160 {
+		t.Errorf("default GUIMinimapHeight = %d, want 160", cfg.UI.GUIMinimapHeight)
+	}
 }
 
 func TestLoadConfig_LegacyEchoCommandsMigratesToBoth(t *testing.T) {

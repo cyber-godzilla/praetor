@@ -69,6 +69,27 @@
   // wedged client — the whole reason this indicator exists.
   const IDLE_PLAY: PlayState = { active: false, paused: false, step: 0, total: 0 };
   let play = $state<PlayState>(IDLE_PLAY);
+  let chainActive = $state(false);
+
+  async function refreshInputChain() {
+    try {
+      chainActive = await api.inputChainActive();
+    } catch {
+      // A failed local status call is transient; the next poll retries.
+    }
+  }
+
+  async function stopInputChain() {
+    // Swap the control back immediately; the backend cancellation wakes ;; timer
+    // waits synchronously and removes && waiters before this promise resolves.
+    chainActive = false;
+    try {
+      await api.abortInputChains();
+    } catch (e) {
+      store.addToast("Stop failed", String(e));
+    }
+    await refreshInputChain();
+  }
 
   // refreshPlay pulls the authoritative status once. Called by the poll and
   // immediately after a control action, so the indicator reflects a /pause or
@@ -123,6 +144,25 @@
     // store.playActive from its answer, which also tears this poll down.
     const tick = () => {
       if (!stopped) void refreshPlay();
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => {
+      stopped = true;
+      clearInterval(id);
+    };
+  });
+
+  // Chains can also be started by action-set buttons, so the input bar samples
+  // the shared scheduler while connected instead of relying only on submit().
+  $effect(() => {
+    if (store.connState !== "connected") {
+      chainActive = false;
+      return;
+    }
+    let stopped = false;
+    const tick = () => {
+      if (!stopped) void refreshInputChain();
     };
     tick();
     const id = setInterval(tick, 500);
@@ -332,13 +372,15 @@
     }
 
     // Everything else routes through the typed-input processor. It expands
-    // ${name} variables and splits ;; only for command-line submissions; UI
-    // buttons, numpad movement, scripts, and file/playback sends bypass it.
+    // ${name} variables plus ;; paced and && unbusy-aware chains apply only to
+    // command-line submissions; UI buttons, numpad movement, scripts, and
+    // file/playback sends bypass them.
     try {
       await api.sendInput(line);
     } catch (e) {
       store.addToast("Input error", String(e));
     }
+    await refreshInputChain();
     pushHistory(line);
   }
 
@@ -617,25 +659,35 @@
       autocomplete="off"
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     ></textarea>
-    <button
-      class="play"
-      class:active={play.active}
-      class:paused={play.paused}
-      title={!play.active
-        ? "Play a script (/play)"
-        : play.paused
-          ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
-          : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
-      onclick={onPlayClick}
-      tabindex="-1"
-    >
-      {#if !play.active}
-        ▶ play
-      {:else}
-        {play.paused ? "❙❙" : "▶"}
-        {play.step}/{play.total}
-      {/if}
-    </button>
+    {#if chainActive}
+      <button
+        class="chain-stop"
+        aria-label="Stop command chain"
+        title="Discard commands still queued by ;; or &&"
+        onclick={stopInputChain}
+        tabindex="-1"
+      >■ stop</button>
+    {:else}
+      <button
+        class="play"
+        class:active={play.active}
+        class:paused={play.paused}
+        title={!play.active
+          ? "Play a script (/play)"
+          : play.paused
+            ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
+            : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
+        onclick={onPlayClick}
+        tabindex="-1"
+      >
+        {#if !play.active}
+          ▶ play
+        {:else}
+          {play.paused ? "❙❙" : "▶"}
+          {play.step}/{play.total}
+        {/if}
+      </button>
+    {/if}
     <button
       class="mode"
       class:active={!!store.mode && store.mode !== "disable"}
@@ -697,6 +749,16 @@
     font-family: inherit;
     line-height: 1.4;
   }
+  /* The native WebKit marker is only a hairline by default, which is easy to
+     lose against the dark input background. Keep native dictionary/context-
+     menu behavior, but make the misspelling squiggle more legible. */
+  textarea::spelling-error {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: #ff626b;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
   /* Performance indicator. Electric blue rather than the orange accent: while
      this is showing, the input rejects everything but the four control
      commands, so it must not read as just another "a mode is active" state. */
@@ -726,6 +788,21 @@
   .play.active.paused {
     color: var(--play-blue-dim);
     border-color: var(--border);
+  }
+  .chain-stop {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: #e06c75;
+    background: var(--bg-elevated);
+    border: 1px solid #e06c75;
+    border-radius: 4px;
+    padding: 4px 10px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .chain-stop:hover {
+    color: var(--bg);
+    background: #e06c75;
   }
   .mode {
     font-size: 12px;

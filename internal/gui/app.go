@@ -138,7 +138,7 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 		if disconnected {
 			switch ev.(type) {
 			case types.SKOOTUpdateEvent, types.GameTextEvent, types.SuppressedGameTextEvent,
-				types.StatusUpdateEvent, types.ModeChangeEvent, types.CommandEvent, types.MapURLEvent:
+				types.StatusUpdateEvent, types.ModeChangeEvent, types.MapURLEvent:
 				continue
 			}
 		}
@@ -312,21 +312,9 @@ func (a *GuiApp) GetInitState() InitState {
 	}
 }
 
-// GetConfig returns the current configuration.
-func (a *GuiApp) GetConfig() *config.Config { return a.cfg() }
-
 // ---------------------------------------------------------------------------
 // Authentication & connection
 // ---------------------------------------------------------------------------
-
-// ListAccounts returns stored account usernames.
-func (a *GuiApp) ListAccounts() []string {
-	accounts, err := a.deps.Creds.ListAccounts()
-	if err != nil {
-		return nil
-	}
-	return accounts
-}
 
 // ConnectNew logs in with an explicit username/password, optionally stores the
 // credentials, then connects the WebSocket and starts the game loop. Returns
@@ -373,11 +361,6 @@ func (a *GuiApp) Disconnect() {
 	a.client().Disconnect()
 }
 
-// SaveAccount stores credentials for later ConnectStored use.
-func (a *GuiApp) SaveAccount(username, password string) error {
-	return a.deps.Creds.SetAccount(username, password)
-}
-
 // RemoveAccount deletes stored credentials for a username.
 func (a *GuiApp) RemoveAccount(username string) error {
 	return a.deps.Creds.RemoveAccount(username)
@@ -388,8 +371,8 @@ func (a *GuiApp) RemoveAccount(username string) error {
 // ---------------------------------------------------------------------------
 
 // Send handles a command from direct UI controls such as numpad navigation and
-// status buttons. It deliberately bypasses typed-input variables and ;;
-// splitting; Action-set buttons use SendInput instead.
+// status buttons. It deliberately bypasses typed-input variables and command
+// chaining; Action-set buttons use SendInput instead.
 func (a *GuiApp) Send(input string) {
 	if err := a.send(input, false); err != nil {
 		a.emit([]WireEvent{{Kind: KindNotify, Notify: &NotifyPayload{
@@ -400,9 +383,24 @@ func (a *GuiApp) Send(input string) {
 
 // SendInput handles one submission from the command input. A block containing
 // newlines (paste or modifier+Enter) goes out whole via SendBlock; a single line
-// receives ${name} substitution and ;; splitting before dispatch.
+// receives ${name} substitution plus ;; and && chaining before dispatch.
 func (a *GuiApp) SendInput(input string) error {
 	return a.send(input, true)
+}
+
+// InputChainActive reports whether typed input still has commands waiting
+// behind a ;; delay or && unbusy response.
+func (a *GuiApp) InputChainActive() bool {
+	return a.client() != nil && a.client().InputChainActive()
+}
+
+// AbortInputChains drops every queued typed-input continuation. Commands that
+// already reached the server cannot be recalled.
+func (a *GuiApp) AbortInputChains() int {
+	if a.client() == nil {
+		return 0
+	}
+	return a.client().AbortInputChains()
 }
 
 func (a *GuiApp) send(input string, processInput bool) error {
@@ -448,9 +446,6 @@ func (a *GuiApp) ModeNames() []string { return a.client().Engine.ModeNames() }
 // restart.
 func (a *GuiApp) ModeSpecs() []engine.ModeSpec { return a.client().Engine.ModeSpecs() }
 
-// CurrentMode returns the active mode name.
-func (a *GuiApp) CurrentMode() string { return a.client().Engine.CurrentMode() }
-
 // SetMode validates and switches the active mode. "disable"/"" always allowed.
 func (a *GuiApp) SetMode(name string, args []string) error {
 	if name != "disable" && name != "" && !a.client().Engine.HasMode(name) {
@@ -473,9 +468,8 @@ func (a *GuiApp) ReloadScripts() error {
 // Graphics
 // ---------------------------------------------------------------------------
 
-// RefreshGraphics re-emits the current minimap and compass (e.g. after the
-// frontend panel is resized or the scale changes).
-func (a *GuiApp) RefreshGraphics() {
+// refreshGraphics re-emits the current minimap and compass after the scale changes.
+func (a *GuiApp) refreshGraphics() {
 	var wire []WireEvent
 	a.render.mu.Lock()
 	img := encodeImage(a.render.mini.BuildImage())

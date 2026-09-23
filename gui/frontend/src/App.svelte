@@ -9,6 +9,7 @@
   import Toasts from "./components/Toasts.svelte";
   import Modals from "./components/Modals.svelte";
   import ContextMenu from "./components/ContextMenu.svelte";
+  import { normalizeDisplayMode } from "./lib/display";
 
   let ready = $state(false);
   let splashDone = $state(false);
@@ -34,7 +35,7 @@
       store.modeNames = init.modeNames ?? [];
       store.modeSpecs = init.modeSpecs ?? [];
       store.hasModes = init.hasModes;
-      store.sidebarOpen = init.config?.UI?.DisplayMode !== "off";
+      store.displayMode = normalizeDisplayMode(init.config?.UI?.DisplayMode);
       store.rebuildTabs(init.config?.UI?.CustomTabs);
       store.screen = store.accounts.length > 0 ? "account" : "login";
       ready = true;

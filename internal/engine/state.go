@@ -76,15 +76,6 @@ func (ms *ModeState) AddDisplay(key, label string) {
 	ms.displayItems = append(ms.displayItems, DisplayItem{Key: key, Label: label})
 }
 
-// DisplayItems returns the current display declarations.
-func (ms *ModeState) DisplayItems() []DisplayItem {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	cp := make([]DisplayItem, len(ms.displayItems))
-	copy(cp, ms.displayItems)
-	return cp
-}
-
 // DisplayValues returns label→value pairs for sidebar rendering.
 func (ms *ModeState) DisplayValues() []struct{ Label, Value string } {
 	ms.mu.RLock()
@@ -172,20 +163,6 @@ func parseStringToLua(s string) lua.LValue {
 	return lua.LString(s)
 }
 
-// GetReadOnlyInt returns a read-only integer value, or the default if not found.
-func (ms *ModeState) GetReadOnlyInt(key string, defaultVal int) int {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	val, ok := ms.readOnly[key]
-	if !ok {
-		return defaultVal
-	}
-	if n, ok := val.(lua.LNumber); ok {
-		return int(n)
-	}
-	return defaultVal
-}
-
 // SetReadOnly sets a read-only field accessible as state.<key> in Lua.
 // Accepts Go string, int, float64, bool, or nil.
 func (ms *ModeState) SetReadOnly(key string, value interface{}) {
@@ -194,60 +171,11 @@ func (ms *ModeState) SetReadOnly(key string, value interface{}) {
 	ms.readOnly[key] = goToLua(value)
 }
 
-// SetActions sets the actions array (exposed as state.actions in Lua).
-func (ms *ModeState) SetActions(actions []string) {
-	ms.mu.Lock()
-	defer ms.mu.Unlock()
-
-	if ms.luaState == nil {
-		return
-	}
-
-	tbl := ms.luaState.NewTable()
-	for i, a := range actions {
-		tbl.RawSetInt(i+1, lua.LString(a))
-	}
-	ms.actions = tbl
-}
-
-// GetActions returns the current actions as a Go string slice.
-func (ms *ModeState) GetActions() []string {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-
-	if ms.actions == nil {
-		return nil
-	}
-
-	var result []string
-	ms.actions.ForEach(func(_, value lua.LValue) {
-		if s, ok := value.(lua.LString); ok {
-			result = append(result, string(s))
-		}
-	})
-	return result
-}
-
-// GetValue returns a user-defined value by key.
-func (ms *ModeState) GetValue(key string) (lua.LValue, bool) {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	v, ok := ms.values[key]
-	return v, ok
-}
-
 // SetPersist marks a key as persistent so it survives Clear().
 func (ms *ModeState) SetPersist(key string) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.persistentKeys[key] = true
-}
-
-// IsPersistent returns whether a key is marked as persistent.
-func (ms *ModeState) IsPersistent(key string) bool {
-	ms.mu.RLock()
-	defer ms.mu.RUnlock()
-	return ms.persistentKeys[key]
 }
 
 // SetOnPersistDirty sets a callback invoked when a persistent key changes.
@@ -286,17 +214,6 @@ func (ms *ModeState) ClearPersistentKey(key string) {
 	ms.mu.Unlock()
 	// Mark dirty so the explicit Flush the UIs run persists the deletion;
 	// otherwise the cleared key resurrects from disk on the next launch.
-	ms.notifyPersistDirty()
-}
-
-// ClearAllPersistent removes all persistent keys and their values.
-func (ms *ModeState) ClearAllPersistent() {
-	ms.mu.Lock()
-	for key := range ms.persistentKeys {
-		delete(ms.values, key)
-	}
-	ms.persistentKeys = make(map[string]bool)
-	ms.mu.Unlock()
 	ms.notifyPersistDirty()
 }
 
@@ -468,17 +385,6 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 
 	L.SetMetatable(stateTbl, mt)
 	L.SetGlobal("state", stateTbl)
-}
-
-// GetModeState retrieves the ModeState from the Lua registry.
-func GetModeState(L *lua.LState) *ModeState {
-	ud := L.GetField(L.Get(lua.RegistryIndex), modeStateKey)
-	if u, ok := ud.(*lua.LUserData); ok {
-		if ms, ok := u.Value.(*ModeState); ok {
-			return ms
-		}
-	}
-	return nil
 }
 
 // goToLua converts a Go value to a Lua value.

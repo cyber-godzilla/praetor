@@ -182,7 +182,7 @@ Nothing opens automatically; choose a link in the popup to open it.
 |-----|--------|
 | Tab / Shift+Tab | Next / previous tab |
 | Alt+1..9, Alt+0 | Jump to tab (0 = 10th) |
-| Alt+S | Toggle sidebar |
+| Alt+S | Toggle sidebar (GUI); cycle sidebar → topbar → off (TUI) |
 | Alt+M | Quick-cycle automation mode |
 | Esc | Open menu |
 | Ctrl+C | Clear input / confirm quit |

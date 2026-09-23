@@ -160,7 +160,7 @@ func TestSend_TrailingNewlineStillRoutesSlashCommand(t *testing.T) {
 
 	a.Send("/mode aggro\n")
 
-	if got := a.CurrentMode(); got != "aggro" {
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
 		t.Fatalf("CurrentMode() = %q, want %q — trailing newline should not have routed to SendBlock", got, "aggro")
 	}
 	select {
@@ -177,7 +177,7 @@ func TestSend_PlainSlashCommandRoutesAsCommand(t *testing.T) {
 
 	a.Send("/mode aggro")
 
-	if got := a.CurrentMode(); got != "aggro" {
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
 		t.Fatalf("CurrentMode() = %q, want %q", got, "aggro")
 	}
 	select {
@@ -204,7 +204,7 @@ func TestSend_InteriorNewlineRoutesAsBlock(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("server never received the block")
 	}
-	if got := a.CurrentMode(); got == "line" {
+	if got := a.client().Engine.CurrentMode(); got == "line" {
 		t.Fatalf("CurrentMode() = %q — block input must not be interpreted as a command", got)
 	}
 }
@@ -233,12 +233,12 @@ func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
 
-	if err := a.SendInput("kill ${target};;look"); err != nil {
+	if err := a.SendInput("kill ${target};;look;;inventory"); err != nil {
 		t.Fatalf("SendInput: %v", err)
 	}
 
 	var receivedAt []time.Time
-	for _, want := range []string{"kill scarred bandit", "look"} {
+	for _, want := range []string{"kill scarred bandit", "look", "inventory"} {
 		select {
 		case got := <-recv:
 			receivedAt = append(receivedAt, time.Now())
@@ -249,8 +249,12 @@ func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
 			t.Fatalf("server never received %q", want)
 		}
 	}
-	if gap := receivedAt[1].Sub(receivedAt[0]); gap < client.InputCommandDelay-50*time.Millisecond {
-		t.Fatalf("command gap = %s, want approximately %s or longer", gap, client.InputCommandDelay)
+	for i := 1; i < len(receivedAt); i++ {
+		if gap := receivedAt[i].Sub(receivedAt[i-1]); gap < client.InputCommandDelay-50*time.Millisecond {
+			t.Fatalf("command gap %d = %s, want approximately %s or longer", i, gap, client.InputCommandDelay)
+		} else {
+			t.Logf("observed ;; command gap %d: %s", i, gap)
+		}
 	}
 }
 

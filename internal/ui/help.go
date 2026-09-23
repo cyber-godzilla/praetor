@@ -144,6 +144,19 @@ func (h HelpScreen) View() string {
 	}
 	lines = append(lines, rule)
 
+	// Typed-input syntax shared by both clients.
+	lines = append(lines, headerStyle.Render("Input Syntax"))
+	inputEntries := []struct{ key, desc string }{
+		{"${name}", "Insert a saved command variable"},
+		{"command ;; command", "Run next command after 900 ms"},
+		{"command && command", "Run next command after an unbusy response"},
+		{`\${  \;;  \&&`, "Send the syntax literally"},
+	}
+	for _, e := range inputEntries {
+		lines = append(lines, "  "+keyStyle.Render(padRight(e.key, 22))+descStyle.Render(e.desc))
+	}
+	lines = append(lines, rule)
+
 	// Keybindings
 	lines = append(lines, headerStyle.Render("Keybindings"))
 	keyEntries := []struct{ key, desc string }{

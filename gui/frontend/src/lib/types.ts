@@ -19,7 +19,6 @@ export const Kind = {
   Conn: "conn",
   Notify: "notify",
   Error: "error",
-  Command: "command",
   OpenMenu: "openMenu",
   Minimap: "minimap",
   Compass: "compass",
@@ -112,7 +111,6 @@ export interface WireEvent {
   conn?: ConnPayload;
   notify?: NotifyPayload;
   error?: ErrorPayload;
-  command?: string;
   openMenu?: string;
   image?: ImagePayload;
   debug?: DebugPayload;
@@ -185,8 +183,10 @@ export interface UIConfig {
   DefaultTab: string;
   Scrollback: number;
   SidebarWidth: number;
+  GUISidebarWidth: number;
   MinimapScale: number;
   MinimapHeight: number;
+  GUIMinimapHeight: number;
   CompassScale: number;
   OutputFontSize: number;
   CRTScanlines: boolean;
@@ -286,6 +286,15 @@ export interface RBResult {
   basicsRB: number;
   subskillRB: number;
   cells: RBCell[];
+}
+
+export interface TrainingCostRow {
+  slot: number;
+  basic: number;
+  easy: number;
+  average: number;
+  difficult: number;
+  impossible: number;
 }
 
 export interface NoteSummary {

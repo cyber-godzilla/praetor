@@ -41,33 +41,44 @@ commands:
 
 High priority commands can be configured via Esc → Priority Commands. When a high-priority command is queued, it's inserted at the front (after other high-priority items) instead of the back.
 
-Variables can also be managed in the sidebar's **Variables** tab. Reference one
-as `${name}` in a typed command, such as `attack ${target}`. References are
+Variables can also be managed via Esc → **Variables** or in the sidebar's
+**Variables** tab. Reference one as `${name}` in a typed command, such as
+`attack ${target}`. References are
 case-sensitive and values are substituted once rather than recursively. An
 unknown or malformed reference rejects the entire input line without sending
 any part of it. Use `\${` to send a literal `${`.
 
-Separate multiple typed commands with `;;`, for example
-`stand;;get sword;;attack ${target}`. A single `;` remains ordinary text, and
-`\;;` sends a literal `;;`. Praetor splits the line before substituting
-variables, so a variable value containing `;;` cannot create extra commands.
-These features apply to single-line command-input submissions and Action-set
-buttons. Variables are read afresh every time either is invoked, so edits take
-effect immediately. Commands split by `;;` are sent in order with a fixed 900
-ms delay between sends. Other sidebar buttons, numpad movement, scripts,
-playback, and multiline blocks are sent unchanged. A single line is limited to
-100 commands.
+Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
+roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
+for an unbusy response before sending `climb wall`, then waits the normal 900
+ms before sending `look`. Each unbusy response advances one pending chain in
+submission order. Recognized responses mirror `praetor-scripts`: no longer
+busy, no longer stunned, wield/grab/already-wielding confirmations, and
+successful training.
+
+A single `;` or `&` remains ordinary text. `\;;` and `\&&` send literal
+separators. Praetor splits the line before substituting variables, so a
+variable value containing either separator cannot create extra commands. These
+features apply to single-line command-input submissions and Action-set buttons.
+Variables are read afresh every time either is invoked, so edits take effect
+immediately. Other sidebar buttons, numpad movement, scripts, playback, and
+multiline blocks are sent unchanged. A single line is limited to 100 commands
+across both separator types. Pending chains are discarded on disconnect. In the
+GUI, an active chain replaces the Play control with a Stop button that discards
+every command still waiting behind either separator.
 
 ## UI
 
 ```yaml
 ui:
-  sidebar_open: true              # Sidebar visible on start
+  display_mode: sidebar           # TUI: sidebar | topbar | off; GUI: sidebar | off
   default_tab: all                # Initial tab: all, metrics
   scrollback: 5000                # Lines of scrollback per tab
-  sidebar_width: 40               # Sidebar width in columns
-  minimap_scale: 0.8              # Minimap zoom level
-  minimap_height: 12              # Minimap height in terminal rows
+  sidebar_width: 40               # TUI sidebar width in columns
+  gui_sidebar_width: 260          # GUI sidebar width in pixels (180-600)
+  minimap_scale: 1.0              # Minimap zoom multiplier (0.5-3.0)
+  minimap_height: 12              # TUI minimap height in terminal rows
+  gui_minimap_height: 160         # GUI map height in pixels (80-400)
   quick_cycle_modes:              # Modes cycled by Alt+M
     - disable
   color_words: false              # Color word highlighting
@@ -78,7 +89,7 @@ ui:
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
-All UI toggles are available via the Esc menu and saved automatically.
+GUI UI controls are available via the Esc menu and persisted when you press Save.
 
 `input_spellcheck` controls the native spellchecker for the command textarea.
 On Linux, Praetor enables WebKitGTK spellchecking with the first usable locale

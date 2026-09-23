@@ -28,6 +28,31 @@ type Settings struct {
 	EchoScript bool // echo commands sent by Lua scripts
 }
 
+type inputContinuation struct {
+	chain    *inputChain
+	commands []commandinput.Command
+}
+
+// inputChain owns one typed line with commands still waiting behind ;; or &&.
+// Closing cancel wakes a paced wait immediately; membership in inputChains is
+// the authoritative active/queued state exposed to the GUI.
+type inputChain struct {
+	sess   *session.Session
+	cancel chan struct{}
+}
+
+// inputUnbusyMessages mirrors praetor-scripts/lib_strings.lua. Keep this as a
+// slice: TEC has several ordinary responses that end roundtime, and new ones
+// can be added without changing the && scheduler.
+var inputUnbusyMessages = []string{
+	"You are no longer busy.",
+	"You are no longer stunned.",
+	"You wield",
+	"You grab onto",
+	"You are already wielding",
+	"You successfully train to rank",
+}
+
 // Client is the top-level orchestrator that wires session, engine, protocol,
 // and notification subsystems together.
 type Client struct {
@@ -58,6 +83,9 @@ type Client struct {
 	// through SendInput. Script sends and other UI command sources bypass it.
 	inputMu        sync.RWMutex
 	inputVariables map[string]string
+	inputChainMu   sync.Mutex
+	inputChains    map[*inputChain]struct{}
+	inputWaiters   []*inputContinuation
 
 	// authUser and authPassCookie are set by Login and used by handleSecret.
 	authUser       string
@@ -72,6 +100,9 @@ type Client struct {
 	// openURL launches an external URL. Overridable in tests; defaults to opening
 	// the system browser asynchronously.
 	openURL func(string)
+
+	// desktopNotify launches the platform notification. Overridable in tests.
+	desktopNotify func(title, message string, sound bool)
 }
 
 // NewClient creates a fully wired Client. Pass scriptDirs for the
@@ -82,7 +113,7 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		return nil, fmt.Errorf("creating engine: %w", err)
 	}
 
-	return &Client{
+	c := &Client{
 		Config:         cfg,
 		Session:        session.New(),
 		Engine:         eng,
@@ -92,7 +123,10 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		ignore:         NewIgnoreFilter(),
 		inputVariables: cloneVariables(cfg.Commands.Variables),
 		openURL:        func(u string) { go OpenBrowser(u) },
-	}, nil
+		desktopNotify:  sendDesktopNotification,
+	}
+	eng.SetNotifyHandler(c.sendNotification)
+	return c, nil
 }
 
 // Events returns a read-only channel of game events for the TUI.
@@ -109,9 +143,19 @@ func (c *Client) session() *session.Session {
 
 // setSession replaces the current Session pointer under the guard.
 func (c *Client) setSession(s *session.Session) {
+	c.inputChainMu.Lock()
 	c.sessMu.Lock()
 	c.Session = s
 	c.sessMu.Unlock()
+	// A chain belongs to the connection that sent its first command. Replacing
+	// the session cancels both && waiters and ;; timers so neither can send onto
+	// the next connection.
+	for chain := range c.inputChains {
+		close(chain.cancel)
+	}
+	c.inputChains = nil
+	c.inputWaiters = nil
+	c.inputChainMu.Unlock()
 }
 
 // SetIgnoreOOC replaces the OOC ignorelist (account names).
@@ -156,11 +200,6 @@ func (c *Client) Login(username, password string) error {
 	return nil
 }
 
-// AuthUser returns the authenticated username.
-func (c *Client) AuthUser() string {
-	return c.authUser
-}
-
 // ConnectWebSocket opens the WebSocket connection using cookies from a
 // prior Login() call. Call Login() first.
 func (c *Client) ConnectWebSocket() error {
@@ -184,15 +223,6 @@ func (c *Client) ConnectWebSocket() error {
 	return s.Connect(wsURL, cookies)
 }
 
-// ConnectWithAuth performs HTTP login, then connects the WebSocket with
-// the session cookies. This is the standard connection flow.
-func (c *Client) ConnectWithAuth(username, password string) error {
-	if err := c.Login(username, password); err != nil {
-		return err
-	}
-	return c.ConnectWebSocket()
-}
-
 // Run is the main loop: reads lines from the session, processes each one,
 // and emits events. It blocks until the session's Lines channel closes.
 func (c *Client) Run() {
@@ -207,6 +237,7 @@ func (c *Client) Run() {
 	// Drop anything the engine queued while offline (between the previous
 	// disconnect and now): those commands must not burst onto a fresh login.
 	c.Engine.Queue().Clear()
+	c.clearInputChains(sess)
 
 	c.cancelMu.Lock()
 	c.userDisconnect = false
@@ -279,6 +310,7 @@ func (c *Client) Run() {
 	wg.Wait()
 
 	c.Engine.Queue().Clear()
+	c.clearInputChains(sess)
 
 	reason := "connection closed"
 	if userInitiated {
@@ -302,7 +334,9 @@ func (c *Client) Disconnect() {
 
 	// Close the socket; this unblocks Run()'s read loop, which emits the
 	// DisconnectedEvent with the empty (logout) reason.
-	c.session().Close()
+	sess := c.session()
+	c.clearInputChains(sess)
+	sess.Close()
 
 	// Reset the engine to a clean slate for the next session: switching to the
 	// default mode cancels timers, clears per-mode state, ends the metric
@@ -346,18 +380,17 @@ func (c *Client) sendCommand(sess *session.Session, input string) error {
 	return sendErr
 }
 
-// InputCommandDelay is the fixed delay between commands split from one input
-// line. It is intentionally a constant until command-chain pacing becomes a
-// user-facing setting.
+// InputCommandDelay is the fixed delay between commands separated by ;; in one
+// input line. It is intentionally a constant until command-chain pacing
+// becomes a user-facing setting.
 const InputCommandDelay = 900 * time.Millisecond
 
 // SendInput processes one single-line command submitted by a user. It expands
-// ${name} variables and ;; command separators atomically before sending any
-// result. Variables are snapshotted afresh for every call, so saved changes are
-// immediately visible to typed input and action sets. Generated commands skip
-// further input expansion, so variables cannot recurse and an expanded value
-// cannot inject a separator. The first command sends immediately; remaining
-// commands send asynchronously with InputCommandDelay between them.
+// ${name} variables plus ;; (paced) and && (wait-for-unbusy) separators
+// atomically before sending any result. Variables are snapshotted afresh for
+// every call, so saved changes are immediately visible to typed input and
+// action sets. Generated commands skip further input expansion, so variables
+// cannot recurse and an expanded value cannot inject a separator.
 func (c *Client) SendInput(input string) error {
 	c.inputMu.RLock()
 	variables := cloneVariables(c.inputVariables)
@@ -372,23 +405,204 @@ func (c *Client) SendInput(input string) error {
 	}
 
 	sess := c.session()
-	if err := c.sendCommand(sess, commands[0]); err != nil {
+	if len(commands) == 1 {
+		return c.sendCommand(sess, commands[0].Text)
+	}
+	chain := c.startInputChain(sess)
+	if chain == nil {
+		return nil
+	}
+	return c.dispatchInputCommand(chain, commands)
+}
+
+func (c *Client) startInputChain(sess *session.Session) *inputChain {
+	chain := &inputChain{sess: sess, cancel: make(chan struct{})}
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	if c.session() != sess {
+		return nil
+	}
+	if c.inputChains == nil {
+		c.inputChains = make(map[*inputChain]struct{})
+	}
+	c.inputChains[chain] = struct{}{}
+	return chain
+}
+
+func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinput.Command) {
+	if len(commands) == 0 {
+		c.finishInputChain(chain)
+		return
+	}
+	switch commands[0].Wait {
+	case commandinput.WaitDelay:
+		go func() {
+			timer := time.NewTimer(InputCommandDelay)
+			defer timer.Stop()
+			select {
+			case <-timer.C:
+				_ = c.dispatchInputCommand(chain, commands)
+			case <-chain.cancel:
+				return
+			}
+		}()
+	case commandinput.WaitUnbusy:
+		c.enqueueInputWaiter(chain, commands)
+	default:
+		_ = c.dispatchInputCommand(chain, commands)
+	}
+}
+
+func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput.Command) error {
+	if len(commands) == 0 {
+		c.finishInputChain(chain)
+		return nil
+	}
+	if !c.inputChainIsActive(chain) || c.session() != chain.sess {
+		c.finishInputChain(chain)
+		return nil
+	}
+
+	// Register an && continuation before sending the command that can produce
+	// its unbusy response. A fast server may reply before Send returns.
+	var waiter *inputContinuation
+	remaining := commands[1:]
+	if len(remaining) > 0 && remaining[0].Wait == commandinput.WaitUnbusy {
+		waiter = c.enqueueInputWaiter(chain, remaining)
+	}
+	if err := c.sendCommand(chain.sess, commands[0].Text); err != nil {
+		if waiter != nil {
+			c.removeInputWaiter(waiter)
+		}
+		c.finishInputChain(chain)
 		return err
 	}
-	if len(commands) > 1 {
-		go func(remaining []string) {
-			for _, command := range remaining {
-				time.Sleep(InputCommandDelay)
-				if c.session() != sess {
-					return
-				}
-				if err := c.sendCommand(sess, command); err != nil {
-					return
-				}
-			}
-		}(commands[1:])
+	if len(remaining) == 0 {
+		c.finishInputChain(chain)
+	} else if waiter == nil {
+		c.scheduleInputCommands(chain, remaining)
 	}
 	return nil
+}
+
+func (c *Client) inputChainIsActive(chain *inputChain) bool {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	_, ok := c.inputChains[chain]
+	return ok
+}
+
+func (c *Client) enqueueInputWaiter(chain *inputChain, commands []commandinput.Command) *inputContinuation {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	if _, ok := c.inputChains[chain]; !ok || c.session() != chain.sess {
+		return nil
+	}
+	pending := &inputContinuation{chain: chain, commands: commands}
+	c.inputWaiters = append(c.inputWaiters, pending)
+	return pending
+}
+
+func (c *Client) removeInputWaiter(target *inputContinuation) {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	for i, pending := range c.inputWaiters {
+		if pending == target {
+			c.inputWaiters = append(c.inputWaiters[:i], c.inputWaiters[i+1:]...)
+			return
+		}
+	}
+}
+
+func (c *Client) finishInputChain(chain *inputChain) {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	delete(c.inputChains, chain)
+	kept := c.inputWaiters[:0]
+	for _, pending := range c.inputWaiters {
+		if pending.chain != chain {
+			kept = append(kept, pending)
+		}
+	}
+	c.inputWaiters = kept
+}
+
+// InputChainActive reports whether any typed input has commands still queued
+// behind a ;; delay or && unbusy response.
+func (c *Client) InputChainActive() bool {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	return len(c.inputChains) > 0
+}
+
+// AbortInputChains immediately discards every queued typed-input continuation.
+// It returns the number of chains canceled. Commands already sent are not
+// recalled, but pending ;; timers are woken and && waiters are removed.
+func (c *Client) AbortInputChains() int {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	count := len(c.inputChains)
+	for chain := range c.inputChains {
+		close(chain.cancel)
+		delete(c.inputChains, chain)
+	}
+	c.inputWaiters = nil
+	return count
+}
+
+func isInputUnbusy(text string) bool {
+	for _, message := range inputUnbusyMessages {
+		if strings.Contains(text, message) {
+			return true
+		}
+	}
+	return false
+}
+
+// advanceInputOnUnbusy releases exactly one waiter. FIFO consumption keeps two
+// overlapping typed chains from both treating one server response as theirs.
+func (c *Client) advanceInputOnUnbusy(text string) {
+	if !isInputUnbusy(text) {
+		return
+	}
+
+	c.inputChainMu.Lock()
+	sess := c.session()
+	var pending *inputContinuation
+	for len(c.inputWaiters) > 0 {
+		candidate := c.inputWaiters[0]
+		c.inputWaiters = c.inputWaiters[1:]
+		if candidate.chain.sess == sess {
+			if _, ok := c.inputChains[candidate.chain]; !ok {
+				continue
+			}
+			pending = candidate
+			break
+		}
+	}
+	c.inputChainMu.Unlock()
+
+	if pending != nil {
+		_ = c.dispatchInputCommand(pending.chain, pending.commands)
+	}
+}
+
+func (c *Client) clearInputChains(sess *session.Session) {
+	c.inputChainMu.Lock()
+	for chain := range c.inputChains {
+		if chain.sess == sess {
+			close(chain.cancel)
+			delete(c.inputChains, chain)
+		}
+	}
+	kept := c.inputWaiters[:0]
+	for _, pending := range c.inputWaiters {
+		if pending.chain.sess != sess {
+			kept = append(kept, pending)
+		}
+	}
+	c.inputWaiters = kept
+	c.inputChainMu.Unlock()
 }
 
 // emit delivers an event to the events channel. Guaranteed events block until
@@ -573,6 +787,7 @@ func (c *Client) handleGameText(line string) {
 	if result.Text != "" {
 		c.Engine.Process(result.Text)
 		c.emitStatusUpdate()
+		c.advanceInputOnUnbusy(result.Text)
 	}
 }
 
@@ -708,8 +923,6 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 		}
 		lastSend = time.Now()
 
-		c.emit(types.CommandEvent{Command: cmd.Command})
-
 		// Echo engine commands in the output if script echo is enabled.
 		if c.Settings.EchoScript {
 			c.emitOrStop(types.GameTextEvent{
@@ -726,7 +939,9 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 
 // sendNotification sends a desktop notification and emits a NotificationEvent.
 func (c *Client) sendNotification(title, message string) {
-	go sendDesktopNotification(title, message, c.Config.Notifications.Desktop.Sound)
+	if c.desktopNotify != nil {
+		go c.desktopNotify(title, message, c.Config.Notifications.Desktop.Sound)
+	}
 	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
 

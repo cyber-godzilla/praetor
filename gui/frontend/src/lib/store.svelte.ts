@@ -18,6 +18,7 @@ import type {
   WireEvent,
 } from "./types";
 import { Kind } from "./types";
+import type { DisplayMode } from "./display";
 
 // Extra lines the scrollback buffer may hold above the configured cap before a
 // front-trim runs, so the O(n) keyed-each reconciliation amortizes over a burst.
@@ -133,10 +134,10 @@ class AppStore {
   compass = $state<string>("");
 
   // UI chrome
-  sidebarOpen = $state(true);
+  displayMode = $state<DisplayMode>("sidebar");
   // Collapsed state of the sidebar's accordion sections. Session-only (resets to
   // all-expanded on restart); held here rather than in Frame so it survives an
-  // Alt+S sidebar unmount/remount.
+  // Alt+S display-mode unmount/remount.
   collapsed = $state({ map: false, exits: false, vitals: false });
   openModal = $state<string | null>(null);
   // True while the custom right-click context menu is open, so the game view's
@@ -436,8 +437,6 @@ class AppStore {
         case Kind.OpenMenu:
           if (ev.openMenu) this.openModal = ev.openMenu;
           break;
-        case Kind.Command:
-          break; // command echo already arrives as a text event
       }
     }
   }

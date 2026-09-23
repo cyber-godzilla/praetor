@@ -38,6 +38,7 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
   await page.addInitScript((init: InitState) => {
     const listeners = new Map<string, Set<(d: unknown) => void>>();
     const calls: FakeCall[] = [];
+    let inputChainActive = false;
     const emit = (event: string, data: unknown) => {
       for (const cb of listeners.get(event) ?? []) cb(data);
     };
@@ -46,11 +47,8 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
     // asks PlayActive before every send.
     const readers: Record<string, unknown> = {
       GetInitState: init,
-      GetConfig: init.config,
       ModeNames: init.modeNames ?? [],
       ModeSpecs: init.modeSpecs ?? [],
-      CurrentMode: "",
-      ListAccounts: init.accounts ?? [],
       ListNotes: [],
       GetWikiSections: [],
       GetMapSections: [],
@@ -71,8 +69,8 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       ExportPersistentData: "",
     };
     const writers = new Set([
-      "Start", "Send", "SendInput", "SetMode", "SaveAccount", "RemoveAccount", "Disconnect",
-      "ReloadScripts", "RefreshGraphics", "ClipboardSet", "OpenURL", "OpenWikiSlug",
+      "Start", "Send", "SendInput", "SetMode", "RemoveAccount", "Disconnect",
+      "ReloadScripts", "ClipboardSet", "OpenURL", "OpenWikiSlug",
       "SaveNote", "DeleteNote", "StartFileSend", "StartPlay", "ClearPersistentData",
       "AddKudosQueue",
     ]);
@@ -88,6 +86,41 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
         if (name === "then" || name === "catch" || name === "finally") return undefined;
         return (...args: unknown[]) => {
           calls.push({ method: name, args });
+          if (name === "InputChainActive") return Promise.resolve(inputChainActive);
+          if (name === "AbortInputChains") {
+            const canceled = inputChainActive ? 1 : 0;
+            inputChainActive = false;
+            return Promise.resolve(canceled);
+          }
+          if (name === "SendInput") {
+            const input = typeof args[0] === "string" ? args[0] : "";
+            if (input.includes(";;") || input.includes("&&")) inputChainActive = true;
+          }
+          if (name === "CalcRankBonus") {
+            const [mode, basics, subskill] = args as number[];
+            return Promise.resolve({
+              mode,
+              basics,
+              subskill,
+              basicsRB: basics / 10,
+              subskillRB: subskill / 10,
+              cells: Array.from({ length: 25 }, (_, i) => ({
+                posture: Math.floor(i / 5),
+                difficulty: i % 5,
+                bonus: basics + subskill + i,
+              })),
+            });
+          }
+          if (name === "CalcTrainingCosts") {
+            return Promise.resolve(Array.from({ length: 20 }, (_, i) => ({
+              slot: i + 1,
+              basic: (i + 1) * 10,
+              easy: (i + 1) * 20,
+              average: (i + 1) * 30,
+              difficult: (i + 1) * 40,
+              impossible: (i + 1) * 50,
+            })));
+          }
           if (Object.hasOwn(readers, name)) return Promise.resolve(readers[name]);
           if (connectors.has(name)) {
             // Next macrotask, like a real async connect; the real store then

@@ -51,6 +51,7 @@
       <input type="checkbox" bind:checked={p.Enabled} title="Enabled" />
       <input type="text" bind:value={p.Pattern} placeholder="match text" />
       <input type="text" bind:value={p.Title} placeholder="title (optional)" />
+      <input class="message" type="text" bind:value={p.Message} placeholder="message (optional)" />
       <button class="danger sm" onclick={() => removePattern(i)}>✕</button>
     </div>
   {/each}
@@ -82,13 +83,17 @@
     letter-spacing: 1px;
   }
   .pat {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1fr) minmax(120px, 1fr) auto;
     align-items: center;
     gap: 6px;
     margin-bottom: 6px;
   }
   .pat input[type="text"] {
-    flex: 1;
+    min-width: 0;
+  }
+  .pat .message {
+    grid-column: 2 / 4;
   }
   .sm {
     padding: 4px 10px;

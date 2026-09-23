@@ -7,6 +7,7 @@ import (
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
 // Wails dispatches each bound setter on its own goroutine, so two settings
@@ -68,5 +69,67 @@ func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	}
 	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
 		t.Fatalf("invalid update changed live variables to %q", got)
+	}
+}
+
+func TestSetGUILayoutValidatesAndPersistsPixelDimensions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, &captureEmitter{})
+
+	if err := a.SetGUILayout(340, 220); err != nil {
+		t.Fatalf("SetGUILayout: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.UI.GUISidebarWidth != 340 || loaded.UI.GUIMinimapHeight != 220 {
+		t.Fatalf("persisted GUI layout = %dx%d, want 340x220", loaded.UI.GUISidebarWidth, loaded.UI.GUIMinimapHeight)
+	}
+	if err := a.SetGUILayout(100, 220); err == nil {
+		t.Fatal("SetGUILayout accepted undersized sidebar")
+	}
+}
+
+func TestSetMinimapScaleRerendersAtDistinctZoom(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	emitter := &captureEmitter{}
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, emitter)
+	a.render.updateMinimap([]types.MinimapRoom{
+		{X: 0, Y: 0, Size: 100, Color: "#ff0000", Brightness: 25},
+		{X: 50, Y: 0, Size: 100, Color: "#ffffff", Brightness: 22},
+	}, nil)
+
+	if err := a.SetMinimapScale(0.8); err != nil {
+		t.Fatalf("SetMinimapScale(0.8): %v", err)
+	}
+	if err := a.SetMinimapScale(2.0); err != nil {
+		t.Fatalf("SetMinimapScale(2.0): %v", err)
+	}
+	events := emitter.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("emitted %d graphics updates, want 2", len(events))
+	}
+	first := events[0].data.([]WireEvent)[0].Image
+	second := events[1].data.([]WireEvent)[0].Image
+	if first == nil || second == nil || first.DataURI == second.DataURI {
+		t.Fatal("different minimap scale settings emitted identical renders")
+	}
+	if err := a.SetMinimapScale(3.1); err == nil {
+		t.Fatal("SetMinimapScale accepted a value above the GUI limit")
+	}
+}
+
+func TestSetDisplayModeRejectsUnknownValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, &captureEmitter{})
+	if err := a.SetDisplayMode("topbar"); err != nil {
+		t.Fatalf("SetDisplayMode(topbar): %v", err)
+	}
+	if err := a.SetDisplayMode("floating"); err == nil {
+		t.Fatal("SetDisplayMode accepted an unknown value")
+	}
+	if got := a.cfg().UI.DisplayMode; got != "topbar" {
+		t.Fatalf("invalid update changed mode to %q", got)
 	}
 }

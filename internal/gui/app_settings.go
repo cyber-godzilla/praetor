@@ -80,6 +80,9 @@ func (a *GuiApp) SetLogPath(path string) error {
 
 // SetDisplayMode persists the display mode (sidebar/topbar/off).
 func (a *GuiApp) SetDisplayMode(mode string) error {
+	if mode != "sidebar" && mode != "topbar" && mode != "off" {
+		return fmt.Errorf("invalid display mode %q", mode)
+	}
 	return a.withConfig(func() { a.cfg().UI.DisplayMode = mode })
 }
 
@@ -91,13 +94,16 @@ func (a *GuiApp) SetNumpadNavigation(mode string) error {
 
 // SetMinimapScale persists and applies the minimap scale.
 func (a *GuiApp) SetMinimapScale(scale float64) error {
+	if scale < 0.5 || scale > 3 {
+		return fmt.Errorf("minimap scale must be between 0.5 and 3")
+	}
 	if err := a.withConfig(func() {
 		a.cfg().UI.MinimapScale = scale
 		a.render.setScale(scale)
 	}); err != nil {
 		return err
 	}
-	a.RefreshGraphics()
+	a.refreshGraphics()
 	return nil
 }
 
@@ -105,6 +111,22 @@ func (a *GuiApp) SetMinimapScale(scale float64) error {
 // the frontend via CSS, so no re-render is needed here.
 func (a *GuiApp) SetOutputFontSize(px int) error {
 	return a.withConfig(func() { a.cfg().UI.OutputFontSize = px })
+}
+
+// SetGUILayout persists the browser-native pixel dimensions used by the GUI.
+// The TUI's column/row settings remain independent because they are not
+// meaningful CSS dimensions.
+func (a *GuiApp) SetGUILayout(sidebarWidth, minimapHeight int) error {
+	if sidebarWidth < 180 || sidebarWidth > 600 {
+		return fmt.Errorf("GUI sidebar width must be between 180 and 600 pixels")
+	}
+	if minimapHeight < 80 || minimapHeight > 400 {
+		return fmt.Errorf("GUI minimap height must be between 80 and 400 pixels")
+	}
+	return a.withConfig(func() {
+		a.cfg().UI.GUISidebarWidth = sidebarWidth
+		a.cfg().UI.GUIMinimapHeight = minimapHeight
+	})
 }
 
 // SetCRTEffects persists the three retro CRT effect toggles (scanlines, the

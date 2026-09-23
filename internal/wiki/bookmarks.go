@@ -4,7 +4,6 @@
 package wiki
 
 import (
-	"sort"
 	"strings"
 )
 
@@ -46,18 +45,6 @@ func Lookup(key string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// Keys returns all bookmark keys, sorted alphabetically.
-func Keys() []string {
-	var out []string
-	for _, sec := range sections {
-		for _, bm := range sec.Bookmarks {
-			out = append(out, bm.Key)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func normalize(s string) string {

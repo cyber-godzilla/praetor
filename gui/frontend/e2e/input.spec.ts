@@ -17,6 +17,21 @@ test("Enter sends the typed command and clears the input", async ({ page, backen
   await expect(backend.input).toHaveValue("");
 });
 
+test("an active command chain replaces play with a stop control", async ({ page, backend }) => {
+  await expect(page.getByRole("button", { name: "Stop command chain" })).toHaveCount(0);
+  await backend.input.fill("stand&&look");
+  await page.keyboard.press("Enter");
+
+  const stop = page.getByRole("button", { name: "Stop command chain" });
+  await expect(stop).toBeVisible();
+  await expect(page.getByRole("button", { name: /play/i })).toHaveCount(0);
+
+  await stop.click();
+  await expect.poll(() => backend.args("AbortInputChains")).toEqual([[]]);
+  await expect(stop).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /play/i })).toBeVisible();
+});
+
 test("/guide opens the welcome wiki links without navigating automatically", async ({ page, backend }) => {
   await backend.input.click();
   await page.keyboard.type("/guide");

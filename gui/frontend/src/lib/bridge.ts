@@ -11,6 +11,7 @@ import type {
   PersistentKeyInfo,
   WikiSection,
   RBResult,
+  TrainingCostRow,
   WireEvent,
   HighlightConfig,
   CustomTabConfig,
@@ -26,10 +27,6 @@ import type {
 
 function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
   return window.go?.gui?.GuiApp;
-}
-
-export function inWails(): boolean {
-  return !!window.go?.gui?.GuiApp && !!window.runtime;
 }
 
 async function call<T>(method: string, fallback: T, ...args: any[]): Promise<T> {
@@ -57,30 +54,25 @@ export const getInitState = () =>
     config: {} as AppConfig,
   });
 
-export const getConfig = () => call<AppConfig>("GetConfig", {} as AppConfig);
 export const start = () => call<void>("Start", undefined);
 
 // ---- Auth / connection ----
-export const listAccounts = () => call<string[]>("ListAccounts", []);
 export const connectNew = (u: string, p: string, store: boolean) =>
   call<void>("ConnectNew", undefined, u, p, store);
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
-export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
 export const disconnect = () => call<void>("Disconnect", undefined);
 
 // ---- Input / modes ----
 export const send = (input: string) => call<void>("Send", undefined, input);
 export const sendInput = (input: string) => call<void>("SendInput", undefined, input);
+export const inputChainActive = () => call<boolean>("InputChainActive", false);
+export const abortInputChains = () => call<number>("AbortInputChains", 0);
 export const modeNames = () => call<string[]>("ModeNames", []);
 export const modeSpecs = () => call<ModeSpec[]>("ModeSpecs", []);
-export const currentMode = () => call<string>("CurrentMode", "");
 export const setMode = (name: string, args: string[]) =>
   call<void>("SetMode", undefined, name, args);
 export const reloadScripts = () => call<void>("ReloadScripts", undefined);
-
-// ---- Graphics ----
-export const refreshGraphics = () => call<void>("RefreshGraphics", undefined);
 
 // ---- Clipboard ----
 export const clipboardGet = () => call<string>("ClipboardGet", "");
@@ -101,6 +93,8 @@ export const setNumpadNavigation = (m: string) => call<void>("SetNumpadNavigatio
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
 export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
 export const setOutputFontSize = (px: number) => call<void>("SetOutputFontSize", undefined, px);
+export const setGUILayout = (sidebarWidth: number, minimapHeight: number) =>
+  call<void>("SetGUILayout", undefined, sidebarWidth, minimapHeight);
 export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean) =>
   call<void>("SetCRTEffects", undefined, scanlines, roll, bloom);
 
@@ -141,15 +135,25 @@ export const openURL = (url: string) => call<void>("OpenURL", undefined, url);
 export const openWikiSlug = (slug: string) => call<void>("OpenWikiSlug", undefined, slug);
 export const calcRankBonus = (mode: number, basics: number, subskill: number) =>
   call<RBResult>("CalcRankBonus", { mode, basics, subskill, basicsRB: 0, subskillRB: 0, cells: [] }, mode, basics, subskill);
-export const calcTrainCost = (
-  curRank: number,
-  desRank: number,
-  slot: number,
-  difficulty: number,
+export const calcTrainingCosts = (
+  curBasics: number,
+  curSub: number,
+  tgtBasics: number,
+  tgtSub: number,
   selfTrained: boolean,
   selfTaught: boolean,
   healing: boolean,
-) => call<number>("CalcTrainCost", 0, curRank, desRank, slot, difficulty, selfTrained, selfTaught, healing);
+) => call<TrainingCostRow[]>(
+  "CalcTrainingCosts",
+  [],
+  curBasics,
+  curSub,
+  tgtBasics,
+  tgtSub,
+  selfTrained,
+  selfTaught,
+  healing,
+);
 
 // ---- Updates ----
 export const checkForUpdate = () =>

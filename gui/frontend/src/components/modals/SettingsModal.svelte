@@ -21,6 +21,8 @@
   let minimapScale = $state(seed?.UI?.MinimapScale ?? 1);
   let compassScale = $state(seed?.UI?.CompassScale ?? 1);
   let fontSize = $state(seed?.UI?.OutputFontSize || 14);
+  let guiSidebarWidth = $state(seed?.UI?.GUISidebarWidth || 260);
+  let guiMinimapHeight = $state(seed?.UI?.GUIMinimapHeight || 160);
   let numpadNav = $state(seed?.UI?.NumpadNavigation ?? "numlock");
 
   async function save() {
@@ -39,6 +41,7 @@
       await api.setMinimapScale(minimapScale);
       await api.setCompassScale(compassScale);
       await api.setOutputFontSize(fontSize);
+      await api.setGUILayout(guiSidebarWidth, guiMinimapHeight);
       await api.setNumpadNavigation(numpadNav);
       if (store.config) {
         Object.assign(store.config.UI, {
@@ -51,6 +54,8 @@
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
+          GUISidebarWidth: guiSidebarWidth,
+          GUIMinimapHeight: guiMinimapHeight,
           NumpadNavigation: numpadNav,
         });
         store.config.Updates = { Check: updateCheck };
@@ -77,12 +82,20 @@
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
 
     <div class="field">
-      <span>Minimap scale</span>
-      <input type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />
+      <span>Minimap Scale (Zoom)</span>
+      <input aria-label="Minimap Scale (Zoom)" type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />
     </div>
     <div class="field">
       <span>Compass scale</span>
       <input type="number" min="0.5" max="3" step="0.1" bind:value={compassScale} />
+    </div>
+    <div class="field">
+      <span>GUI sidebar width (px)</span>
+      <input aria-label="GUI sidebar width" type="number" min="180" max="600" step="10" bind:value={guiSidebarWidth} />
+    </div>
+    <div class="field">
+      <span>GUI map height (px)</span>
+      <input aria-label="GUI map height" type="number" min="80" max="400" step="10" bind:value={guiMinimapHeight} />
     </div>
     <div class="field">
       <span>Output text size</span>

@@ -18,12 +18,6 @@ const (
 	keyringAccountKey = "accounts"
 )
 
-// Account holds a username and password pair.
-type Account struct {
-	Username string
-	Password string
-}
-
 // CredentialStore defines the interface for storing and retrieving
 // multiple user accounts (username/password pairs).
 type CredentialStore interface {
@@ -31,10 +25,6 @@ type CredentialStore interface {
 	GetAccount(username string) (string, error)
 	SetAccount(username, password string) error
 	RemoveAccount(username string) error
-	// RepairAccounts overwrites the whole store with a single account, discarding
-	// any existing (including corrupt/unreadable) contents. For explicit
-	// user-driven recovery only — see loadAccounts.
-	RepairAccounts(username, password string) error
 }
 
 // ErrNoCredentials is returned when no credentials are stored.
@@ -58,10 +48,8 @@ func (k *KeyringStore) loadAccounts() (map[string]string, error) {
 	if err := json.Unmarshal([]byte(raw), &accounts); err != nil {
 		// A corrupt/truncated blob must NOT read as "no accounts stored" — the
 		// ordinary SetAccount would then overwrite the entry and could destroy a
-		// merely-misread blob. Surface the error so read paths report "unreadable"
-		// and the ordinary write paths refuse. Explicit recovery (the user chose
-		// to re-store after seeing the error) goes through RepairAccounts, which
-		// overwrites from scratch.
+		// merely-misread blob. Surface the error so read and write paths refuse to
+		// modify the unreadable entry.
 		return nil, fmt.Errorf("keyring blob corrupt: %w", err)
 	}
 	return accounts, nil
@@ -115,16 +103,6 @@ func (k *KeyringStore) SetAccount(username, password string) error {
 	return k.saveAccounts(accounts)
 }
 
-// RepairAccounts overwrites the entire accounts blob with a single account,
-// discarding whatever was there (including a corrupt/unreadable blob). Use ONLY
-// for explicit user-driven recovery after a read path surfaced a corrupt blob —
-// the ordinary SetAccount deliberately refuses to overwrite an unreadable blob.
-func (k *KeyringStore) RepairAccounts(username, password string) error {
-	keyringMu.Lock()
-	defer keyringMu.Unlock()
-	return k.saveAccounts(map[string]string{username: password})
-}
-
 // RemoveAccount removes the given username from the store.
 func (k *KeyringStore) RemoveAccount(username string) error {
 	keyringMu.Lock()
@@ -139,57 +117,4 @@ func (k *KeyringStore) RemoveAccount(username string) error {
 		return keyring.Delete(keyringService, keyringAccountKey)
 	}
 	return k.saveAccounts(accounts)
-}
-
-// MockCredentialStore is an in-memory credential store for testing.
-type MockCredentialStore struct {
-	accounts map[string]string
-}
-
-// ListAccounts returns stored usernames sorted alphabetically.
-func (m *MockCredentialStore) ListAccounts() ([]string, error) {
-	if m.accounts == nil {
-		return nil, nil
-	}
-	names := make([]string, 0, len(m.accounts))
-	for name := range m.accounts {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names, nil
-}
-
-// GetAccount returns the password for the given username.
-func (m *MockCredentialStore) GetAccount(username string) (string, error) {
-	if m.accounts == nil {
-		return "", ErrNoCredentials
-	}
-	pass, ok := m.accounts[username]
-	if !ok {
-		return "", ErrNoCredentials
-	}
-	return pass, nil
-}
-
-// SetAccount stores the username and password.
-func (m *MockCredentialStore) SetAccount(username, password string) error {
-	if m.accounts == nil {
-		m.accounts = make(map[string]string)
-	}
-	m.accounts[username] = password
-	return nil
-}
-
-// RepairAccounts overwrites the mock store with a single account.
-func (m *MockCredentialStore) RepairAccounts(username, password string) error {
-	m.accounts = map[string]string{username: password}
-	return nil
-}
-
-// RemoveAccount removes the given username from the store.
-func (m *MockCredentialStore) RemoveAccount(username string) error {
-	if m.accounts != nil {
-		delete(m.accounts, username)
-	}
-	return nil
 }

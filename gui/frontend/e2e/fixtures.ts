@@ -21,8 +21,10 @@ export function makeConfig(): AppConfig {
       DefaultTab: "all",
       Scrollback: 5000,
       SidebarWidth: 40,
+      GUISidebarWidth: 260,
       MinimapScale: 0.8,
       MinimapHeight: 12,
+      GUIMinimapHeight: 160,
       CompassScale: 1,
       OutputFontSize: 14,
       // All three CRT effects OFF: the roll overlay animates forever and would

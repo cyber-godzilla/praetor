@@ -8,6 +8,8 @@
   // Compass on-screen size scales with the user's compass scale (bigger scale =
   // bigger). Base 120px at scale 1.0; capped to the panel width by max-width.
   const compassPx = $derived(Math.round(120 * (store.config?.UI?.CompassScale ?? 1)));
+  const sidebarPx = $derived(store.config?.UI?.GUISidebarWidth || 260);
+  const mapPx = $derived(store.config?.UI?.GUIMinimapHeight || 160);
 
   // Clicking a compass segment sends the movement command for that direction.
   function go(dir: string) {
@@ -20,9 +22,9 @@
   }
 </script>
 
-<div class="sidebar">
+<div class="sidebar" style="width:{sidebarPx}px">
   <Frame title="Map" collapsible bind:collapsed={store.collapsed.map}>
-    <div class="mapbox">
+    <div class="mapbox" style="height:{mapPx}px">
       {#if store.minimap}
         <button class="mapbtn" title="Size up the area" onclick={sizeup} tabindex="-1">
           <img src={store.minimap} alt="minimap" />
@@ -68,7 +70,6 @@
 
 <style>
   .sidebar {
-    width: 260px;
     flex-shrink: 0;
     background: var(--bg-panel);
     border-left: 1px solid var(--border);
@@ -85,6 +86,7 @@
     justify-content: center;
     min-height: 56px;
   }
+  .mapbox { min-height: 80px; }
   .mapbtn {
     display: block;
     max-width: 100%;
@@ -96,6 +98,7 @@
   }
   .mapbox img {
     max-width: 100%;
+    max-height: 100%;
     image-rendering: pixelated;
   }
   .compass {

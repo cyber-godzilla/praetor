@@ -186,8 +186,30 @@ func (a *GuiApp) CalcRankBonus(mode, basics, subskill int) RBResult {
 	return res
 }
 
-// CalcTrainCost returns the skill-point cost to train from curRank to desRank
-// in a given slot and difficulty, with the standard modifiers.
-func (a *GuiApp) CalcTrainCost(curRank, desRank, slot, difficulty int, selfTrained, selfTaught, healing bool) int {
-	return calc.TrainSPCost(curRank, desRank, slot, calc.Difficulty(difficulty), selfTrained, selfTaught, healing)
+// TrainingCostRow is one slot of the full training-cost comparison. Basics
+// have their own rank range; every other difficulty uses the subskill range.
+type TrainingCostRow struct {
+	Slot       int `json:"slot"`
+	Basic      int `json:"basic"`
+	Easy       int `json:"easy"`
+	Average    int `json:"average"`
+	Difficult  int `json:"difficult"`
+	Impossible int `json:"impossible"`
+}
+
+// CalcTrainingCosts returns the complete 1–20 slot matrix used by the GUI in
+// one bridge call, so reactive edits cannot leave a partly refreshed table.
+func (a *GuiApp) CalcTrainingCosts(curBasics, curSub, tgtBasics, tgtSub int, selfTrained, selfTaught, healing bool) []TrainingCostRow {
+	rows := make([]TrainingCostRow, 0, 20)
+	for slot := 1; slot <= 20; slot++ {
+		rows = append(rows, TrainingCostRow{
+			Slot:       slot,
+			Basic:      calc.TrainSPCost(curBasics, tgtBasics, slot, calc.DifficultyBasic, selfTrained, selfTaught, healing),
+			Easy:       calc.TrainSPCost(curSub, tgtSub, slot, calc.DifficultyEasy, selfTrained, selfTaught, healing),
+			Average:    calc.TrainSPCost(curSub, tgtSub, slot, calc.DifficultyAverage, selfTrained, selfTaught, healing),
+			Difficult:  calc.TrainSPCost(curSub, tgtSub, slot, calc.DifficultyDifficult, selfTrained, selfTaught, healing),
+			Impossible: calc.TrainSPCost(curSub, tgtSub, slot, calc.DifficultyImpossible, selfTrained, selfTaught, healing),
+		})
+	}
+	return rows
 }

@@ -67,6 +67,9 @@ func (a *GuiApp) StartFileSend(path string) error {
 	if a.PlayActive() {
 		return fmt.Errorf("a performance is running — a /send would interleave with it on the wire; press Alt+X, or wait for the performance to finish")
 	}
+	if a.InputChainActive() {
+		return fmt.Errorf("a typed command chain is still queued — a /send would interleave with it on the wire; stop the chain, press Alt+X, or wait for it to finish")
+	}
 	batches, _, err := readSendFile(path)
 	if err != nil {
 		return err

@@ -152,7 +152,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 
 - A single long-lived drainer goroutine per connection owns all sending (started/stopped with the connection lifecycle). Because it is the only sender, `min_interval` pacing is race-free and enqueue order is preserved across differing per-command delays. It drains on enqueue (a timer's `send()` goes out on an idle link) and drops a command a mode switch retired mid-delay (queue generation check).
 - The queue clears on both connect and disconnect, so commands the engine queues while offline never burst onto the next login.
-- Admission drops are observable (logged at warn, rate-limited; counted via `Dropped()`). A full queue drops a normal command, but a `high_priority` command instead **evicts** the newest normal command so emergency commands (stand/flee) aren't lost. Duplicate commands already queued are dropped.
+- Admission drops are observable in warning logs, rate-limited per reason. A full queue drops a normal command, but a `high_priority` command instead **evicts** the newest normal command so emergency commands (stand/flee) aren't lost. Duplicate commands already queued are dropped.
 - Lifecycle events (connect/disconnect/mode change) are delivered guaranteed (never dropped under a text flood); bulk events (text/SKOOT/status) stay droppable. The engine's mode-change channel coalesces (latest mode wins).
 
 ### Lua API
@@ -176,14 +176,14 @@ set_timeout(fn, ms) / set_interval(fn, ms) / clear_timer(id)
 
 ## Key Bindings (Game View)
 
-These are the **terminal client** bindings. The desktop GUI mirrors the same keys with its own handlers (in `gui/frontend/src`), so document/behaviour changes here should be reflected there too. The "Reserved Alt Keys" note below is a terminal (VT100/readline) constraint and does not apply to the GUI.
+These are the **terminal client** bindings. The desktop GUI mirrors the same keys with its own handlers (in `gui/frontend/src`), except that Alt+S only toggles the GUI sidebar; `topbar` is TUI-only. Document/behaviour changes here should otherwise be reflected there too. The "Reserved Alt Keys" note below is a terminal (VT100/readline) constraint and does not apply to the GUI.
 
 | Key | Action |
 |-----|--------|
 | Tab | Next tab |
 | Shift+Tab | Previous tab |
 | Alt+1..9, Alt+0 | Jump to tab N (0 = 10th) |
-| Alt+S | Toggle sidebar |
+| Alt+S | Cycle sidebar → topbar → off |
 | Alt+M | Quick-cycle modes (persisted to config) |
 
 | Esc | Open menu |
@@ -333,14 +333,16 @@ commands:
   min_interval: 400ms
   max_queue_size: 20
   high_priority: []
-  variables: {}           # sidebar-managed ${name} substitutions for typed input
+  variables: {}           # GUI-managed ${name} substitutions for typed input
 ui:
-  sidebar_open: true
+  display_mode: sidebar   # TUI: sidebar | topbar | off; GUI: sidebar | off
   default_tab: all
   scrollback: 5000
-  sidebar_width: 40
-  minimap_scale: 0.8
-  minimap_height: 12
+  sidebar_width: 40       # TUI columns
+  gui_sidebar_width: 260  # GUI pixels
+  minimap_scale: 1.0
+  minimap_height: 12      # TUI rows
+  gui_minimap_height: 160 # GUI pixels
   quick_cycle_modes:
     - disable
   color_words: false
@@ -377,13 +379,16 @@ onboarding:
 ```
 
 Single-line typed input supports `${name}` substitution from
-`commands.variables` and `;;` command separators. Expansion is non-recursive,
-the line is validated before anything is sent, and splitting occurs before
-substitution so variable values cannot inject commands. `\${` and `\;;` send
-the corresponding syntax literally. Action-set buttons use the same processing
-and read current variables on every invocation. Split commands have a fixed 900
-ms delay between sends. Other UI buttons, navigation, scripts, playback, and
-multiline blocks bypass typed-input processing.
+`commands.variables`, `;;` paced separators, and `&&` separators that wait for
+one of the shared unbusy text fragments before continuing. Expansion is
+non-recursive, the line is validated before anything is sent, and splitting
+occurs before substitution so variable values cannot inject commands. `\${`,
+`\;;`, and `\&&` send the corresponding syntax literally. Action-set buttons
+use the same processing and read current variables on every invocation. `;;`
+commands have a fixed 900 ms delay; each unbusy event advances one pending
+`&&` chain FIFO. Chains are connection-bound and cleared on disconnect. Other
+UI buttons, navigation, scripts, playback, and multiline blocks bypass
+typed-input processing.
 
 On a new GUI installation, the first successful login shows a one-time welcome
 popup linking to the Praetor overview, guide, and scripts wiki pages. Links open
