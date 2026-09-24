@@ -148,8 +148,8 @@ func (h HelpScreen) View() string {
 	lines = append(lines, headerStyle.Render("Input Syntax"))
 	inputEntries := []struct{ key, desc string }{
 		{"${name}", "Insert a saved command variable"},
-		{"command ;; command", "Run next command after 900 ms"},
-		{"command && command", "Run next command after an unbusy response"},
+		{"command ;; command", "Run next command after configured delay"},
+		{"command && command", "Run next command after unbusy response + delay"},
 		{`\${  \;;  \&&`, "Send the syntax literally"},
 	}
 	for _, e := range inputEntries {

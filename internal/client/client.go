@@ -35,11 +35,13 @@ type inputContinuation struct {
 }
 
 // inputChain owns one typed line with commands still waiting behind ;; or &&.
-// Closing cancel wakes a paced wait immediately; membership in inputChains is
-// the authoritative active/queued state exposed to the GUI.
+// Closing cancel wakes a paced or post-unbusy wait immediately; membership in
+// inputChains is the authoritative active/queued state exposed to the GUI.
 type inputChain struct {
-	sess   *session.Session
-	cancel chan struct{}
+	sess           *session.Session
+	semicolonDelay time.Duration
+	unbusyDelay    time.Duration
+	cancel         chan struct{}
 }
 
 // inputUnbusyMessages mirrors praetor-scripts/lib_strings.lua. Keep this as a
@@ -52,6 +54,7 @@ var inputUnbusyMessages = []string{
 	"You grab onto",
 	"You are already wielding",
 	"You successfully train to rank",
+	"You stop walking",
 }
 
 // Client is the top-level orchestrator that wires session, engine, protocol,
@@ -83,11 +86,13 @@ type Client struct {
 	// inputVariables is a hot-swappable snapshot used for user-authored text:
 	// typed input, action sets, and /send files. Script sends, play scripts, and
 	// direct UI controls bypass it.
-	inputMu        sync.RWMutex
-	inputVariables map[string]string
-	inputChainMu   sync.Mutex
-	inputChains    map[*inputChain]struct{}
-	inputWaiters   []*inputContinuation
+	inputMu             sync.RWMutex
+	inputVariables      map[string]string
+	inputChainMu        sync.Mutex
+	inputChains         map[*inputChain]struct{}
+	inputWaiters        []*inputContinuation
+	semicolonDelayNanos atomic.Int64
+	unbusyDelayNanos    atomic.Int64
 
 	// authUser and authPassCookie are set by Login and used by handleSecret.
 	authUser       string
@@ -134,6 +139,8 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 	}
 	c.allowScriptNotifications.Store(cfg.Notifications.Desktop.AllowScriptNotifications)
 	c.notificationSound.Store(cfg.Notifications.Desktop.Sound)
+	c.SetSemicolonDelay(time.Duration(cfg.Commands.SemicolonDelayMS) * time.Millisecond)
+	c.SetUnbusyDelay(time.Duration(cfg.Commands.UnbusyDelayMS) * time.Millisecond)
 	eng.SetNotifyHandler(c.sendNotification)
 	return c, nil
 }
@@ -408,10 +415,41 @@ func (c *Client) sendCommand(sess *session.Session, input string) error {
 	return sendErr
 }
 
-// InputCommandDelay is the fixed delay between commands separated by ;; in one
-// input line. It is intentionally a constant until command-chain pacing
-// becomes a user-facing setting.
-const InputCommandDelay = 900 * time.Millisecond
+// InputCommandDelay is the default delay between commands separated by ;; in
+// one input line. It remains exported for callers that need the default.
+const InputCommandDelay = time.Duration(config.DefaultSemicolonDelayMS) * time.Millisecond
+
+// SetSemicolonDelay applies the delay used by newly submitted ;; chains.
+func (c *Client) SetSemicolonDelay(delay time.Duration) {
+	if delay <= 0 {
+		delay = InputCommandDelay
+	}
+	c.semicolonDelayNanos.Store(int64(delay))
+}
+
+// SemicolonDelay returns the delay used by newly submitted ;; chains.
+func (c *Client) SemicolonDelay() time.Duration {
+	delay := time.Duration(c.semicolonDelayNanos.Load())
+	if delay <= 0 {
+		return InputCommandDelay
+	}
+	return delay
+}
+
+// SetUnbusyDelay applies the post-response delay used by newly submitted &&
+// chains. Zero preserves the former immediate-dispatch behavior.
+func (c *Client) SetUnbusyDelay(delay time.Duration) {
+	if delay < 0 {
+		delay = 0
+	}
+	c.unbusyDelayNanos.Store(int64(delay))
+}
+
+// UnbusyDelay returns the post-response delay used by newly submitted &&
+// chains.
+func (c *Client) UnbusyDelay() time.Duration {
+	return time.Duration(c.unbusyDelayNanos.Load())
+}
 
 // SendInput processes one single-line command submitted by a user. It expands
 // ${name} variables plus ;; (paced) and && (wait-for-unbusy) separators
@@ -441,7 +479,12 @@ func (c *Client) SendInput(input string) error {
 }
 
 func (c *Client) startInputChain(sess *session.Session) *inputChain {
-	chain := &inputChain{sess: sess, cancel: make(chan struct{})}
+	chain := &inputChain{
+		sess:           sess,
+		semicolonDelay: c.SemicolonDelay(),
+		unbusyDelay:    c.UnbusyDelay(),
+		cancel:         make(chan struct{}),
+	}
 	c.inputChainMu.Lock()
 	defer c.inputChainMu.Unlock()
 	if c.session() != sess {
@@ -462,7 +505,7 @@ func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinpu
 	switch commands[0].Wait {
 	case commandinput.WaitDelay:
 		go func() {
-			timer := time.NewTimer(InputCommandDelay)
+			timer := time.NewTimer(chain.semicolonDelay)
 			defer timer.Stop()
 			select {
 			case <-timer.C:
@@ -608,8 +651,25 @@ func (c *Client) advanceInputOnUnbusy(text string) {
 	c.inputChainMu.Unlock()
 
 	if pending != nil {
-		_ = c.dispatchInputCommand(pending.chain, pending.commands)
+		c.scheduleInputAfterUnbusy(pending)
 	}
+}
+
+func (c *Client) scheduleInputAfterUnbusy(pending *inputContinuation) {
+	if pending.chain.unbusyDelay <= 0 {
+		_ = c.dispatchInputCommand(pending.chain, pending.commands)
+		return
+	}
+	go func() {
+		timer := time.NewTimer(pending.chain.unbusyDelay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			_ = c.dispatchInputCommand(pending.chain, pending.commands)
+		case <-pending.chain.cancel:
+			return
+		}
+	}()
 }
 
 func (c *Client) clearInputChains(sess *session.Session) {

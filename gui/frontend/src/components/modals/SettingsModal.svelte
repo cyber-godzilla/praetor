@@ -15,6 +15,8 @@
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
   let keepInputOnSend = $state(seed?.UI?.KeepInputOnSend ?? false);
+  let semicolonDelayMS = $state(seed?.Commands?.SemicolonDelayMS ?? 900);
+  let unbusyDelayMS = $state(seed?.Commands?.UnbusyDelayMS ?? 100);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
   let sessionLogging = $state(seed?.Logging?.Session?.Enabled ?? false);
   let logPath = $state(seed?.Logging?.Session?.Path ?? "");
@@ -35,6 +37,8 @@
       await api.setHideIPs(hideIPs);
       await api.setInputSpellcheck(inputSpellcheck);
       await api.setKeepInputOnSend(keepInputOnSend);
+      await api.setSemicolonDelay(semicolonDelayMS);
+      await api.setUnbusyDelay(unbusyDelayMS);
       await api.setUpdateCheck(updateCheck);
       await api.setSessionLogging(sessionLogging);
       await api.setLogPath(logPath);
@@ -61,6 +65,8 @@
         store.config.Updates = { Check: updateCheck };
         store.config.Logging.Session.Enabled = sessionLogging;
         store.config.Logging.Session.Path = logPath;
+        store.config.Commands.SemicolonDelayMS = semicolonDelayMS;
+        store.config.Commands.UnbusyDelayMS = unbusyDelayMS;
       }
       store.addToast("Settings", "Saved");
     } catch (e) {
@@ -81,6 +87,14 @@
     <label class="t"><span>Check for updates on startup</span><input type="checkbox" bind:checked={updateCheck} /></label>
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
 
+    <div class="field">
+      <span>;; chain delay (ms)</span>
+      <input aria-label="Command chain delay" type="number" min="100" max="10000" step="50" bind:value={semicolonDelayMS} />
+    </div>
+    <div class="field">
+      <span>&amp;&amp; response delay (ms)</span>
+      <input aria-label="Unbusy response delay" type="number" min="0" max="10000" step="25" bind:value={unbusyDelayMS} />
+    </div>
     <div class="field">
       <span>Minimap Scale (Zoom)</span>
       <input aria-label="Minimap Scale (Zoom)" type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />

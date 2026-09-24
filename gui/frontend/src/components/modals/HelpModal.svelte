@@ -45,8 +45,8 @@
       <table>
         <tbody>
           <tr><td class="k">{"${name}"}</td><td>Insert a saved command variable</td></tr>
-          <tr><td class="k">command ;;&nbsp; command</td><td>Run the next command after 900 ms</td></tr>
-          <tr><td class="k">command &amp;&amp; command</td><td>Run the next command after an unbusy response</td></tr>
+          <tr><td class="k">command ;;&nbsp; command</td><td>Run the next command after the configured delay</td></tr>
+          <tr><td class="k">command &amp;&amp; command</td><td>Run the next command after an unbusy response and configured delay</td></tr>
           <tr><td class="k">{"\\${"} &nbsp; {"\\;;"} &nbsp; {"\\&&"}</td><td>Send the syntax literally</td></tr>
           <tr><td class="k">Variable scope</td><td>Typed input, Action Sets, and /send; not Lua or /play</td></tr>
           <tr><td class="k">Chain scope</td><td>Single-line input and Action Sets only</td></tr>

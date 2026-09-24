@@ -332,6 +332,8 @@ commands:
   default_delay: 900ms
   min_interval: 400ms
   max_queue_size: 20
+  semicolon_delay_ms: 900 # delay between ;; commands; GUI range 100-10000
+  unbusy_delay_ms: 100    # delay after && response; GUI range 0-10000
   high_priority: []
   variables: {}           # GUI-managed ${name} substitutions for typed input
 ui:
@@ -385,9 +387,10 @@ non-recursive, the line is validated before anything is sent, and splitting
 occurs before substitution so variable values cannot inject commands. `\${`,
 `\;;`, and `\&&` send the corresponding syntax literally. Action-set buttons
 use the same processing and read current variables on every invocation. `;;`
-commands have a fixed 900 ms delay; each unbusy event advances one pending
-`&&` chain FIFO. Chains are connection-bound and cleared on disconnect. Other
-Variable substitution also applies to multiline input and `/send` files, but
+commands use `commands.semicolon_delay_ms` (900 ms by default); each unbusy event
+advances one pending `&&` chain FIFO after `commands.unbusy_delay_ms` (100 ms by
+default). Chains are connection-bound and cleared on disconnect. Variable
+substitution also applies to multiline input and `/send` files, but
 neither path interprets `;;` or `&&` separators. Other UI buttons, navigation,
 Lua scripts, and `/play` playback bypass typed-input processing entirely.
 

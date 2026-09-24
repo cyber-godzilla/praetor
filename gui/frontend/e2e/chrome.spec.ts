@@ -77,16 +77,20 @@ test("Alt+S toggles and persists sidebar and off", async ({ page, backend }) => 
   await expect.poll(() => backend.args("SetDisplayMode")).toEqual([["off"], ["sidebar"]]);
 });
 
-test("GUI layout settings resize the sidebar and map", async ({ page, backend }) => {
+test("general settings persist chain delays and resize the GUI", async ({ page, backend }) => {
   await page.keyboard.press("Escape");
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Settings", exact: true }).click();
   dialog = page.getByRole("dialog");
+  await dialog.getByRole("spinbutton", { name: "Command chain delay" }).fill("1250");
+  await dialog.getByRole("spinbutton", { name: "Unbusy response delay" }).fill("250");
   await dialog.getByRole("spinbutton", { name: "Minimap Scale (Zoom)" }).fill("1.4");
   await dialog.getByRole("spinbutton", { name: "GUI sidebar width" }).fill("340");
   await dialog.getByRole("spinbutton", { name: "GUI map height" }).fill("220");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
+  await expect.poll(() => backend.args("SetSemicolonDelay")).toEqual([[1250]]);
+  await expect.poll(() => backend.args("SetUnbusyDelay")).toEqual([[250]]);
   await expect.poll(() => backend.args("SetMinimapScale")).toEqual([[1.4]]);
   await expect.poll(() => backend.args("SetGUILayout")).toEqual([[340, 220]]);
   await expect(page.locator(".sidebar")).toHaveCSS("width", "340px");

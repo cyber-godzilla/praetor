@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/session"
 )
 
@@ -36,6 +37,7 @@ func TestInputUnbusyMessagesMatchPraetorScriptsSet(t *testing.T) {
 		"You grab onto the wagon.",
 		"You are already wielding that.",
 		"You successfully train to rank 501.",
+		"You stop walking.",
 	} {
 		if !isInputUnbusy(text) {
 			t.Errorf("isInputUnbusy(%q) = false", text)
@@ -43,6 +45,24 @@ func TestInputUnbusyMessagesMatchPraetorScriptsSet(t *testing.T) {
 	}
 	if isInputUnbusy("You are still busy.") {
 		t.Fatal("unrelated busy text matched the unbusy set")
+	}
+}
+
+func TestNewClientUsesConfiguredChainDelays(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Commands.SemicolonDelayMS = 1250
+	cfg.Commands.UnbusyDelayMS = 275
+	c, err := NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+
+	if got := c.SemicolonDelay(); got != 1250*time.Millisecond {
+		t.Fatalf("SemicolonDelay() = %s, want 1.25s from config", got)
+	}
+	if got := c.UnbusyDelay(); got != 275*time.Millisecond {
+		t.Fatalf("UnbusyDelay() = %s, want 275ms from config", got)
 	}
 }
 
@@ -163,6 +183,77 @@ func TestClient_SendInput_MixesUnbusyAndPacedSeparators(t *testing.T) {
 	receiveCommand(t, received, "climb")
 	receiveNoCommand(t, received, InputCommandDelay-100*time.Millisecond)
 	receiveCommand(t, received, "look")
+}
+
+func TestClient_SendInput_UsesConfiguredSemicolonDelay(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+
+	c.SetSemicolonDelay(150 * time.Millisecond)
+	started := time.Now()
+	if err := c.SendInput("first;;second"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "first")
+	// A setting change affects future submissions, not the timing contract of
+	// a chain that is already running.
+	c.SetSemicolonDelay(700 * time.Millisecond)
+	receiveNoCommand(t, received, 100*time.Millisecond)
+	receiveCommand(t, received, "second")
+
+	if elapsed := time.Since(started); elapsed < 125*time.Millisecond || elapsed > 550*time.Millisecond {
+		t.Fatalf("configured ;; delay took %s, want approximately 150ms", elapsed)
+	}
+	if got := c.SemicolonDelay(); got != 700*time.Millisecond {
+		t.Fatalf("SemicolonDelay() = %s, want 700ms for the next chain", got)
+	}
+}
+
+func TestClient_SendInput_UsesConfiguredUnbusyDelay(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+
+	c.SetUnbusyDelay(150 * time.Millisecond)
+	if err := c.SendInput("first&&second"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "first")
+	// A setting change affects future submissions, not the timing contract of
+	// a chain that is already running.
+	c.SetUnbusyDelay(700 * time.Millisecond)
+	started := time.Now()
+	c.processLine("You are no longer busy.")
+	receiveNoCommand(t, received, 100*time.Millisecond)
+	receiveCommand(t, received, "second")
+
+	if elapsed := time.Since(started); elapsed < 125*time.Millisecond || elapsed > 550*time.Millisecond {
+		t.Fatalf("configured && response delay took %s, want approximately 150ms", elapsed)
+	}
+	if got := c.UnbusyDelay(); got != 700*time.Millisecond {
+		t.Fatalf("UnbusyDelay() = %s, want 700ms for the next chain", got)
+	}
+}
+
+func TestClient_AbortInputChainsCancelsPostUnbusyDelay(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetUnbusyDelay(250 * time.Millisecond)
+
+	if err := c.SendInput("first&&second"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "first")
+	c.processLine("You are no longer busy.")
+	if got := c.AbortInputChains(); got != 1 {
+		t.Fatalf("AbortInputChains() = %d, want 1", got)
+	}
+	receiveNoCommand(t, received, 350*time.Millisecond)
 }
 
 func TestClient_SendInput_UnbusyChainDoesNotCrossReconnect(t *testing.T) {

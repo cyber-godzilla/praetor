@@ -81,15 +81,26 @@ type ServerConfig struct {
 }
 
 type CommandsConfig struct {
-	DefaultDelay Duration `yaml:"default_delay"`
-	MinInterval  Duration `yaml:"min_interval"`
-	MaxQueueSize int      `yaml:"max_queue_size"`
-	HighPriority []string `yaml:"high_priority"`
+	DefaultDelay     Duration `yaml:"default_delay"`
+	MinInterval      Duration `yaml:"min_interval"`
+	MaxQueueSize     int      `yaml:"max_queue_size"`
+	SemicolonDelayMS int      `yaml:"semicolon_delay_ms"`
+	UnbusyDelayMS    int      `yaml:"unbusy_delay_ms"`
+	HighPriority     []string `yaml:"high_priority"`
 	// Variables are substituted in typed command-line input using ${name}.
 	// They are deliberately separate from Lua mode state and never expand
 	// recursively.
 	Variables map[string]string `yaml:"variables"`
 }
+
+const (
+	DefaultSemicolonDelayMS = 900
+	MinSemicolonDelayMS     = 100
+	MaxSemicolonDelayMS     = 10000
+	DefaultUnbusyDelayMS    = 100
+	MinUnbusyDelayMS        = 0
+	MaxUnbusyDelayMS        = 10000
+)
 
 type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
@@ -293,11 +304,13 @@ func Defaults() *Config {
 			LoginURL: "https://login.eternalcitygame.com/login.php",
 		},
 		Commands: CommandsConfig{
-			DefaultDelay: Duration{1000 * time.Millisecond},
-			MinInterval:  Duration{500 * time.Millisecond},
-			MaxQueueSize: 20,
-			HighPriority: []string{},
-			Variables:    map[string]string{},
+			DefaultDelay:     Duration{1000 * time.Millisecond},
+			MinInterval:      Duration{500 * time.Millisecond},
+			MaxQueueSize:     20,
+			SemicolonDelayMS: DefaultSemicolonDelayMS,
+			UnbusyDelayMS:    DefaultUnbusyDelayMS,
+			HighPriority:     []string{},
+			Variables:        map[string]string{},
 		},
 		Scripts: []string{},
 		UI: UIConfig{
@@ -528,6 +541,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Commands.MaxQueueSize < 1 {
 		c.Commands.MaxQueueSize = 20
+	}
+	if c.Commands.SemicolonDelayMS < MinSemicolonDelayMS || c.Commands.SemicolonDelayMS > MaxSemicolonDelayMS {
+		c.Commands.SemicolonDelayMS = DefaultSemicolonDelayMS
+	}
+	if c.Commands.UnbusyDelayMS < MinUnbusyDelayMS || c.Commands.UnbusyDelayMS > MaxUnbusyDelayMS {
+		c.Commands.UnbusyDelayMS = DefaultUnbusyDelayMS
 	}
 	if c.Commands.Variables == nil {
 		c.Commands.Variables = map[string]string{}

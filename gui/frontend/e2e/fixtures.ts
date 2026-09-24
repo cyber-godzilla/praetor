@@ -14,7 +14,7 @@ export const modeSpecs: ModeSpec[] = [
 export function makeConfig(): AppConfig {
   return {
     Server: {},
-    Commands: { HighPriority: [], Variables: {} },
+    Commands: { SemicolonDelayMS: 900, UnbusyDelayMS: 100, HighPriority: [], Variables: {} },
     Scripts: ["/tmp/e2e-scripts"],
     UI: {
       DisplayMode: "sidebar",

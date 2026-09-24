@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
@@ -69,6 +70,80 @@ func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	}
 	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
 		t.Fatalf("invalid update changed live variables to %q", got)
+	}
+}
+
+func TestSetSemicolonDelayValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	if err := a.SetSemicolonDelay(1250); err != nil {
+		t.Fatalf("SetSemicolonDelay: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.SemicolonDelayMS; got != 1250 {
+		t.Fatalf("persisted SemicolonDelayMS = %d, want 1250", got)
+	}
+	if got := c.SemicolonDelay(); got != 1250*time.Millisecond {
+		t.Fatalf("live SemicolonDelay() = %s, want 1.25s", got)
+	}
+
+	for _, invalid := range []int{config.MinSemicolonDelayMS - 1, config.MaxSemicolonDelayMS + 1} {
+		if err := a.SetSemicolonDelay(invalid); err == nil {
+			t.Errorf("SetSemicolonDelay(%d) accepted an out-of-range value", invalid)
+		}
+	}
+	if got := c.SemicolonDelay(); got != 1250*time.Millisecond {
+		t.Fatalf("invalid update changed live delay to %s", got)
+	}
+}
+
+func TestSetUnbusyDelayValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	if err := a.SetUnbusyDelay(250); err != nil {
+		t.Fatalf("SetUnbusyDelay: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.UnbusyDelayMS; got != 250 {
+		t.Fatalf("persisted UnbusyDelayMS = %d, want 250", got)
+	}
+	if got := c.UnbusyDelay(); got != 250*time.Millisecond {
+		t.Fatalf("live UnbusyDelay() = %s, want 250ms", got)
+	}
+
+	for _, invalid := range []int{config.MinUnbusyDelayMS - 1, config.MaxUnbusyDelayMS + 1} {
+		if err := a.SetUnbusyDelay(invalid); err == nil {
+			t.Errorf("SetUnbusyDelay(%d) accepted an out-of-range value", invalid)
+		}
+	}
+	if got := c.UnbusyDelay(); got != 250*time.Millisecond {
+		t.Fatalf("invalid update changed live delay to %s", got)
+	}
+	if err := a.SetUnbusyDelay(0); err != nil {
+		t.Fatalf("SetUnbusyDelay(0): %v", err)
+	}
+	if got := c.UnbusyDelay(); got != 0 {
+		t.Fatalf("UnbusyDelay() = %s after zero setting", got)
 	}
 }
 

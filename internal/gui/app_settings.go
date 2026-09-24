@@ -2,6 +2,7 @@ package gui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
@@ -61,6 +62,30 @@ func (a *GuiApp) SetInputSpellcheck(v bool) error {
 // instead of clearing it. Applied live in the frontend's submit path.
 func (a *GuiApp) SetKeepInputOnSend(v bool) error {
 	return a.withConfig(func() { a.cfg().UI.KeepInputOnSend = v })
+}
+
+// SetSemicolonDelay persists and applies the delay for newly submitted ;;
+// command chains.
+func (a *GuiApp) SetSemicolonDelay(ms int) error {
+	if ms < config.MinSemicolonDelayMS || ms > config.MaxSemicolonDelayMS {
+		return fmt.Errorf(";; delay must be between %d and %d milliseconds", config.MinSemicolonDelayMS, config.MaxSemicolonDelayMS)
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.SemicolonDelayMS = ms
+		a.client().SetSemicolonDelay(time.Duration(ms) * time.Millisecond)
+	})
+}
+
+// SetUnbusyDelay persists and applies the delay after an &&-advancing response
+// for newly submitted command chains.
+func (a *GuiApp) SetUnbusyDelay(ms int) error {
+	if ms < config.MinUnbusyDelayMS || ms > config.MaxUnbusyDelayMS {
+		return fmt.Errorf("&& response delay must be between %d and %d milliseconds", config.MinUnbusyDelayMS, config.MaxUnbusyDelayMS)
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.UnbusyDelayMS = ms
+		a.client().SetUnbusyDelay(time.Duration(ms) * time.Millisecond)
+	})
 }
 
 // SetUpdateCheck toggles the startup check for newer releases.

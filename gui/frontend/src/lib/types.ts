@@ -208,6 +208,8 @@ export interface UIConfig {
 export interface AppConfig {
   Server: Record<string, unknown>;
   Commands: {
+    SemicolonDelayMS: number;
+    UnbusyDelayMS: number;
     HighPriority: string[] | null;
     Variables: Record<string, string> | null;
     [k: string]: unknown;

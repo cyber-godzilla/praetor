@@ -602,8 +602,58 @@ server:
 	if cfg.Commands.DefaultDelay.String() != "1s" {
 		t.Errorf("default DefaultDelay = %v, want 1s", cfg.Commands.DefaultDelay)
 	}
+	if cfg.Commands.SemicolonDelayMS != DefaultSemicolonDelayMS {
+		t.Errorf("default SemicolonDelayMS = %d, want %d", cfg.Commands.SemicolonDelayMS, DefaultSemicolonDelayMS)
+	}
+	if cfg.Commands.UnbusyDelayMS != DefaultUnbusyDelayMS {
+		t.Errorf("default UnbusyDelayMS = %d, want %d", cfg.Commands.UnbusyDelayMS, DefaultUnbusyDelayMS)
+	}
 	if cfg.UI.Scrollback != 5000 {
 		t.Errorf("default Scrollback = %d, want 5000", cfg.UI.Scrollback)
+	}
+}
+
+func TestValidateSemicolonDelay(t *testing.T) {
+	for _, invalid := range []int{0, MinSemicolonDelayMS - 1, MaxSemicolonDelayMS + 1} {
+		cfg := Defaults()
+		cfg.Commands.SemicolonDelayMS = invalid
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate(%d): %v", invalid, err)
+		}
+		if got := cfg.Commands.SemicolonDelayMS; got != DefaultSemicolonDelayMS {
+			t.Errorf("Validate(%d) produced %d, want default %d", invalid, got, DefaultSemicolonDelayMS)
+		}
+	}
+
+	cfg := Defaults()
+	cfg.Commands.SemicolonDelayMS = 1250
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate(1250): %v", err)
+	}
+	if got := cfg.Commands.SemicolonDelayMS; got != 1250 {
+		t.Errorf("Validate(1250) produced %d", got)
+	}
+}
+
+func TestValidateUnbusyDelay(t *testing.T) {
+	for _, invalid := range []int{MinUnbusyDelayMS - 1, MaxUnbusyDelayMS + 1} {
+		cfg := Defaults()
+		cfg.Commands.UnbusyDelayMS = invalid
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate(%d): %v", invalid, err)
+		}
+		if got := cfg.Commands.UnbusyDelayMS; got != DefaultUnbusyDelayMS {
+			t.Errorf("Validate(%d) produced %d, want default %d", invalid, got, DefaultUnbusyDelayMS)
+		}
+	}
+
+	cfg := Defaults()
+	cfg.Commands.UnbusyDelayMS = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate(0): %v", err)
+	}
+	if got := cfg.Commands.UnbusyDelayMS; got != 0 {
+		t.Errorf("Validate(0) produced %d", got)
 	}
 }
 

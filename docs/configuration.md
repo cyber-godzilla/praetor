@@ -34,6 +34,8 @@ commands:
   default_delay: 900ms            # Delay between queued commands
   min_interval: 400ms             # Minimum time between any two sends
   max_queue_size: 20              # Maximum commands in queue
+  semicolon_delay_ms: 900         # Delay between ;; commands (100-10000)
+  unbusy_delay_ms: 100            # Delay after && unbusy response (0-10000)
   high_priority: []               # Commands that jump to front of queue
   variables:                      # Typed-input substitutions
     target: scarred bandit
@@ -50,22 +52,26 @@ any part of it. Use `\${` to send a literal `${`.
 
 Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
 roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
-for an unbusy response before sending `climb wall`, then waits the normal 900
-ms before sending `look`. Each unbusy response advances one pending chain in
-submission order. Recognized responses mirror `praetor-scripts`: no longer
-busy, no longer stunned, wield/grab/already-wielding confirmations, and
-successful training.
+for an unbusy response plus the configured 100 ms default before sending
+`climb wall`, then waits the configured `;;` delay (900 ms by default) before
+sending `look`. Change either delay under Esc → Display & Behavior → Settings.
+Each unbusy response advances one pending chain in submission order.
+Recognized responses mirror `praetor-scripts`: no longer busy, no longer
+stunned, wield/grab/already-wielding confirmations, successful training, and
+stopping walking.
 
 A single `;` or `&` remains ordinary text. `\;;` and `\&&` send literal
 separators. Praetor splits the line before substituting variables, so a
 variable value containing either separator cannot create extra commands. These
 features apply to single-line command-input submissions and Action-set buttons.
 Variables are read afresh every time either is invoked, so edits take effect
-immediately. Other sidebar buttons, numpad movement, scripts, playback, and
-multiline blocks are sent unchanged. A single line is limited to 100 commands
-across both separator types. Pending chains are discarded on disconnect. In the
-GUI, an active chain replaces the Play control with a Stop button that discards
-every command still waiting behind either separator.
+immediately. Variables also apply to multiline input and `/send` files, but
+those paths do not interpret command-chain separators. Other sidebar buttons,
+numpad movement, Lua scripts, and `/play` playback bypass typed-input
+processing. A single line is limited to 100 commands across both separator
+types. Pending chains are discarded on disconnect. In the GUI, an active chain
+replaces the Play control with a Stop button that discards every command still
+waiting behind either separator.
 
 ## UI
 
