@@ -392,6 +392,10 @@ func (c *Client) SendCommand(input string) {
 func (c *Client) sendCommand(sess *session.Session, input string) error {
 	if strings.HasPrefix(input, "/") {
 		log.Printf("[SEND:CMD] %s", input)
+		if err := c.validateLocalCommand(input); err != nil {
+			log.Printf("[CLIENT] %v", err)
+			return err
+		}
 		c.handleLocalCommand(input)
 		return nil
 	}
@@ -466,6 +470,14 @@ func (c *Client) SendInput(input string) error {
 	if len(commands) == 0 {
 		return nil
 	}
+	// Validate every local command before dispatching the first command. This
+	// keeps Action-set chains atomic: a later invalid /mode cannot fail only
+	// after earlier game commands have already been sent.
+	for _, command := range commands {
+		if err := c.validateLocalCommand(command.Text); err != nil {
+			return err
+		}
+	}
 
 	sess := c.session()
 	if len(commands) == 1 {
@@ -476,6 +488,30 @@ func (c *Client) SendInput(input string) error {
 		return nil
 	}
 	return c.dispatchInputCommand(chain, commands)
+}
+
+// validateLocalCommand checks local commands whose execution can invalidate
+// client state. Other slash commands retain their existing command-specific
+// handling and diagnostics.
+func (c *Client) validateLocalCommand(input string) error {
+	if !strings.HasPrefix(input, "/") {
+		return nil
+	}
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return nil
+	}
+	switch strings.ToLower(parts[0]) {
+	case "/mode", "/sm":
+		if len(parts) < 2 {
+			return fmt.Errorf("/mode requires a mode name")
+		}
+		mode := parts[1]
+		if !strings.EqualFold(mode, "disable") && !c.Engine.HasMode(mode) {
+			return fmt.Errorf("unknown mode %q", mode)
+		}
+	}
+	return nil
 }
 
 func (c *Client) startInputChain(sess *session.Session) *inputChain {
@@ -1051,6 +1087,9 @@ func (c *Client) handleLocalCommand(input string) {
 			return
 		}
 		mode := parts[1]
+		if strings.EqualFold(mode, "disable") {
+			mode = "disable"
+		}
 		var args []string
 		if len(parts) > 2 {
 			args = parts[2:]

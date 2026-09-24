@@ -3,6 +3,8 @@ package gui
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +82,21 @@ func newSendRoutingApp(t *testing.T) (*GuiApp, <-chan string) {
 	srv, wsURL, recv := newSendRoutingServer(t)
 	t.Cleanup(srv.Close)
 
-	c, err := client.NewClient(config.Defaults(), nil, t.TempDir(), nil)
+	modeDir := t.TempDir()
+	modePath := filepath.Join(modeDir, "aggro.lua")
+	modeBody := `
+local M = {}
+M.on_start = function(args)
+    if args[1] then send("arg " .. args[1]) end
+end
+M.reactions = {}
+return M
+`
+	if err := os.WriteFile(modePath, []byte(modeBody), 0o644); err != nil {
+		t.Fatalf("write test mode: %v", err)
+	}
+
+	c, err := client.NewClient(config.Defaults(), []string{modeDir}, t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -255,6 +271,53 @@ func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
 		} else {
 			t.Logf("observed ;; command gap %d: %s", i, gap)
 		}
+	}
+}
+
+func TestSendInput_ActionModeCommandValidatesAndPassesExpandedArgs(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{
+		"mode":   "AGGRO",
+		"target": "scarred bandit",
+	})
+
+	if err := a.SendInput("/mode ${mode} ${target}"); err != nil {
+		t.Fatalf("SendInput(valid /mode): %v", err)
+	}
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
+		t.Fatalf("CurrentMode() = %q, want canonical %q", got, "aggro")
+	}
+	queued, _, ok := a.client().Engine.Queue().DequeueGen()
+	if !ok || queued.Command != "arg scarred" {
+		// Slash-command args follow shell-style whitespace splitting, so the mode
+		// receives "scarred" and "bandit" as separate arguments.
+		t.Fatalf("queued mode output = %+v, %v; want first arg %q", queued, ok, "arg scarred")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received local Action-set command %q", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if err := a.SendInput("/mode missing target"); err == nil || !strings.Contains(err.Error(), `unknown mode "missing"`) {
+		t.Fatalf("SendInput(unknown /mode) error = %v, want unknown-mode error", err)
+	}
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
+		t.Fatalf("invalid Action-set mode changed CurrentMode() to %q", got)
+	}
+}
+
+func TestSendInput_ActionChainValidatesModeBeforeSendingAnything(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("look;;/mode missing")
+	if err == nil || !strings.Contains(err.Error(), `unknown mode "missing"`) {
+		t.Fatalf("SendInput error = %v, want unknown-mode error", err)
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before the later /mode failed validation", got)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
 
