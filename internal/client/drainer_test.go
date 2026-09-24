@@ -37,6 +37,31 @@ func TestClient_Drainer_SendsOnIdleConnection(t *testing.T) {
 	c.Disconnect()
 }
 
+func TestClient_Drainer_DoesNotExpandInputVariables(t *testing.T) {
+	srv, wsURL, recv := newRecordingServer(t)
+	defer srv.Close()
+
+	c := newDiscTestClient(t)
+	c.SetInputVariables(map[string]string{"target": "scarred bandit"})
+	connectTestSession(t, c, wsURL)
+	go c.Run()
+	waitForConnected(t, c)
+
+	// Lua send() feeds this same engine queue. Input variables belong only to
+	// user-authored input and /send files, so queued script text stays literal.
+	c.Engine.Queue().Enqueue("say ${target}", 1)
+
+	select {
+	case cmd := <-recv:
+		if cmd != "say ${target}" {
+			t.Fatalf("got %q, want script text unchanged", cmd)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("queued script command was never drained")
+	}
+	c.Disconnect()
+}
+
 func TestClient_Drainer_PreservesOrderAcrossDelays(t *testing.T) {
 	srv, wsURL, recv := newRecordingServer(t)
 	defer srv.Close()

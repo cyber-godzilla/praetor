@@ -81,7 +81,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: "/maps", args: "[name]", desc: "Open a map bookmark, or list them" },
   { name: "/kudos", args: "[name] [message]", desc: "Kudos menu, add a favourite, or queue one" },
   { name: "/notes", args: "[add|open|delete|list] [title]", desc: "Notepad" },
-  { name: "/send", desc: "Pick a text file and send it to the game" },
+  { name: "/send", desc: "Expand saved variables in a text file and send it" },
   { name: "/play", desc: "Pick a script and perform it" },
   { name: "/pause", desc: "Hold the running performance" },
   { name: "/resume", desc: "Continue a held performance" },

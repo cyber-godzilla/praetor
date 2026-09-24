@@ -387,8 +387,9 @@ occurs before substitution so variable values cannot inject commands. `\${`,
 use the same processing and read current variables on every invocation. `;;`
 commands have a fixed 900 ms delay; each unbusy event advances one pending
 `&&` chain FIFO. Chains are connection-bound and cleared on disconnect. Other
-UI buttons, navigation, scripts, playback, and multiline blocks bypass
-typed-input processing.
+Variable substitution also applies to multiline input and `/send` files, but
+neither path interprets `;;` or `&&` separators. Other UI buttons, navigation,
+Lua scripts, and `/play` playback bypass typed-input processing entirely.
 
 On a new GUI installation, the first successful login shows a one-time welcome
 popup linking to the Praetor overview, guide, and scripts wiki pages. Links open

@@ -41,6 +41,17 @@ func TestExpand(t *testing.T) {
 	}
 }
 
+func TestExpandVariablesPreservesSeparatorsAndNewlines(t *testing.T) {
+	got, err := ExpandVariables("say ${target};;look\n${target}&&wait", map[string]string{"target": "scarred bandit"})
+	if err != nil {
+		t.Fatalf("ExpandVariables: %v", err)
+	}
+	want := "say scarred bandit;;look\nscarred bandit&&wait"
+	if got != want {
+		t.Fatalf("expanded text = %q, want %q", got, want)
+	}
+}
+
 func TestExpandRejectsMoreThanMaximumCommands(t *testing.T) {
 	for _, separator := range []string{";;", "&&"} {
 		commands, err := Expand(strings.Repeat("look"+separator, MaxCommands)+"look", nil)

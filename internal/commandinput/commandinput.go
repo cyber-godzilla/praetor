@@ -1,5 +1,5 @@
 // Package commandinput expands the small, intentionally non-recursive syntax
-// supported by Praetor's typed command line.
+// supported by Praetor's user-submitted commands and text blocks.
 package commandinput
 
 import (
@@ -43,7 +43,7 @@ func Expand(input string, variables map[string]string) ([]Command, error) {
 	parts := split(input)
 	commands := make([]Command, 0, len(parts))
 	for _, part := range parts {
-		text, err := substitute(part.text, variables)
+		text, err := ExpandVariables(part.text, variables)
 		if err != nil {
 			return nil, err
 		}
@@ -99,9 +99,12 @@ func split(input string) []part {
 	return parts
 }
 
-// substitute replaces ${name} once. Variable values are not scanned again,
-// preventing recursive references and cycles. \${ emits a literal ${.
-func substitute(input string, variables map[string]string) (string, error) {
+// ExpandVariables replaces ${name} references once without interpreting
+// command separators. Variable values are not scanned again, preventing
+// recursive references and cycles. \${ emits a literal ${. This separate
+// operation is used for multi-line input and /send files, where variables are
+// supported but ;; and && must remain ordinary text.
+func ExpandVariables(input string, variables map[string]string) (string, error) {
 	var out strings.Builder
 	out.Grow(len(input))
 	for i := 0; i < len(input); i++ {

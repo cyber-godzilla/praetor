@@ -295,20 +295,72 @@ func TestSendInput_ValidationIsAtomic(t *testing.T) {
 	}
 }
 
-func TestSendInput_MultilineBlockBypassesExpansion(t *testing.T) {
+func TestSendInput_MultilineBlockExpandsVariablesWithoutChains(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
 
-	input := "say ${target};;look\nsecond line"
+	input := "say ${target};;look\nsecond line ${target}&&wait"
+	want := "say scarred bandit;;look\nsecond line scarred bandit&&wait"
 	if err := a.SendInput(input); err != nil {
 		t.Fatalf("SendInput: %v", err)
 	}
 	select {
 	case got := <-recv:
-		if got != input {
-			t.Fatalf("server received %q, want unchanged block %q", got, input)
+		if got != want {
+			t.Fatalf("server received %q, want expanded block %q", got, want)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("server never received multiline block")
+	}
+}
+
+func TestSendInput_MultilineVariableValidationIsAtomic(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("first line\nkill ${missing}")
+	if err == nil {
+		t.Fatal("SendInput returned nil, want unknown-variable error")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before multiline validation failed", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestStartFileSend_ExpandsVariablesWithoutChains(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	path := writeScript(t, "say ${target};;look\nsecond line ${target}&&wait\n")
+	if err := a.StartFileSend(path); err != nil {
+		t.Fatalf("StartFileSend: %v", err)
+	}
+	select {
+	case got := <-recv:
+		want := "say scarred bandit;;look\nsecond line scarred bandit&&wait"
+		if got != want {
+			t.Fatalf("server received %q, want expanded file block %q", got, want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received /send block")
+	}
+}
+
+func TestStartFileSend_RejectsUnknownVariableBeforeSending(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	path := writeScript(t, "first line\nkill ${missing}\n")
+	err := a.StartFileSend(path)
+	if err == nil {
+		t.Fatal("StartFileSend returned nil, want unknown-variable error")
+	}
+	if a.sendActive() {
+		t.Fatal("send became active after variable validation failed")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before /send variable validation failed", got)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

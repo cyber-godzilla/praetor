@@ -381,9 +381,10 @@ func (a *GuiApp) Send(input string) {
 	}
 }
 
-// SendInput handles one submission from the command input. A block containing
-// newlines (paste or modifier+Enter) goes out whole via SendBlock; a single line
-// receives ${name} substitution plus ;; and && chaining before dispatch.
+// SendInput handles one submission from the command input. Both single-line and
+// multi-line input receive ${name} substitution. A block containing newlines
+// goes out whole via SendBlock without interpreting separators; a single line
+// additionally receives ;; and && chaining before dispatch.
 func (a *GuiApp) SendInput(input string) error {
 	return a.send(input, true)
 }
@@ -426,6 +427,13 @@ func (a *GuiApp) send(input string, processInput bool) error {
 		// go out as an extra blank line here. /send's own batches bypass Send
 		// entirely (they call SendBlock directly from sendBatch), so that path
 		// keeps its trailing blank intact.
+		if processInput {
+			expanded, err := a.client().ExpandInputVariables(trimmed)
+			if err != nil {
+				return err
+			}
+			trimmed = expanded
+		}
 		if err := a.client().SendBlock(trimmed); err != nil {
 			return err
 		}

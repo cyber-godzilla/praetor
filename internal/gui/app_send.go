@@ -59,8 +59,9 @@ func readSendFile(path string) (batches []string, lines int, err error) {
 	return batches, lines, nil
 }
 
-// StartFileSend reads path and begins sending its batches. Only one send runs at
-// a time: starting a second aborts the first. Refused outright while a /play
+// StartFileSend reads path, expands the current input variables without
+// interpreting command chains, and begins sending its batches. Only one send
+// runs at a time: starting a second aborts the first. Refused while a /play
 // performance is active — see sendActive/PlayActive below for why the two
 // drivers must never run concurrently.
 func (a *GuiApp) StartFileSend(path string) error {
@@ -70,10 +71,15 @@ func (a *GuiApp) StartFileSend(path string) error {
 	if a.InputChainActive() {
 		return fmt.Errorf("a typed command chain is still queued — a /send would interleave with it on the wire; stop the chain, press Alt+X, or wait for it to finish")
 	}
-	batches, _, err := readSendFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
+	expanded, err := a.client().ExpandInputVariables(string(data))
+	if err != nil {
+		return err
+	}
+	batches := client.SplitSendBatches(expanded)
 	if len(batches) == 0 {
 		return fmt.Errorf("%s is empty", filepath.Base(path))
 	}

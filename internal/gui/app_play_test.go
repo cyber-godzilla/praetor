@@ -945,3 +945,22 @@ func TestNote_HoldsABeat(t *testing.T) {
 		t.Fatal("%note completed without holding a beat")
 	}
 }
+
+func TestStartPlay_DoesNotExpandInputVariables(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	path := writeScript(t, "say ${target}\n")
+	if err := a.StartPlay(path); err != nil {
+		t.Fatalf("StartPlay: %v", err)
+	}
+
+	select {
+	case got := <-recv:
+		if got != "say ${target}" {
+			t.Fatalf("server received %q, want play-script text unchanged", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received play-script text")
+	}
+}

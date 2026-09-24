@@ -80,8 +80,9 @@ type Client struct {
 	// It is hot-swappable via SetIgnoreOOC / SetIgnoreThink.
 	ignore *IgnoreFilter
 
-	// inputVariables is a hot-swappable snapshot used only for text submitted
-	// through SendInput. Script sends and other UI command sources bypass it.
+	// inputVariables is a hot-swappable snapshot used for user-authored text:
+	// typed input, action sets, and /send files. Script sends, play scripts, and
+	// direct UI controls bypass it.
 	inputMu        sync.RWMutex
 	inputVariables map[string]string
 	inputChainMu   sync.Mutex
@@ -182,6 +183,19 @@ func (c *Client) SetInputVariables(variables map[string]string) {
 	c.inputMu.Lock()
 	c.inputVariables = cloneVariables(variables)
 	c.inputMu.Unlock()
+}
+
+func (c *Client) inputVariableSnapshot() map[string]string {
+	c.inputMu.RLock()
+	defer c.inputMu.RUnlock()
+	return cloneVariables(c.inputVariables)
+}
+
+// ExpandInputVariables substitutes the current ${name} values without
+// interpreting command separators. Multi-line input and /send use this path;
+// Lua and play-script output deliberately do not.
+func (c *Client) ExpandInputVariables(input string) (string, error) {
+	return commandinput.ExpandVariables(input, c.inputVariableSnapshot())
 }
 
 // SetScriptNotificationPreferences applies script-notification settings live.
@@ -406,10 +420,7 @@ const InputCommandDelay = 900 * time.Millisecond
 // action sets. Generated commands skip further input expansion, so variables
 // cannot recurse and an expanded value cannot inject a separator.
 func (c *Client) SendInput(input string) error {
-	c.inputMu.RLock()
-	variables := cloneVariables(c.inputVariables)
-	c.inputMu.RUnlock()
-
+	variables := c.inputVariableSnapshot()
 	commands, err := commandinput.Expand(input, variables)
 	if err != nil {
 		return err

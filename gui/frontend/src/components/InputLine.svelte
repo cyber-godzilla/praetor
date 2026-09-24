@@ -371,10 +371,10 @@
       return;
     }
 
-    // Everything else routes through the typed-input processor. It expands
-    // ${name} variables plus ;; paced and && unbusy-aware chains apply only to
-    // command-line submissions; UI buttons, numpad movement, scripts, and
-    // file/playback sends bypass them.
+    // Everything else routes through the typed-input processor. ${name}
+    // variables apply to single- and multi-line input, action buttons, and
+    // /send files. ;; paced and && unbusy-aware chains apply only to
+    // single-line input and action buttons. Lua and /play bypass both.
     try {
       await api.sendInput(line);
     } catch (e) {
