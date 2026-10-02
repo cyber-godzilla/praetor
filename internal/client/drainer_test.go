@@ -47,13 +47,14 @@ func TestClient_Drainer_DoesNotExpandInputVariables(t *testing.T) {
 	go c.Run()
 	waitForConnected(t, c)
 
-	// Lua send() feeds this same engine queue. Input variables belong only to
-	// user-authored input and /send files, so queued script text stays literal.
-	c.Engine.Queue().Enqueue("say ${target}", 1)
+	// Lua send() feeds this same engine queue. PraetorScript belongs only to
+	// user-authored input and Action Sets, so queued script text stays literal.
+	want := `say ${target};;one&&two$(notify "no")`
+	c.Engine.Queue().Enqueue(want, 1)
 
 	select {
 	case cmd := <-recv:
-		if cmd != "say ${target}" {
+		if cmd != want {
 			t.Fatalf("got %q, want script text unchanged", cmd)
 		}
 	case <-time.After(3 * time.Second):

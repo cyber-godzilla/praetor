@@ -210,7 +210,7 @@ Praetor can send help queries directly to the game server.
    response appears in your output.
 
 Use **Open TEC Wiki** in the GUI, or press **W** in the TUI, to open the
-[TEC Wiki](https://eternal-city.wikidot.com) in your browser.
+[TEC Wiki](https://tec-wiki.com) in your browser.
 
 ---
 

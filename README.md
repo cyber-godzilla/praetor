@@ -171,9 +171,9 @@ make clean    # Remove built binaries
 Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. After logging in, you're prompted whether to store credentials in your system keyring.
 
 On a new installation, the first successful GUI login also shows a one-time
-welcome popup with links to the [Praetor overview](https://eternal-city.wikidot.com/praetor),
-[Praetor guide](https://eternal-city.wikidot.com/praetor-guide), and
-[Praetor scripts](https://eternal-city.wikidot.com/praetor-scripts) wiki pages.
+welcome popup with links to the [Praetor overview](https://tec-wiki.com/praetor),
+[Praetor guide](https://tec-wiki.com/praetor-guide), and
+[Praetor scripts](https://tec-wiki.com/praetor-scripts) wiki pages.
 Nothing opens automatically; choose a link in the popup to open it.
 
 ### Key Bindings

@@ -144,13 +144,18 @@ func (h HelpScreen) View() string {
 	}
 	lines = append(lines, rule)
 
-	// Typed-input syntax shared by both clients.
-	lines = append(lines, headerStyle.Render("Input Syntax"))
+	// PraetorScript typed-input syntax shared by both clients.
+	lines = append(lines, headerStyle.Render("PraetorScript Input Syntax"))
 	inputEntries := []struct{ key, desc string }{
 		{"${name}", "Insert a saved command variable"},
+		{"${name:fallback}", "Use fallback when variable is empty or missing"},
 		{"command ;; command", "Run next command after configured delay"},
 		{"command && command", "Run next command after unbusy response + delay"},
-		{`\${  \;;  \&&`, "Send the syntax literally"},
+		{"$(wait seconds)", "Pause this chain"},
+		{`$(wait-for "text" timeout 30)`, "Wait for text; optional cancel-on \"text\""},
+		{`$(notify "title" "message")`, "Notify; omit title to use Praetor"},
+		{`$(repeat "cmd" until "success" max 10)`, "Retry on unbusy; optional cancel-on \"text\""},
+		{`\${  \$(  \;;  \&&`, "Send the syntax literally"},
 	}
 	for _, e := range inputEntries {
 		lines = append(lines, "  "+keyStyle.Render(padRight(e.key, 22))+descStyle.Render(e.desc))

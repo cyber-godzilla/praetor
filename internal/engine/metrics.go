@@ -2,6 +2,7 @@ package engine
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -46,10 +47,14 @@ const maxMetricsHistory = 50
 
 // Metrics tracks mode-declared metrics with session history.
 type Metrics struct {
-	mu      sync.Mutex
-	current *MetricSession
-	history []MetricSession
+	mu       sync.Mutex
+	current  *MetricSession
+	history  []MetricSession
+	revision atomic.Uint64
 }
+
+// Revision changes whenever the GUI-facing metrics snapshot can change.
+func (m *Metrics) Revision() uint64 { return m.revision.Load() }
 
 // appendHistory adds a completed session, evicting the oldest when the cap is
 // reached. It compacts in place so the backing array stays bounded at the cap.
@@ -83,6 +88,7 @@ func (m *Metrics) StartSession(mode string) {
 		Mode:      mode,
 		StartTime: time.Now(),
 	}
+	m.revision.Add(1)
 }
 
 // EndSession ends the current session and adds it to history.
@@ -97,6 +103,7 @@ func (m *Metrics) EndSession() {
 	m.current.EndTime = time.Now()
 	m.appendHistory(*m.current)
 	m.current = nil
+	m.revision.Add(1)
 }
 
 // Reset clears the current session and all accumulated history, returning the
@@ -107,6 +114,7 @@ func (m *Metrics) Reset() {
 	defer m.mu.Unlock()
 	m.current = nil
 	m.history = nil
+	m.revision.Add(1)
 }
 
 // Track declares a metric for the current session. If no session is
@@ -125,6 +133,7 @@ func (m *Metrics) Track(key, label string) {
 	idx := m.current.findEntry(key)
 	if idx >= 0 {
 		m.current.Entries[idx].Label = label
+		m.revision.Add(1)
 		return
 	}
 
@@ -133,6 +142,7 @@ func (m *Metrics) Track(key, label string) {
 		Label: label,
 		Value: 0,
 	})
+	m.revision.Add(1)
 }
 
 // Inc increments a metric by 1.
@@ -146,6 +156,7 @@ func (m *Metrics) Inc(key string) {
 	idx := m.current.findEntry(key)
 	if idx >= 0 {
 		m.current.Entries[idx].Value++
+		m.revision.Add(1)
 	}
 }
 
@@ -160,6 +171,7 @@ func (m *Metrics) Dec(key string) {
 	idx := m.current.findEntry(key)
 	if idx >= 0 {
 		m.current.Entries[idx].Value--
+		m.revision.Add(1)
 	}
 }
 
@@ -174,6 +186,7 @@ func (m *Metrics) Set(key string, value int) {
 	idx := m.current.findEntry(key)
 	if idx >= 0 {
 		m.current.Entries[idx].Value = value
+		m.revision.Add(1)
 	}
 }
 

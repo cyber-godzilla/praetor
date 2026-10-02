@@ -1,6 +1,7 @@
 package wiki
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -55,8 +56,24 @@ func TestKeysCount(t *testing.T) {
 
 func TestURL(t *testing.T) {
 	got := URL("stats")
-	want := "http://eternal-city.wikidot.com/stats"
+	want := "https://tec-wiki.com/stats"
 	if got != want {
 		t.Errorf("URL = %q, want %q", got, want)
+	}
+}
+
+func TestEveryCuratedBookmarkUsesNewWikiHost(t *testing.T) {
+	sections := append(append([]Section(nil), Sections()...), MapSections()...)
+	for _, section := range sections {
+		for _, bookmark := range section.Bookmarks {
+			u, err := url.Parse(URL(bookmark.Slug))
+			if err != nil {
+				t.Errorf("%s/%s: invalid URL: %v", section.Name, bookmark.Key, err)
+				continue
+			}
+			if u.Scheme != "https" || u.Host != "tec-wiki.com" {
+				t.Errorf("%s/%s: URL = %q, want https://tec-wiki.com/<slug>", section.Name, bookmark.Key, u.String())
+			}
+		}
 	}
 }

@@ -58,6 +58,7 @@ type PlayPreview struct {
 type playSession struct {
 	steps  []client.PlayStep
 	cancel chan struct{} // closed by /stop and Alt+X
+	done   chan struct{} // closed only after the driver has fully returned
 	pause  chan struct{} // signalled by /pause
 	resume chan struct{} // signalled by /resume
 	next   chan struct{} // signalled by /next
@@ -141,6 +142,9 @@ func (a *GuiApp) playPreflight() error {
 // StartPlay parses path and begins performing it. It refuses an invalid script
 // outright: validation exists so faults surface before anything is sent.
 func (a *GuiApp) StartPlay(path string) error {
+	a.activityMu.Lock()
+	defer a.activityMu.Unlock()
+	a.waitForStoppedPlay()
 	if err := a.playPreflight(); err != nil {
 		return err
 	}
@@ -164,6 +168,7 @@ func (a *GuiApp) StartPlay(path string) error {
 	s := &playSession{
 		steps:   steps,
 		cancel:  make(chan struct{}),
+		done:    make(chan struct{}),
 		pause:   make(chan struct{}, 1),
 		resume:  make(chan struct{}, 1),
 		next:    make(chan struct{}, 1),
@@ -171,6 +176,7 @@ func (a *GuiApp) StartPlay(path string) error {
 		matcher: engine.NewMatcher(),
 	}
 	a.play = s
+	a.playDone = s.done
 	a.playMu.Unlock()
 
 	go a.runPlay(s)
@@ -245,6 +251,19 @@ func (a *GuiApp) StopPlay() bool {
 	close(a.play.cancel)
 	a.play = nil
 	return true
+}
+
+// waitForStoppedPlay joins a driver whose visible state was removed by
+// StopPlay but whose last already-committed send has not returned yet. Caller
+// holds activityMu, which prevents another producer from installing meanwhile.
+func (a *GuiApp) waitForStoppedPlay() {
+	a.playMu.Lock()
+	done := a.playDone
+	active := a.play != nil
+	a.playMu.Unlock()
+	if done != nil && !active {
+		<-done
+	}
 }
 
 // NextPlayStep releases a %wait-key hold. Ignored when nothing is holding.
@@ -484,6 +503,10 @@ func (a *GuiApp) finishPlay(s *playSession) {
 	a.playMu.Lock()
 	if a.play == s {
 		a.play = nil
+	}
+	if a.playDone == s.done {
+		close(s.done)
+		a.playDone = nil
 	}
 	a.playMu.Unlock()
 }

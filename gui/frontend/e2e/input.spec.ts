@@ -1,4 +1,11 @@
 import { test, expect } from "./test";
+import type { Locator } from "@playwright/test";
+
+async function bounds(locator: Locator) {
+  const result = await locator.boundingBox();
+  if (!result) throw new Error("expected visible element to have a bounding box");
+  return result;
+}
 
 test.beforeEach(async ({ backend }) => {
   await backend.boot();
@@ -17,19 +24,92 @@ test("Enter sends the typed command and clears the input", async ({ page, backen
   await expect(backend.input).toHaveValue("");
 });
 
-test("an active command chain replaces play with a stop control", async ({ page, backend }) => {
+test("the Automation Bar gives PraetorScript the full space left of its controls", async ({ page, backend }) => {
+  const controls = page.getByTestId("input-controls");
+  const placeholder = page.getByTestId("chain-status-placeholder");
+  const play = page.getByRole("button", { name: /play/i });
+  const mode = page.getByTitle("Switch mode");
+
+  await expect(placeholder).toHaveText("PraetorScript idle");
+  await expect(play).toBeVisible();
+  await expect(mode).toBeVisible();
   await expect(page.getByRole("button", { name: "Stop command chain" })).toHaveCount(0);
+
+  const inputBox = await bounds(backend.input);
+  const controlsBox = await bounds(controls);
+  const placeholderBox = await bounds(placeholder);
+  const playBox = await bounds(play);
+  const idleModeBox = await bounds(mode);
+  expect(controlsBox.y).toBeGreaterThanOrEqual(inputBox.y + inputBox.height - 1);
+  expect(placeholderBox.x).toBeCloseTo(controlsBox.x + 12, 0);
+  expect(placeholderBox.x + placeholderBox.width).toBeCloseTo(playBox.x - 8, 0);
+
   await backend.input.fill("stand&&look");
   await page.keyboard.press("Enter");
 
   const stop = page.getByRole("button", { name: "Stop command chain" });
   await expect(stop).toBeVisible();
-  await expect(page.getByRole("button", { name: /play/i })).toHaveCount(0);
+  await expect(placeholder).toHaveCount(0);
+  await expect(page.getByTestId("chain-status")).toContainText("2/2");
+  await expect(page.getByTestId("chain-status")).toContainText("waiting for unbusy");
+  await expect(play).toHaveCount(0);
+
+  const activeStatusBox = await bounds(page.getByTestId("chain-status"));
+  const stopBox = await bounds(stop);
+  const activeModeBox = await bounds(mode);
+  expect(activeStatusBox.x).toBeCloseTo(controlsBox.x + 12, 0);
+  expect(activeStatusBox.x + activeStatusBox.width).toBeCloseTo(stopBox.x - 8, 0);
+  expect(activeModeBox.x).toBeCloseTo(idleModeBox.x, 0);
 
   await stop.click();
   await expect.poll(() => backend.args("AbortInputChains")).toEqual([[]]);
   await expect(stop).toHaveCount(0);
-  await expect(page.getByRole("button", { name: /play/i })).toBeVisible();
+  await expect(play).toBeVisible();
+  await expect(placeholder).toHaveText("PraetorScript idle");
+});
+
+test("the Automation Bar stays below both one-line and five-line input", async ({ page, backend }) => {
+  const controls = page.getByTestId("input-controls");
+  const mode = page.getByTitle("Switch mode");
+  const oneLineInput = await bounds(backend.input);
+  const oneLineControls = await bounds(controls);
+  const oneLineMode = await bounds(mode);
+  expect(oneLineControls.y).toBeGreaterThanOrEqual(oneLineInput.y + oneLineInput.height - 1);
+
+  await backend.input.fill("one\ntwo\nthree\nfour\nfive");
+  await expect(backend.input).toHaveValue("one\ntwo\nthree\nfour\nfive");
+
+  const fiveLineInput = await bounds(backend.input);
+  const fiveLineControls = await bounds(controls);
+  const fiveLineMode = await bounds(mode);
+  expect(fiveLineInput.height).toBeGreaterThan(oneLineInput.height + 40);
+  expect(fiveLineControls.y).toBeGreaterThanOrEqual(fiveLineInput.y + fiveLineInput.height - 1);
+  expect(fiveLineMode.x).toBeCloseTo(oneLineMode.x, 0);
+  await expect(page.getByTestId("chain-status-placeholder")).toHaveText("PraetorScript idle");
+});
+
+test("a standalone PraetorScript control exposes the chain stop control", async ({ page, backend }) => {
+  await backend.input.fill("$(wait-for \"ready\" timeout 30)");
+  await page.keyboard.press("Enter");
+
+  const stop = page.getByRole("button", { name: "Stop command chain" });
+  await expect(stop).toBeVisible();
+  await expect(page.getByTestId("chain-status")).toContainText("waiting for “ready”");
+  await expect(page.getByTestId("chain-status")).toContainText("30s");
+  await expect.poll(() => backend.args("SendInput")).toEqual([["$(wait-for \"ready\" timeout 30)"]]);
+
+  await stop.click();
+  await expect.poll(() => backend.args("AbortInputChains")).toEqual([[]]);
+});
+
+test("paced chains show their fixed starting delay", async ({ page, backend }) => {
+  await backend.input.fill("look;;inventory");
+  await page.keyboard.press("Enter");
+
+  const status = page.getByTestId("chain-status");
+  await expect(status).toContainText("2/2");
+  await expect(status).toContainText("pacing");
+  await expect(status).toContainText("0.9s");
 });
 
 test("/guide opens the welcome wiki links without navigating automatically", async ({ page, backend }) => {

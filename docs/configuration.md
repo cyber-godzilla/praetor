@@ -43,12 +43,16 @@ commands:
 
 High priority commands can be configured via Esc → Priority Commands. When a high-priority command is queued, it's inserted at the front (after other high-priority items) instead of the back.
 
+### PraetorScript
+
 Variables can also be managed via Esc → **Variables** or in the sidebar's
 **Variables** tab. Reference one as `${name}` in a typed command, such as
-`attack ${target}`. References are
-case-sensitive and values are substituted once rather than recursively. An
-unknown or malformed reference rejects the entire input line without sending
-any part of it. Use `\${` to send a literal `${`.
+`attack ${target}`. Add a literal fallback after a colon, such as
+`${count:25}`: a non-empty saved `count` wins, while a missing or empty one
+inserts `25`. References are case-sensitive, and saved values and fallbacks are
+substituted once rather than recursively. An unknown reference without a
+fallback, or any malformed reference, rejects the entire input line without
+sending any part of it. Use `\${` to send a literal `${`.
 
 Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
 roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
@@ -64,14 +68,61 @@ A single `;` or `&` remains ordinary text. `\;;` and `\&&` send literal
 separators. Praetor splits the line before substituting variables, so a
 variable value containing either separator cannot create extra commands. These
 features apply to single-line command-input submissions and Action-set buttons.
+
+Use `$()` control steps as complete steps within those chains:
+
+```text
+$(wait 2.5)                                      # pause for seconds
+$(wait-for "The latch clicks")                   # wait for a future matching line
+$(wait-for "The gate opens" timeout 30)          # cancel the chain after 30 seconds
+$(wait-for "open" cancel-on "locked" timeout 30)
+$(notify "Training complete")                    # notify, then continue
+$(notify "Training" "Complete")                  # custom title and message
+$(repeat "climb wall" until "You reach the top")
+$(repeat "climb wall" until "You reach the top" cancel-on "You fall")
+$(repeat "climb wall" until "You reach the top" max 10)
+```
+
+Each directive occupies one chain step, so compose it with the existing
+separators—for example, `look;;$(wait 2);;inventory`. Separators around a
+directive retain their normal configured delay or unbusy behavior; an explicit
+`wait` adds its duration at that point in the chain. The safety exception is a
+`wait-for` immediately after a sent command: Praetor arms that matcher before
+sending the command so a fast response cannot be missed; the separator there
+serves as syntax rather than delaying matcher registration.
+
+`wait-for` can optionally use `cancel-on "text"`, `timeout seconds`, or both.
+The cancellation text and timeout stop the entire chain instead of advancing
+it. A timeout must be positive. Without either clause, the wait remains active
+until it matches or the user presses Stop.
+
+`repeat` requires a game command (not a local `/` command), sends it
+immediately, then sends it again after each recognized unbusy response and the
+configured unbusy delay. Its success text
+advances the surrounding chain; its optional cancellation text stops the whole
+chain without advancing. `max N` counts the initial send as attempt 1 and
+cancels the chain rather than sending attempt N+1. Without `max`, retries remain
+unbounded. Matching is case-sensitive substring matching. Text
+arguments may contain separators because quoted strings are parsed before the
+outer chain. Escape a quote or backslash inside them as `\"` or `\\`. Use
+`\$(` to send a literal `$(`. Variables work in directive arguments and, like
+the rest of the line, are validated before anything is sent.
+
 Variables are read afresh every time either is invoked, so edits take effect
 immediately. Variables also apply to multiline input and `/send` files, but
 those paths do not interpret command-chain separators. Other sidebar buttons,
 numpad movement, Lua scripts, and `/play` playback bypass typed-input
 processing. A single line is limited to 100 commands across both separator
-types. Pending chains are discarded on disconnect. In the GUI, an active chain
-replaces the Play control with a Stop button that discards every command still
-waiting behind either separator.
+types and control steps. Pending chains are discarded on disconnect. In the
+GUI, a dedicated row below the input keeps PraetorScript status on the left and
+the Play/Stop and mode controls on the right. The status slot remains visible
+as an idle placeholder when no chain is running; an active chain fills it with
+the active step, wait/retry state, remaining timeout, and count of additional
+concurrent chains, and replaces Play with Stop. A `;;` pacing step shows
+its original configured delay for the whole pause rather than counting down;
+explicit waits and timed `wait-for` steps count down in whole seconds, rounded
+up so a new 30-second wait begins at `30s`. Stop cancels queued
+commands, explicit waits, substring reactions, and repeats.
 
 ## UI
 

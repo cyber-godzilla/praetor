@@ -1,12 +1,34 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	lua "github.com/yuin/gopher-lua"
 )
+
+func TestBridge_SetIntervalRejectsUnsafeDurations(t *testing.T) {
+	for _, interval := range []int{-1, 0, minIntervalMS - 1} {
+		t.Run(fmt.Sprintf("interval=%d", interval), func(t *testing.T) {
+			L := lua.NewState()
+			defer L.Close()
+			var luaMu sync.Mutex
+			var generation uint64
+			timers := NewTimerManager(L, &luaMu, &generation)
+			defer timers.Shutdown()
+			RegisterBridge(L, &BridgeSink{}, &StatusValues{}, timers)
+
+			err := L.DoString(fmt.Sprintf(`set_interval(function() end, %d)`, interval))
+			if err == nil || !strings.Contains(err.Error(), "at least 10 ms") {
+				t.Fatalf("set_interval error = %v, want minimum-interval error", err)
+			}
+		})
+	}
+}
 
 // SentCommand records a send() call.
 type SentCommand struct {

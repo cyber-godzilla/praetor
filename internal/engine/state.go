@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -29,6 +30,7 @@ type ModeState struct {
 	displayItems   []DisplayItem   // label→key mappings for sidebar/commands
 	actions        *lua.LTable
 	luaState       *lua.LState // reference for creating tables
+	revision       atomic.Uint64
 }
 
 // NewModeState creates a new empty ModeState.
@@ -60,6 +62,7 @@ func (ms *ModeState) Clear() {
 
 	ms.displayItems = nil
 	ms.actions = nil
+	ms.revision.Add(1)
 }
 
 // AddDisplay registers a state key for sidebar display with a user-facing label.
@@ -70,11 +73,16 @@ func (ms *ModeState) AddDisplay(key, label string) {
 	for i, d := range ms.displayItems {
 		if d.Key == key {
 			ms.displayItems[i].Label = label
+			ms.revision.Add(1)
 			return
 		}
 	}
 	ms.displayItems = append(ms.displayItems, DisplayItem{Key: key, Label: label})
+	ms.revision.Add(1)
 }
+
+// Revision changes whenever data visible in the mode status snapshot changes.
+func (ms *ModeState) Revision() uint64 { return ms.revision.Load() }
 
 // DisplayValues returns label→value pairs for sidebar rendering.
 func (ms *ModeState) DisplayValues() []struct{ Label, Value string } {
@@ -112,6 +120,7 @@ func (ms *ModeState) Toggle(key string) {
 	val, ok := ms.values[key]
 	if !ok {
 		ms.values[key] = lua.LTrue
+		ms.revision.Add(1)
 		return
 	}
 	if val == lua.LTrue {
@@ -119,6 +128,7 @@ func (ms *ModeState) Toggle(key string) {
 	} else {
 		ms.values[key] = lua.LTrue
 	}
+	ms.revision.Add(1)
 }
 
 // SetFromString sets a state value by key, parsing the string as number, bool, or string.
@@ -126,6 +136,7 @@ func (ms *ModeState) SetFromString(key, value string) {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
 	ms.values[key] = parseStringToLua(value)
+	ms.revision.Add(1)
 }
 
 func luaToString(v lua.LValue) string {
@@ -211,6 +222,7 @@ func (ms *ModeState) ClearPersistentKey(key string) {
 	ms.mu.Lock()
 	delete(ms.persistentKeys, key)
 	delete(ms.values, key)
+	ms.revision.Add(1)
 	ms.mu.Unlock()
 	// Mark dirty so the explicit Flush the UIs run persists the deletion;
 	// otherwise the cleared key resurrects from disk on the next launch.
@@ -238,6 +250,7 @@ func (ms *ModeState) LoadPersistent(data map[string]interface{}) {
 		ms.persistentKeys[key] = true
 		ms.values[key] = ms.goToLuaDeep(val)
 	}
+	ms.revision.Add(1)
 }
 
 // goToLuaDeep converts a Go value to Lua, including nested maps → tables.
@@ -330,6 +343,7 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 		ms.mu.Lock()
 		ms.values[key] = val
 		isPersistent := ms.persistentKeys[key]
+		ms.revision.Add(1)
 		ms.mu.Unlock()
 		if isPersistent {
 			ms.notifyPersistDirty()

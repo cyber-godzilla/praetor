@@ -51,7 +51,10 @@ export function makeConfig(): AppConfig {
       ActionSets: [
         {
           Name: "Combat",
-          Buttons: [{ Label: "Attack target", Command: "attack ${target};;look" }],
+          Buttons: [
+            { Label: "Attack target", Command: "attack ${target};;look" },
+            { Label: "Wait for cue", Command: "$(wait-for \"ready\")" },
+          ],
         },
       ],
     },

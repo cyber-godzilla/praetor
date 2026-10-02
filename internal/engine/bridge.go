@@ -8,6 +8,8 @@ import (
 	lua "github.com/yuin/gopher-lua"
 )
 
+const minIntervalMS = 10
+
 // BridgeCallbacks defines the interface for Go functions that Lua can invoke.
 type BridgeCallbacks interface {
 	OnSend(command string, delayMs int)
@@ -194,6 +196,10 @@ func RegisterBridge(L *lua.LState, cb BridgeCallbacks, status *StatusValues, tim
 		L.SetGlobal("set_interval", L.NewFunction(func(L *lua.LState) int {
 			callback := L.CheckFunction(1)
 			intervalMs := L.CheckInt(2)
+			if intervalMs < minIntervalMS {
+				L.ArgError(2, "interval must be at least 10 ms")
+				return 0
+			}
 			id := tm.SetInterval(callback, intervalMs)
 			L.Push(lua.LNumber(id))
 			return 1

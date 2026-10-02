@@ -331,6 +331,19 @@ export interface PlayState {
   total: number;
 }
 
+export interface InputChainStatus {
+  active: boolean;
+  chains: number;
+  step: number;
+  total: number;
+  state: string;
+  detail?: string;
+  durationMs?: number;
+  remainingMs?: number;
+  attempts?: number;
+  maxAttempts?: number;
+}
+
 export interface PlayPreview {
   path: string;
   name: string;

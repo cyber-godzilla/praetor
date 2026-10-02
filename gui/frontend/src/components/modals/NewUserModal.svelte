@@ -6,17 +6,17 @@
     {
       label: "Praetor overview",
       description: "What Praetor is and the features available to you.",
-      url: "https://eternal-city.wikidot.com/praetor",
+      url: "https://tec-wiki.com/praetor",
     },
     {
       label: "Praetor guide",
       description: "A guided introduction to setup and everyday use.",
-      url: "https://eternal-city.wikidot.com/praetor-guide",
+      url: "https://tec-wiki.com/praetor-guide",
     },
     {
       label: "Praetor scripts",
       description: "Install and use the community automation scripts.",
-      url: "https://eternal-city.wikidot.com/praetor-scripts",
+      url: "https://tec-wiki.com/praetor-scripts",
     },
   ];
 </script>

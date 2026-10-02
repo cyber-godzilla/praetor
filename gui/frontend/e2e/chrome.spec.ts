@@ -21,8 +21,10 @@ test("Esc opens and closes the menu; Help opens from it", async ({ page }) => {
   await dialog.getByRole("button", { name: "Help", exact: true }).click();
   await expect(dialog).toContainText("Key bindings");
   await expect(dialog).toContainText("command && command");
+  await expect(dialog).toContainText('$(repeat "command" until "success" max 10)');
+  await expect(dialog).toContainText('cancel-on "text"');
   await expect(dialog.getByText("Send the syntax literally").locator("..").locator(".k"))
-    .toHaveText(/\\\$\{\s+\\;;\s+\\&&/);
+    .toHaveText(/\\\$\{\s+\\\$\(\s+\\;;\s+\\&&/);
   await expect(dialog).toContainText("Commands");
 });
 
@@ -41,7 +43,7 @@ test("Help can search game help and open the wiki", async ({ page, backend }) =>
   await dialog.getByRole("button", { name: "Help", exact: true }).click();
   await dialog.getByRole("button", { name: "Open TEC Wiki" }).click();
   await expect.poll(() => backend.args("OpenURL")).toContainEqual([
-    "http://eternal-city.wikidot.com",
+    "https://tec-wiki.com",
   ]);
 });
 
@@ -116,6 +118,7 @@ test("the Escape menu Variables area saves command variables", async ({ page, ba
 
   dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Reference them as ${name}");
+  await expect(dialog).toContainText("${name:fallback}");
   await dialog.getByRole("button", { name: "Add variable" }).click();
   await dialog.getByRole("textbox", { name: "Variable name" }).fill("destination");
   await dialog.getByRole("textbox", { name: "Value for destination" }).fill("north gate");
@@ -130,6 +133,12 @@ test("action-set commands use live variable substitution and command chaining", 
   await page.getByRole("button", { name: "Attack target" }).click();
   await expect.poll(() => backend.args("SendInput")).toEqual([
     ["attack ${target};;look"],
+  ]);
+
+  await page.getByRole("button", { name: "Wait for cue" }).click();
+  await expect.poll(() => backend.args("SendInput")).toEqual([
+    ["attack ${target};;look"],
+    ["$(wait-for \"ready\")"],
   ]);
 });
 

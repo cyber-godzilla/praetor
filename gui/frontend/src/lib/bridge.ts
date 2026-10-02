@@ -23,6 +23,7 @@ import type {
   SendPreview,
   PlayPreview,
   PlayState,
+  InputChainStatus,
 } from "./types";
 
 function app(): Record<string, (...a: any[]) => Promise<any>> | undefined {
@@ -67,6 +68,13 @@ export const disconnect = () => call<void>("Disconnect", undefined);
 export const send = (input: string) => call<void>("Send", undefined, input);
 export const sendInput = (input: string) => call<void>("SendInput", undefined, input);
 export const inputChainActive = () => call<boolean>("InputChainActive", false);
+export const inputChainStatus = () => call<InputChainStatus>("InputChainStatus", {
+  active: false,
+  chains: 0,
+  step: 0,
+  total: 0,
+  state: "",
+});
 export const abortInputChains = () => call<number>("AbortInputChains", 0);
 export const modeNames = () => call<string[]>("ModeNames", []);
 export const modeSpecs = () => call<ModeSpec[]>("ModeSpecs", []);

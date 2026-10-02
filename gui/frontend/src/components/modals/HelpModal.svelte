@@ -15,7 +15,7 @@
   }
 
   function openWiki() {
-    api.openURL("http://eternal-city.wikidot.com").catch((e) =>
+    api.openURL("https://tec-wiki.com").catch((e) =>
       store.addToast("Could not open wiki", String(e)),
     );
   }
@@ -41,13 +41,18 @@
       <button type="button" onclick={openWiki}>Open TEC Wiki</button>
     </form>
     <div class="sect">
-      <div class="h dim">Input syntax</div>
+      <div class="h dim">PraetorScript input syntax</div>
       <table>
         <tbody>
           <tr><td class="k">{"${name}"}</td><td>Insert a saved command variable</td></tr>
+          <tr><td class="k">{"${name:fallback}"}</td><td>Use the saved value when non-empty, otherwise insert the fallback</td></tr>
           <tr><td class="k">command ;;&nbsp; command</td><td>Run the next command after the configured delay</td></tr>
           <tr><td class="k">command &amp;&amp; command</td><td>Run the next command after an unbusy response and configured delay</td></tr>
-          <tr><td class="k">{"\\${"} &nbsp; {"\\;;"} &nbsp; {"\\&&"}</td><td>Send the syntax literally</td></tr>
+          <tr><td class="k">$(wait 2.5)</td><td>Pause this chain for a number of seconds</td></tr>
+          <tr><td class="k">$(wait-for "text" timeout 30)</td><td>Pause until matching text; optional <code>cancel-on "text"</code> and timeout cancel the chain</td></tr>
+          <tr><td class="k">$(notify "title" "message")</td><td>Show a desktop notification, then continue; omit the title to use Praetor</td></tr>
+          <tr><td class="k">$(repeat "command" until "success" max 10)</td><td>Retry after each unbusy response; optional <code>cancel-on "text"</code> or maximum attempts stop the whole chain</td></tr>
+          <tr><td class="k">{"\\${"} &nbsp; {"\\$("} &nbsp; {"\\;;"} &nbsp; {"\\&&"}</td><td>Send the syntax literally; use <code>\\"</code> inside quoted strings</td></tr>
           <tr><td class="k">Variable scope</td><td>Typed input, Action Sets, and /send; not Lua or /play</td></tr>
           <tr><td class="k">Chain scope</td><td>Single-line input and Action Sets only</td></tr>
         </tbody>

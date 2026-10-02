@@ -174,8 +174,8 @@ func TestTimerManager_InfiniteLoopCallbackAbortsWithinDeadline(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		mu.Lock()
-		mu.Unlock()
 		close(done)
+		mu.Unlock()
 	}()
 
 	select {

@@ -33,9 +33,9 @@ test("first-login welcome offers wiki links without opening them automatically",
   await page.getByRole("button", { name: "Praetor guide" }).click();
   await page.getByRole("button", { name: "Praetor scripts" }).click();
   expect(await backend.args("OpenURL")).toEqual([
-    ["https://eternal-city.wikidot.com/praetor"],
-    ["https://eternal-city.wikidot.com/praetor-guide"],
-    ["https://eternal-city.wikidot.com/praetor-scripts"],
+    ["https://tec-wiki.com/praetor"],
+    ["https://tec-wiki.com/praetor-guide"],
+    ["https://tec-wiki.com/praetor-scripts"],
   ]);
 });
 

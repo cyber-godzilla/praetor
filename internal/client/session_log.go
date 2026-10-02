@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,23 @@ import (
 
 // SessionLogger writes timestamped game text to a log file for play session records.
 type SessionLogger struct {
-	mu      sync.Mutex
-	file    *os.File
-	enabled bool
+	mu       sync.Mutex
+	file     *os.File
+	writer   *bufio.Writer
+	enabled  bool
+	closed   bool
+	queue    []sessionLogEntry
+	dropped  int
+	wake     chan struct{}
+	done     chan struct{}
+	closeErr error
+}
+
+const maxSessionLogQueue = 8192
+
+type sessionLogEntry struct {
+	timestamp time.Time
+	text      string
 }
 
 // NewSessionLogger creates a session logger. If enabled, it creates a timestamped
@@ -34,32 +49,106 @@ func NewSessionLogger(enabled bool, dir string) (*SessionLogger, error) {
 		return nil, fmt.Errorf("opening session log: %w", err)
 	}
 
-	// Write header.
-	fmt.Fprintf(f, "=== Session started %s ===\n\n", time.Now().Format("2006-01-02 15:04:05"))
-
-	return &SessionLogger{file: f, enabled: true}, nil
+	writer := bufio.NewWriterSize(f, 64*1024)
+	fmt.Fprintf(writer, "=== Session started %s ===\n\n", time.Now().Format("2006-01-02 15:04:05"))
+	sl := &SessionLogger{
+		file:    f,
+		writer:  writer,
+		enabled: true,
+		wake:    make(chan struct{}, 1),
+		done:    make(chan struct{}),
+	}
+	go sl.run()
+	return sl, nil
 }
 
 // Log writes a timestamped line of game text to the session log.
 func (sl *SessionLogger) Log(timestamp time.Time, text string) {
-	if !sl.enabled || sl.file == nil {
+	if !sl.enabled {
 		return
 	}
 	sl.mu.Lock()
-	defer sl.mu.Unlock()
+	if sl.closed {
+		sl.mu.Unlock()
+		return
+	}
+	if len(sl.queue) >= maxSessionLogQueue {
+		sl.dropped++
+		sl.mu.Unlock()
+		return
+	}
+	sl.queue = append(sl.queue, sessionLogEntry{timestamp: timestamp, text: text})
+	sl.mu.Unlock()
+	select {
+	case sl.wake <- struct{}{}:
+	default:
+	}
+}
 
-	ts := timestamp.Format("15:04:05")
-	fmt.Fprintf(sl.file, "[%s] %s\n", ts, text)
+func (sl *SessionLogger) run() {
+	defer close(sl.done)
+	flushTicker := time.NewTicker(time.Second)
+	defer flushTicker.Stop()
+	for {
+		select {
+		case <-sl.wake:
+		case <-flushTicker.C:
+			_ = sl.writer.Flush()
+		}
+		for {
+			sl.mu.Lock()
+			if len(sl.queue) == 0 {
+				closed := sl.closed
+				sl.mu.Unlock()
+				if closed {
+					sl.finish()
+					return
+				}
+				break
+			}
+			entries := sl.queue
+			dropped := sl.dropped
+			sl.queue = nil
+			sl.dropped = 0
+			sl.mu.Unlock()
+			if dropped > 0 {
+				fmt.Fprintf(sl.writer, "=== %d session log line(s) dropped under I/O pressure ===\n", dropped)
+			}
+			for _, entry := range entries {
+				fmt.Fprintf(sl.writer, "[%s] %s\n", entry.timestamp.Format("15:04:05"), entry.text)
+			}
+		}
+	}
+}
+
+func (sl *SessionLogger) finish() {
+	fmt.Fprintf(sl.writer, "\n=== Session ended %s ===\n", time.Now().Format("2006-01-02 15:04:05"))
+	err := sl.writer.Flush()
+	if closeErr := sl.file.Close(); err == nil {
+		err = closeErr
+	}
+	sl.mu.Lock()
+	sl.closeErr = err
+	sl.mu.Unlock()
 }
 
 // Close flushes and closes the session log file.
 func (sl *SessionLogger) Close() error {
-	if !sl.enabled || sl.file == nil {
+	if !sl.enabled {
 		return nil
 	}
 	sl.mu.Lock()
+	if !sl.closed {
+		sl.closed = true
+		select {
+		case sl.wake <- struct{}{}:
+		default:
+		}
+	}
+	done := sl.done
+	sl.mu.Unlock()
+	<-done
+	sl.mu.Lock()
 	defer sl.mu.Unlock()
-
-	fmt.Fprintf(sl.file, "\n=== Session ended %s ===\n", time.Now().Format("2006-01-02 15:04:05"))
-	return sl.file.Close()
+	return sl.closeErr
 }

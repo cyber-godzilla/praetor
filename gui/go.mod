@@ -1,6 +1,6 @@
 module github.com/cyber-godzilla/praetor/gui
 
-go 1.25.5
+go 1.25.13
 
 require (
 	github.com/cyber-godzilla/praetor v0.0.0

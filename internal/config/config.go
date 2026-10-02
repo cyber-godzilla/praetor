@@ -87,7 +87,8 @@ type CommandsConfig struct {
 	SemicolonDelayMS int      `yaml:"semicolon_delay_ms"`
 	UnbusyDelayMS    int      `yaml:"unbusy_delay_ms"`
 	HighPriority     []string `yaml:"high_priority"`
-	// Variables are substituted in typed command-line input using ${name}.
+	// Variables are substituted in typed command-line input using ${name} or
+	// ${name:fallback}.
 	// They are deliberately separate from Lua mode state and never expand
 	// recursively.
 	Variables map[string]string `yaml:"variables"`
@@ -650,8 +651,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ValidVariableName reports whether name can be referenced as ${name} in the
-// command input. Keeping the grammar identifier-like makes references
+// ValidVariableName reports whether name can be referenced as ${name} or as the
+// name portion of ${name:fallback}. Keeping the grammar identifier-like makes references
 // unambiguous and portable across the GUI, YAML, and future clients.
 func ValidVariableName(name string) bool {
 	if name == "" {

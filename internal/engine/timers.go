@@ -110,6 +110,12 @@ func (tm *TimerManager) SetTimeout(callback *lua.LFunction, delayMs int) int {
 // SetInterval schedules a repeating callback every intervalMs milliseconds.
 // Returns a timer ID that can be passed to ClearTimer.
 func (tm *TimerManager) SetInterval(callback *lua.LFunction, intervalMs int) int {
+	// RegisterBridge rejects this for Lua callers. Keep the manager defensive as
+	// well: time.NewTicker panics for non-positive durations, and this method is
+	// also used directly by tests and may gain other Go callers.
+	if intervalMs < minIntervalMS {
+		intervalMs = minIntervalMS
+	}
 	tm.mu.Lock()
 	id := tm.nextID
 	tm.nextID++

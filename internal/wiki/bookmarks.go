@@ -1,5 +1,5 @@
 // Package wiki contains curated bookmarks for the Eternal City wiki at
-// http://eternal-city.wikidot.com. The bookmark list is hand-curated;
+// https://tec-wiki.com. The bookmark list is hand-curated;
 // regenerate from docs/wiki-bookmarks-draft.md if it changes.
 package wiki
 
@@ -8,7 +8,7 @@ import (
 )
 
 // BaseURL is the wiki root.
-const BaseURL = "http://eternal-city.wikidot.com"
+const BaseURL = "https://tec-wiki.com"
 
 // Bookmark is a (key, slug) pair. URL is BaseURL + "/" + Slug.
 type Bookmark struct {

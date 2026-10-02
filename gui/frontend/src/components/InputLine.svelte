@@ -6,8 +6,8 @@
   import { searchBackward, dropLastChar } from "../lib/histsearch";
   import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
   import { insertsNewline, caretOnFirstLine, caretOnLastLine } from "../lib/multiline";
-  import { isAllowedDuringPlay } from "../lib/playcmd";
-  import type { PlayState } from "../lib/types";
+  import { chainStateLabel, chainTimeLabel } from "../lib/chainstatus";
+  import type { InputChainStatus, PlayState } from "../lib/types";
   import CommandHint from "./CommandHint.svelte";
   import { matchCommands, tabComplete } from "../lib/commands";
 
@@ -68,12 +68,13 @@
   // the performer a long %wait or cue wait is a deliberate hold rather than a
   // wedged client — the whole reason this indicator exists.
   const IDLE_PLAY: PlayState = { active: false, paused: false, step: 0, total: 0 };
+  const IDLE_CHAIN: InputChainStatus = { active: false, chains: 0, step: 0, total: 0, state: "" };
   let play = $state<PlayState>(IDLE_PLAY);
-  let chainActive = $state(false);
+  let chain = $state<InputChainStatus>(IDLE_CHAIN);
 
   async function refreshInputChain() {
     try {
-      chainActive = await api.inputChainActive();
+      chain = await api.inputChainStatus();
     } catch {
       // A failed local status call is transient; the next poll retries.
     }
@@ -82,7 +83,7 @@
   async function stopInputChain() {
     // Swap the control back immediately; the backend cancellation wakes ;; timer
     // waits synchronously and removes && waiters before this promise resolves.
-    chainActive = false;
+    chain = IDLE_CHAIN;
     try {
       await api.abortInputChains();
     } catch (e) {
@@ -140,16 +141,19 @@
       return;
     }
     let stopped = false;
-    // The backend is the authority: a performance that ended on its own clears
-    // store.playActive from its answer, which also tears this poll down.
-    const tick = () => {
-      if (!stopped) void refreshPlay();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Await each request before scheduling the next one. A fixed interval can
+    // accumulate bridge calls under load and let an older response overwrite a
+    // newer play state.
+    const tick = async () => {
+      if (stopped) return;
+      await refreshPlay();
+      if (!stopped) timer = setTimeout(tick, 500);
     };
-    tick();
-    const id = setInterval(tick, 500);
+    void tick();
     return () => {
       stopped = true;
-      clearInterval(id);
+      if (timer !== undefined) clearTimeout(timer);
     };
   });
 
@@ -157,18 +161,20 @@
   // the shared scheduler while connected instead of relying only on submit().
   $effect(() => {
     if (store.connState !== "connected") {
-      chainActive = false;
+      chain = IDLE_CHAIN;
       return;
     }
     let stopped = false;
-    const tick = () => {
-      if (!stopped) void refreshInputChain();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      if (stopped) return;
+      await refreshInputChain();
+      if (!stopped) timer = setTimeout(tick, 500);
     };
-    tick();
-    const id = setInterval(tick, 500);
+    void tick();
     return () => {
       stopped = true;
-      clearInterval(id);
+      if (timer !== undefined) clearTimeout(timer);
     };
   });
 
@@ -269,16 +275,6 @@
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
 
-    // Ask the backend rather than trusting a cached flag: a performance can end
-    // on its own (script finished, send failed), and a stale "playing" flag
-    // would lock the user out of their own input with no way back.
-    const playing = await api.playActive();
-    store.playActive = playing; // keep the UI hint in sync as a side effect
-    if (playing && !isAllowedDuringPlay(line)) {
-      store.addToast("Performance running", "Only /pause, /resume, /stop, /next (or Alt+X) are accepted.");
-      pushHistory(line);
-      return;
-    }
     if (lower === "/pause") {
       pushHistory(line);
       if (!(await api.pausePlay())) store.addToast("Play", "Nothing is playing.");
@@ -371,9 +367,9 @@
       return;
     }
 
-    // Everything else routes through the typed-input processor. ${name}
-    // variables apply to single- and multi-line input, action buttons, and
-    // /send files. ;; paced and && unbusy-aware chains apply only to
+    // Everything else routes through the typed-input processor. ${name} and
+    // ${name:fallback} variables apply to single- and multi-line input, action
+    // buttons, and /send files. ;; / && chains and $() control steps apply only to
     // single-line input and action buttons. Lua and /play bypass both.
     try {
       await api.sendInput(line);
@@ -659,44 +655,68 @@
       autocomplete="off"
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     ></textarea>
-    {#if chainActive}
-      <button
-        class="chain-stop"
-        aria-label="Stop command chain"
-        title="Discard commands still queued by ;; or &&"
-        onclick={stopInputChain}
-        tabindex="-1"
-      >■ stop</button>
+  </div>
+  <!-- Automation Bar: PraetorScript owns the flexible left side; execution
+       controls stay anchored at the right. -->
+  <div class="automation-bar" data-testid="input-controls">
+    {#if chain.active}
+      <div
+        class="chain-status"
+        data-testid="chain-status"
+        title={`PraetorScript chain ${chain.step} of ${chain.total}: ${chainStateLabel(chain)}`}
+      >
+        <span class="chain-step">{chain.step}/{chain.total}</span>
+        <span class="chain-state">{chainStateLabel(chain)}</span>
+        {#if chainTimeLabel(chain)}<span class="chain-time">{chainTimeLabel(chain)}</span>{/if}
+        {#if chain.chains > 1}<span class="chain-more">+{chain.chains - 1}</span>{/if}
+      </div>
     {:else}
+      <div
+        class="chain-status placeholder"
+        data-testid="chain-status-placeholder"
+        aria-label="No PraetorScript chain running"
+      >PraetorScript idle</div>
+    {/if}
+    <div class="automation-controls">
+      {#if chain.active}
+        <button
+          class="chain-stop"
+          aria-label="Stop command chain"
+          title="Stop queued commands, waits, reactions, and repeats"
+          onclick={stopInputChain}
+          tabindex="-1"
+        >■ stop</button>
+      {:else}
+        <button
+          class="play"
+          class:active={play.active}
+          class:paused={play.paused}
+          title={!play.active
+            ? "Play a script (/play)"
+            : play.paused
+              ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
+              : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
+          onclick={onPlayClick}
+          tabindex="-1"
+        >
+          {#if !play.active}
+            ▶ play
+          {:else}
+            {play.paused ? "❙❙" : "▶"}
+            {play.step}/{play.total}
+          {/if}
+        </button>
+      {/if}
       <button
-        class="play"
-        class:active={play.active}
-        class:paused={play.paused}
-        title={!play.active
-          ? "Play a script (/play)"
-          : play.paused
-            ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
-            : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
-        onclick={onPlayClick}
+        class="mode"
+        class:active={!!store.mode && store.mode !== "disable"}
+        title="Switch mode"
+        onclick={() => (store.openModal = "modeselect")}
         tabindex="-1"
       >
-        {#if !play.active}
-          ▶ play
-        {:else}
-          {play.paused ? "❙❙" : "▶"}
-          {play.step}/{play.total}
-        {/if}
+        {store.mode && store.mode !== "disable" ? store.mode : "disable"}
       </button>
-    {/if}
-    <button
-      class="mode"
-      class:active={!!store.mode && store.mode !== "disable"}
-      title="Switch mode"
-      onclick={() => (store.openModal = "modeselect")}
-      tabindex="-1"
-    >
-      {store.mode && store.mode !== "disable" ? store.mode : "disable"}
-    </button>
+    </div>
   </div>
 </div>
 
@@ -728,13 +748,29 @@
   }
   .inputbar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     padding: 6px 12px;
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
   }
+  .automation-bar {
+    min-height: 37px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 6px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+  }
+  .automation-controls {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .prompt {
+    padding-top: 3px;
     color: var(--accent);
     font-family: var(--mono);
     font-size: 15px;
@@ -800,6 +836,44 @@
     white-space: nowrap;
     user-select: none;
   }
+  .chain-status {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    color: var(--play-blue);
+    background: var(--bg-elevated);
+    border: 1px solid var(--play-blue-dim);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .chain-status.placeholder {
+    color: var(--fg-dim);
+    border-color: var(--border);
+    opacity: 0.65;
+  }
+  .chain-step,
+  .chain-time,
+  .chain-more {
+    flex: none;
+    color: var(--fg-dim);
+  }
+  .chain-state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chain-time {
+    color: var(--accent);
+  }
+  .chain-more {
+    color: var(--accent);
+  }
   .chain-stop:hover {
     color: var(--bg);
     background: #e06c75;
@@ -820,5 +894,10 @@
   .mode.active {
     color: var(--accent);
     border-color: var(--accent-dim);
+  }
+  @media (max-width: 560px) {
+    .automation-bar {
+      padding-inline: 8px;
+    }
   }
 </style>

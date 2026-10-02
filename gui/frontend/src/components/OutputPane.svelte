@@ -21,6 +21,7 @@
   const fontSize = $derived(store.config?.UI?.OutputFontSize || 14);
 
   let viewport: HTMLDivElement;
+  let contentEl: HTMLDivElement;
   // Follow the tail whenever the view sits within a band of the newest line
   // (see lib/scroll.ts). Distance — not scroll direction — decides following, so
   // a burst that momentarily outruns the auto-scroll, or a wheel gesture that
@@ -263,16 +264,19 @@
     // Escape is handled by GameView's capture-phase handler (closes the bar).
   }
 
-  // Re-anchor to the bottom when the viewport geometry changes (window/sidebar
-  // resize, font-size change). Without this, scrollHeight/clientHeight shift
-  // while scrollTop stays put, leaving the "followed" view stuck at an offset.
+  // Re-anchor to the bottom when either the viewport or rendered scrollback
+  // geometry changes. In particular, content-visibility initially reserves one
+  // row for an off-screen wrapped line, then corrects that height when Chromium
+  // lays it out. Watching the content wrapper catches those late corrections so
+  // a followed view cannot be left behind after a chunk arrives.
   $effect(() => {
-    if (!viewport) return;
+    if (!viewport || !contentEl) return;
     const ro = new ResizeObserver(() => {
       if (autoFollow) followTail();
       sampleMetrics();
     });
     ro.observe(viewport);
+    ro.observe(contentEl);
     return () => ro.disconnect();
   });
 
@@ -387,30 +391,32 @@
     </div>
   {/if}
   <div class="pane" data-testid="e2e-output" bind:this={viewport} onscroll={onScroll} style="font-size:{fontSize}px">
-    {#each tab.lines as line (line.id)}
-      {#if isBlank(line)}
-        <div class="line blank">&nbsp;</div>
-      {:else}
-        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-        <!-- svelte-ignore a11y_click_events_have_key_events -->
-        <div
-          class="line"
-          class:echo={line.isEcho}
-          class:suppressed={!!line.suppressed}
-          class:search-current={line.id === currentMatchId}
-          data-lid={line.id}
-          onclick={() => line.suppressed && reveal(line)}
-          role={line.suppressed ? "button" : undefined}
-          tabindex={line.suppressed ? -1 : undefined}
-        >
-          {#each displaySegs(line) as seg}
-            {#if seg.isHR}
-              <hr />
-            {:else}<span style={segStyle(seg)}>{seg.text}</span>{/if}
-          {/each}
-        </div>
-      {/if}
-    {/each}
+    <div class="scroll-content" bind:this={contentEl}>
+      {#each tab.lines as line (line.id)}
+        {#if isBlank(line)}
+          <div class="line blank">&nbsp;</div>
+        {:else}
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <!-- svelte-ignore a11y_click_events_have_key_events -->
+          <div
+            class="line"
+            class:echo={line.isEcho}
+            class:suppressed={!!line.suppressed}
+            class:search-current={line.id === currentMatchId}
+            data-lid={line.id}
+            onclick={() => line.suppressed && reveal(line)}
+            role={line.suppressed ? "button" : undefined}
+            tabindex={line.suppressed ? -1 : undefined}
+          >
+            {#each displaySegs(line) as seg}
+              {#if seg.isHR}
+                <hr />
+              {:else}<span style={segStyle(seg)}>{seg.text}</span>{/if}
+            {/each}
+          </div>
+        {/if}
+      {/each}
+    </div>
   </div>
 
   <!-- Custom scroll rail overlaying the pane's right edge: Home/PgUp cap the top,
@@ -472,6 +478,7 @@
     line-height: 1.4;
     background: var(--bg);
     user-select: text;
+    contain: layout style paint;
   }
   /* Hide the native scrollbar — the custom rail replaces it. Scrolling via
      wheel/keys still works. */
@@ -604,6 +611,10 @@
     white-space: pre-wrap;
     word-break: break-word;
     min-height: 1.4em;
+    /* Let the webview skip layout/paint for off-screen scrollback while keeping
+       every logical row in the DOM for search, selection, and exact scrolling. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1.4em;
   }
   .line.search-current {
     outline: 1px solid var(--accent);

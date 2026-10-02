@@ -1,12 +1,66 @@
 package gui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/cyber-godzilla/praetor/internal/client"
+	"github.com/cyber-godzilla/praetor/internal/config"
 )
+
+func TestConcurrentPlayAndSendStartsReserveOneProducer(t *testing.T) {
+	a, _ := playTestApp(t)
+	c, err := client.NewClient(config.Defaults(), nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	a.deps.Client = c
+	a.playCheck = func() error {
+		if a.sendActive() {
+			return fmt.Errorf("send active")
+		}
+		return nil
+	}
+	playPath := writeScript(t, "%wait-key\n")
+	sendPath := filepath.Join(t.TempDir(), "send.txt")
+	if err := os.WriteFile(sendPath, []byte("send"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	releaseSend := make(chan struct{})
+	a.sendOne = func(string) error {
+		<-releaseSend
+		return nil
+	}
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() { <-start; results <- a.StartPlay(playPath) }()
+	go func() { <-start; results <- a.StartFileSend(sendPath) }()
+	close(start)
+	first, second := <-results, <-results
+	succeeded := 0
+	for _, result := range []error{first, second} {
+		if result == nil {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("concurrent starts produced %d successes, want exactly one (errors: %v, %v)", succeeded, first, second)
+	}
+
+	a.StopPlay()
+	a.AbortSend()
+	close(releaseSend)
+	a.activityMu.Lock()
+	a.waitForStoppedPlay()
+	a.abortSendAndWait()
+	a.activityMu.Unlock()
+}
 
 func TestPickSendFile_CountsLinesAndBatches(t *testing.T) {
 	dir := t.TempDir()
@@ -71,6 +125,56 @@ func TestAbortSend_StopsRemainingBatches(t *testing.T) {
 	}
 	if a.AbortSend() {
 		t.Error("AbortSend returned true with no send in flight")
+	}
+}
+
+func TestStartFileSendWaitsForCancelledDriverToExit(t *testing.T) {
+	a := newTestApp(t)
+	c, err := client.NewClient(config.Defaults(), nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	a.deps.Client = c
+	firstPath := filepath.Join(t.TempDir(), "first.txt")
+	secondPath := filepath.Join(t.TempDir(), "second.txt")
+	if err := os.WriteFile(firstPath, []byte("first"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondPath, []byte("second"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	firstEntered := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	a.sendOne = func(batch string) error {
+		if batch == "first" {
+			close(firstEntered)
+			<-releaseFirst
+		}
+		return nil
+	}
+	if err := a.StartFileSend(firstPath); err != nil {
+		t.Fatalf("first StartFileSend: %v", err)
+	}
+	<-firstEntered
+
+	secondReturned := make(chan error, 1)
+	go func() { secondReturned <- a.StartFileSend(secondPath) }()
+	select {
+	case err := <-secondReturned:
+		t.Fatalf("replacement returned before the in-flight send exited: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	close(releaseFirst)
+	select {
+	case err := <-secondReturned:
+		if err != nil {
+			t.Fatalf("replacement StartFileSend: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("replacement did not start after the cancelled driver exited")
 	}
 }
 

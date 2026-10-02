@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
@@ -34,22 +35,26 @@ type Deps struct {
 	Version       string
 	Debug         bool
 
-	appLog *logging.Logger
+	appLog    *logging.Logger
+	closeOnce sync.Once
 }
 
 // Close releases resources held by Deps (engine, log files, session log).
 func (d *Deps) Close() {
-	// Close the engine first: it flushes persistent state synchronously, so the
-	// last few seconds of state (within the 5s debounce window) survive a quit.
-	if d.Client != nil && d.Client.Engine != nil {
-		d.Client.Engine.Close()
-	}
-	if d.SessionLog != nil {
-		d.SessionLog.Close()
-	}
-	if d.appLog != nil {
-		d.appLog.Close()
-	}
+	d.closeOnce.Do(func() {
+		// Close the engine first: it flushes persistent state synchronously, so the
+		// last few seconds of state (within the 5s debounce window) survive a quit.
+		// GuiApp.Shutdown joins all client work before Deps.Close is called.
+		if d.Client != nil && d.Client.Engine != nil {
+			d.Client.Engine.Close()
+		}
+		if d.SessionLog != nil {
+			d.SessionLog.Close()
+		}
+		if d.appLog != nil {
+			d.appLog.Close()
+		}
+	})
 }
 
 // Bootstrap performs the same startup sequence as the TUI: resolve XDG dirs,
@@ -106,8 +111,8 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	}
 	gc.SetIgnoreOOC(cfg.Ignorelist.OOC)
 	gc.SetIgnoreThink(cfg.Ignorelist.Think)
-	gc.Settings.EchoTyped = cfg.UI.EchoTyped
-	gc.Settings.EchoScript = cfg.UI.EchoScript
+	gc.SetEchoTyped(cfg.UI.EchoTyped)
+	gc.SetEchoScript(cfg.UI.EchoScript)
 
 	logDir := sessionsDir
 	if cfg.Logging.Session.Path != "" {

@@ -27,7 +27,7 @@ func (a *GuiApp) withConfig(mutate func()) error {
 func (a *GuiApp) SetEchoTyped(v bool) error {
 	return a.withConfig(func() {
 		a.cfg().UI.EchoTyped = v
-		a.client().Settings.EchoTyped = v
+		a.client().SetEchoTyped(v)
 	})
 }
 
@@ -35,7 +35,7 @@ func (a *GuiApp) SetEchoTyped(v bool) error {
 func (a *GuiApp) SetEchoScript(v bool) error {
 	return a.withConfig(func() {
 		a.cfg().UI.EchoScript = v
-		a.client().Settings.EchoScript = v
+		a.client().SetEchoScript(v)
 	})
 }
 
@@ -204,8 +204,9 @@ func (a *GuiApp) SetHighPriority(cmds []string) error {
 	})
 }
 
-// SetInputVariables replaces the name/value map used for ${name}
-// substitutions in typed command-line input and applies it live.
+// SetInputVariables replaces the name/value map used for ${name} and
+// ${name:fallback} substitutions in typed command-line input and applies it
+// live.
 func (a *GuiApp) SetInputVariables(variables map[string]string) error {
 	for name := range variables {
 		if !config.ValidVariableName(name) {

@@ -201,7 +201,9 @@ end, 10000)                -- Fire every 10 seconds
 clear_timer(id)            -- Cancel a timer
 ```
 
-All timers are automatically cancelled on mode switch.
+All timers are automatically cancelled on mode switch. Repeating intervals must
+be at least 10 ms; shorter or non-positive values are rejected instead of being
+allowed to create a CPU-saturating loop.
 
 ## Time
 

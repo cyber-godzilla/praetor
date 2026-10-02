@@ -27,6 +27,27 @@ test("a 2000-line burst leaves the pane at the tail", async ({ backend }) => {
   expect(await backend.output.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
 });
 
+test("successive chunks of wrapped text stay pinned to the tail", async ({ backend }) => {
+  await backend.boot();
+  await backend.connect();
+
+  const wrappedLines = (start: number, count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) => `wrapped ${start + i}: ${"content that must wrap across several visual rows ".repeat(8)}`,
+    );
+
+  await backend.text(wrappedLines(1, 300));
+  for (let start = 301; start <= 401; start += 25) {
+    await backend.text(wrappedLines(start, 25));
+  }
+
+  await expect(backend.output.getByText("wrapped 425:", { exact: false })).toBeVisible();
+  await expect
+    .poll(() => backend.output.evaluate((el) => el.scrollHeight - el.scrollTop - el.clientHeight))
+    .toBeLessThanOrEqual(2);
+});
+
 test.describe("when a large block crosses the scrollback trim threshold", () => {
   test.use({ init: { ...baseInit, config: trimmedConfig } });
 

@@ -65,6 +65,9 @@ func readSendFile(path string) (batches []string, lines int, err error) {
 // performance is active — see sendActive/PlayActive below for why the two
 // drivers must never run concurrently.
 func (a *GuiApp) StartFileSend(path string) error {
+	a.activityMu.Lock()
+	defer a.activityMu.Unlock()
+	a.waitForStoppedPlay()
 	if a.PlayActive() {
 		return fmt.Errorf("a performance is running — a /send would interleave with it on the wire; press Alt+X, or wait for the performance to finish")
 	}
@@ -83,7 +86,7 @@ func (a *GuiApp) StartFileSend(path string) error {
 	if len(batches) == 0 {
 		return fmt.Errorf("%s is empty", filepath.Base(path))
 	}
-	a.AbortSend()
+	a.abortSendAndWait()
 	a.startSend(batches)
 	return nil
 }
@@ -96,17 +99,19 @@ func (a *GuiApp) StartFileSend(path string) error {
 func (a *GuiApp) sendActive() bool {
 	a.sendMu.Lock()
 	defer a.sendMu.Unlock()
-	return a.sendCancel != nil
+	return a.sendDone != nil
 }
 
 // startSend spawns the driver goroutine for an already-split block. Split from
 // StartFileSend so tests can drive it without touching the filesystem.
 func (a *GuiApp) startSend(batches []string) {
 	cancel := make(chan struct{})
+	done := make(chan struct{})
 	a.sendMu.Lock()
 	a.sendCancel = cancel
+	a.sendDone = done
 	a.sendMu.Unlock()
-	go a.runSend(batches, cancel)
+	go a.runSend(batches, cancel, done)
 }
 
 // AbortSend cancels an in-flight send. It reports whether one was actually
@@ -122,15 +127,38 @@ func (a *GuiApp) AbortSend() bool {
 	return true
 }
 
+// abortSendAndWait is used before installing another producer and during app
+// shutdown. Cancellation cannot recall a batch already inside SendBlock, so the
+// join is what prevents its socket write from overlapping the replacement.
+// Caller holds activityMu.
+func (a *GuiApp) abortSendAndWait() bool {
+	a.sendMu.Lock()
+	wasActive := a.sendDone != nil
+	if a.sendCancel != nil {
+		close(a.sendCancel)
+		a.sendCancel = nil
+	}
+	done := a.sendDone
+	a.sendMu.Unlock()
+	if done != nil {
+		<-done
+	}
+	return wasActive
+}
+
 // runSend walks the batches, honoring cancellation between each one. Already
 // transmitted batches cannot be recalled — abort only stops what is still queued.
-func (a *GuiApp) runSend(batches []string, cancel chan struct{}) {
+func (a *GuiApp) runSend(batches []string, cancel, done chan struct{}) {
 	defer func() {
 		a.sendMu.Lock()
 		if a.sendCancel == cancel {
 			a.sendCancel = nil
 		}
+		if a.sendDone == done {
+			a.sendDone = nil
+		}
 		a.sendMu.Unlock()
+		close(done)
 	}()
 
 	for i, b := range batches {

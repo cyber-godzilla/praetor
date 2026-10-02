@@ -32,16 +32,55 @@ type Settings struct {
 type inputContinuation struct {
 	chain    *inputChain
 	commands []commandinput.Command
+	reaction *inputReaction
 }
 
-// inputChain owns one typed line with commands still waiting behind ;; or &&.
-// Closing cancel wakes a paced or post-unbusy wait immediately; membership in
+// inputReaction is a live $(wait-for ...) or $(repeat ...) step. Repeat steps
+// also occupy one slot in inputWaiters while waiting to consume an unbusy line.
+type inputReaction struct {
+	chain    *inputChain
+	commands []commandinput.Command
+	match    string
+	cancel   string
+	repeat   string
+	timeout  time.Duration
+	done     chan struct{}
+	attempts int
+	max      int
+}
+
+// inputChain owns one typed line with commands or $() controls still pending.
+// Closing cancel wakes timers and post-unbusy waits immediately; membership in
 // inputChains is the authoritative active/queued state exposed to the GUI.
 type inputChain struct {
+	id             uint64
 	sess           *session.Session
 	semicolonDelay time.Duration
 	unbusyDelay    time.Duration
 	cancel         chan struct{}
+	total          int
+	step           int
+	state          string
+	detail         string
+	duration       time.Duration
+	deadline       time.Time
+	attempts       int
+	maxAttempts    int
+}
+
+// InputChainStatus is the GUI-facing snapshot of the oldest active typed
+// command chain. Chains may run concurrently; Chains reports the aggregate.
+type InputChainStatus struct {
+	Active      bool   `json:"active"`
+	Chains      int    `json:"chains"`
+	Step        int    `json:"step"`
+	Total       int    `json:"total"`
+	State       string `json:"state"`
+	Detail      string `json:"detail,omitempty"`
+	DurationMS  int64  `json:"durationMs,omitempty"`
+	RemainingMS int64  `json:"remainingMs,omitempty"`
+	Attempts    int    `json:"attempts,omitempty"`
+	MaxAttempts int    `json:"maxAttempts,omitempty"`
 }
 
 // inputUnbusyMessages mirrors praetor-scripts/lib_strings.lua. Keep this as a
@@ -60,11 +99,12 @@ var inputUnbusyMessages = []string{
 // Client is the top-level orchestrator that wires session, engine, protocol,
 // and notification subsystems together.
 type Client struct {
-	Config   *config.Config
-	Session  *session.Session
-	Engine   *engine.Engine
-	Creds    session.CredentialStore
-	Settings Settings
+	Config     *config.Config
+	Session    *session.Session
+	Engine     *engine.Engine
+	Creds      session.CredentialStore
+	Settings   Settings
+	settingsMu sync.RWMutex
 
 	events         chan types.Event
 	cancelRun      chan struct{} // cancels this connection's listener + drainer
@@ -91,6 +131,8 @@ type Client struct {
 	inputChainMu        sync.Mutex
 	inputChains         map[*inputChain]struct{}
 	inputWaiters        []*inputContinuation
+	inputReactions      []*inputReaction
+	inputChainSeq       uint64
 	semicolonDelayNanos atomic.Int64
 	unbusyDelayNanos    atomic.Int64
 
@@ -115,6 +157,12 @@ type Client struct {
 	// Atomics keep Lua notify callbacks race-free while settings are saved.
 	allowScriptNotifications atomic.Bool
 	notificationSound        atomic.Bool
+
+	// Status snapshots contain the full metrics history. Revisions let the hot
+	// per-line path skip rebuilding that snapshot when Lua changed nothing.
+	statusMu              sync.Mutex
+	statusStateRevision   uint64
+	statusMetricsRevision uint64
 }
 
 // NewClient creates a fully wired Client. Pass scriptDirs for the
@@ -150,6 +198,36 @@ func (c *Client) Events() <-chan types.Event {
 	return c.events
 }
 
+// PendingEvents reports events accepted by the core but not yet taken by its
+// frontend bridge. It is used only for ordered shutdown diagnostics/draining.
+func (c *Client) PendingEvents() int { return len(c.events) }
+
+// Echo settings are read by socket/drainer goroutines and changed live by UI
+// goroutines. Keep all concurrent access behind these methods.
+func (c *Client) SetEchoTyped(enabled bool) {
+	c.settingsMu.Lock()
+	c.Settings.EchoTyped = enabled
+	c.settingsMu.Unlock()
+}
+
+func (c *Client) EchoTyped() bool {
+	c.settingsMu.RLock()
+	defer c.settingsMu.RUnlock()
+	return c.Settings.EchoTyped
+}
+
+func (c *Client) SetEchoScript(enabled bool) {
+	c.settingsMu.Lock()
+	c.Settings.EchoScript = enabled
+	c.settingsMu.Unlock()
+}
+
+func (c *Client) EchoScript() bool {
+	c.settingsMu.RLock()
+	defer c.settingsMu.RUnlock()
+	return c.Settings.EchoScript
+}
+
 // session returns the current Session pointer under the guard.
 func (c *Client) session() *session.Session {
 	c.sessMu.Lock()
@@ -169,8 +247,12 @@ func (c *Client) setSession(s *session.Session) {
 	for chain := range c.inputChains {
 		close(chain.cancel)
 	}
+	for _, reaction := range c.inputReactions {
+		close(reaction.done)
+	}
 	c.inputChains = nil
 	c.inputWaiters = nil
+	c.inputReactions = nil
 	c.inputChainMu.Unlock()
 }
 
@@ -198,9 +280,10 @@ func (c *Client) inputVariableSnapshot() map[string]string {
 	return cloneVariables(c.inputVariables)
 }
 
-// ExpandInputVariables substitutes the current ${name} values without
-// interpreting command separators. Multi-line input and /send use this path;
-// Lua and play-script output deliberately do not.
+// ExpandInputVariables substitutes current ${name} values and
+// ${name:fallback} defaults without interpreting command separators.
+// Multi-line input and /send use this path; Lua and play-script output
+// deliberately do not.
 func (c *Client) ExpandInputVariables(input string) (string, error) {
 	return commandinput.ExpandVariables(input, c.inputVariableSnapshot())
 }
@@ -406,7 +489,7 @@ func (c *Client) sendCommand(sess *session.Session, input string) error {
 	}
 
 	// Echo the sent command in the output pane as italic text.
-	if c.Settings.EchoTyped {
+	if c.EchoTyped() {
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   input,
@@ -456,11 +539,11 @@ func (c *Client) UnbusyDelay() time.Duration {
 }
 
 // SendInput processes one single-line command submitted by a user. It expands
-// ${name} variables plus ;; (paced) and && (wait-for-unbusy) separators
-// atomically before sending any result. Variables are snapshotted afresh for
-// every call, so saved changes are immediately visible to typed input and
-// action sets. Generated commands skip further input expansion, so variables
-// cannot recurse and an expanded value cannot inject a separator.
+// ${name} / ${name:fallback} variables, ;; and && separators, and $() control
+// steps atomically before sending any result. Variables are snapshotted afresh for every call,
+// so saved changes are immediately visible to typed input and action sets.
+// Generated commands skip further input expansion, so variables cannot recurse
+// and an expanded value cannot inject syntax.
 func (c *Client) SendInput(input string) error {
 	variables := c.inputVariableSnapshot()
 	commands, err := commandinput.Expand(input, variables)
@@ -474,16 +557,21 @@ func (c *Client) SendInput(input string) error {
 	// keeps Action-set chains atomic: a later invalid /mode cannot fail only
 	// after earlier game commands have already been sent.
 	for _, command := range commands {
-		if err := c.validateLocalCommand(command.Text); err != nil {
-			return err
+		if command.Kind == commandinput.KindRepeat && strings.HasPrefix(command.Text, "/") {
+			return fmt.Errorf("repeat requires a game command, not a local slash command")
+		}
+		if command.Kind == commandinput.KindSend {
+			if err := c.validateLocalCommand(command.Text); err != nil {
+				return err
+			}
 		}
 	}
 
 	sess := c.session()
-	if len(commands) == 1 {
+	if len(commands) == 1 && commands[0].Kind == commandinput.KindSend {
 		return c.sendCommand(sess, commands[0].Text)
 	}
-	chain := c.startInputChain(sess)
+	chain := c.startInputChain(sess, len(commands))
 	if chain == nil {
 		return nil
 	}
@@ -514,12 +602,14 @@ func (c *Client) validateLocalCommand(input string) error {
 	return nil
 }
 
-func (c *Client) startInputChain(sess *session.Session) *inputChain {
+func (c *Client) startInputChain(sess *session.Session, total int) *inputChain {
 	chain := &inputChain{
 		sess:           sess,
 		semicolonDelay: c.SemicolonDelay(),
 		unbusyDelay:    c.UnbusyDelay(),
 		cancel:         make(chan struct{}),
+		total:          total,
+		state:          "starting",
 	}
 	c.inputChainMu.Lock()
 	defer c.inputChainMu.Unlock()
@@ -529,6 +619,8 @@ func (c *Client) startInputChain(sess *session.Session) *inputChain {
 	if c.inputChains == nil {
 		c.inputChains = make(map[*inputChain]struct{})
 	}
+	c.inputChainSeq++
+	chain.id = c.inputChainSeq
 	c.inputChains[chain] = struct{}{}
 	return chain
 }
@@ -540,6 +632,7 @@ func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinpu
 	}
 	switch commands[0].Wait {
 	case commandinput.WaitDelay:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "pacing", "", chain.semicolonDelay, 0, 0)
 		go func() {
 			timer := time.NewTimer(chain.semicolonDelay)
 			defer timer.Stop()
@@ -551,6 +644,7 @@ func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinpu
 			}
 		}()
 	case commandinput.WaitUnbusy:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "unbusy", "", 0, 0, 0)
 		c.enqueueInputWaiter(chain, commands)
 	default:
 		_ = c.dispatchInputCommand(chain, commands)
@@ -567,19 +661,63 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		return nil
 	}
 
-	// Register an && continuation before sending the command that can produce
-	// its unbusy response. A fast server may reply before Send returns.
-	var waiter *inputContinuation
+	current := commands[0]
 	remaining := commands[1:]
-	if len(remaining) > 0 && remaining[0].Wait == commandinput.WaitUnbusy {
+	switch current.Kind {
+	case commandinput.KindWait:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "wait", "", current.Duration, 0, 0)
+		c.scheduleInputWait(chain, current.Duration, remaining)
+		return nil
+	case commandinput.KindWaitFor:
+		if c.registerInputReaction(chain, current.Match, current.Cancel, "", current.Timeout, 0, remaining) == nil {
+			c.finishInputChain(chain)
+		}
+		return nil
+	case commandinput.KindNotify:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "notify", current.Title, 0, 0, 0)
+		c.sendInputNotification(current.Title, current.Text)
+		c.scheduleInputCommands(chain, remaining)
+		return nil
+	case commandinput.KindRepeat:
+		reaction := c.registerInputReaction(chain, current.Match, current.Cancel, current.Text, 0, current.Max, remaining)
+		if reaction == nil {
+			c.finishInputChain(chain)
+			return nil
+		}
+		if err := c.sendCommand(chain.sess, current.Text); err != nil {
+			c.removeInputReaction(reaction)
+			c.finishInputChain(chain)
+			return err
+		}
+		return nil
+	}
+
+	// Register an && continuation before sending the command that can produce
+	// its unbusy response. A following wait-for directive is likewise armed before
+	// the send, then owns the rest of the chain; a fast server may reply before
+	// Send returns.
+	var waiter *inputContinuation
+	var reaction *inputReaction
+	if len(remaining) > 0 && remaining[0].Kind == commandinput.KindWaitFor {
+		reaction = c.registerInputReaction(chain, remaining[0].Match, remaining[0].Cancel, "", remaining[0].Timeout, 0, remaining[1:])
+	} else if len(remaining) > 0 && remaining[0].Wait == commandinput.WaitUnbusy {
 		waiter = c.enqueueInputWaiter(chain, remaining)
+	}
+	if reaction == nil && waiter == nil {
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "send", current.Text, 0, 0, 0)
 	}
 	if err := c.sendCommand(chain.sess, commands[0].Text); err != nil {
 		if waiter != nil {
 			c.removeInputWaiter(waiter)
 		}
+		if reaction != nil {
+			c.removeInputReaction(reaction)
+		}
 		c.finishInputChain(chain)
 		return err
+	}
+	if reaction != nil {
+		return nil
 	}
 	if len(remaining) == 0 {
 		c.finishInputChain(chain)
@@ -587,6 +725,113 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		c.scheduleInputCommands(chain, remaining)
 	}
 	return nil
+}
+
+func (c *Client) scheduleInputWait(chain *inputChain, duration time.Duration, commands []commandinput.Command) {
+	go func() {
+		timer := time.NewTimer(duration)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			c.scheduleInputCommands(chain, commands)
+		case <-chain.cancel:
+		}
+	}()
+}
+
+func (c *Client) registerInputReaction(chain *inputChain, match, cancel, repeat string, timeout time.Duration, max int, commands []commandinput.Command) *inputReaction {
+	c.inputChainMu.Lock()
+	if _, ok := c.inputChains[chain]; !ok || c.session() != chain.sess {
+		c.inputChainMu.Unlock()
+		return nil
+	}
+	reaction := &inputReaction{
+		chain:    chain,
+		commands: commands,
+		match:    match,
+		cancel:   cancel,
+		repeat:   repeat,
+		timeout:  timeout,
+		done:     make(chan struct{}),
+		max:      max,
+	}
+	step := chain.total - len(commands)
+	if repeat != "" {
+		reaction.attempts = 1
+		setInputChainStatusLocked(chain, step, "repeat", repeat, timeout, reaction.attempts, max)
+	} else {
+		setInputChainStatusLocked(chain, step, "wait-for", match, timeout, 0, 0)
+	}
+	c.inputReactions = append(c.inputReactions, reaction)
+	if repeat != "" {
+		// Register before sending so a fast unbusy response cannot be missed.
+		c.inputWaiters = append(c.inputWaiters, &inputContinuation{chain: chain, reaction: reaction})
+	}
+	c.inputChainMu.Unlock()
+	if timeout > 0 {
+		go c.expireInputReaction(reaction)
+	}
+	return reaction
+}
+
+func (c *Client) removeInputReaction(target *inputReaction) {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	c.removeInputReactionLocked(target)
+}
+
+func (c *Client) removeInputReactionLocked(target *inputReaction) {
+	reactions := c.inputReactions[:0]
+	removed := false
+	for _, reaction := range c.inputReactions {
+		if reaction != target {
+			reactions = append(reactions, reaction)
+		} else {
+			removed = true
+		}
+	}
+	c.inputReactions = reactions
+	waiters := c.inputWaiters[:0]
+	for _, pending := range c.inputWaiters {
+		if pending.reaction != target {
+			waiters = append(waiters, pending)
+		}
+	}
+	c.inputWaiters = waiters
+	if removed {
+		close(target.done)
+	}
+}
+
+func (c *Client) expireInputReaction(reaction *inputReaction) {
+	timer := time.NewTimer(reaction.timeout)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		c.inputChainMu.Lock()
+		if !c.inputReactionIsActiveLocked(reaction) {
+			c.inputChainMu.Unlock()
+			return
+		}
+		kind := "wait-for"
+		detail := reaction.match
+		if reaction.repeat != "" {
+			kind = "repeat"
+			detail = reaction.repeat
+		}
+		c.cancelInputChainLocked(reaction.chain)
+		c.inputChainMu.Unlock()
+		c.emit(types.ErrorEvent{Context: "PraetorScript", Err: fmt.Errorf("%s timed out while waiting for %q", kind, detail)})
+	case <-reaction.done:
+	case <-reaction.chain.cancel:
+	}
+}
+
+func (c *Client) sendInputNotification(title, message string) {
+	if c.desktopNotify != nil {
+		go c.desktopNotify(title, message, c.notificationSound.Load())
+	}
+	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
 
 func (c *Client) inputChainIsActive(chain *inputChain) bool {
@@ -629,19 +874,81 @@ func (c *Client) finishInputChain(chain *inputChain) {
 		}
 	}
 	c.inputWaiters = kept
+	reactions := c.inputReactions[:0]
+	for _, reaction := range c.inputReactions {
+		if reaction.chain != chain {
+			reactions = append(reactions, reaction)
+		} else {
+			close(reaction.done)
+		}
+	}
+	c.inputReactions = reactions
 }
 
-// InputChainActive reports whether any typed input has commands still queued
-// behind a ;; delay or && unbusy response.
+// InputChainActive reports whether any typed input still has queued commands,
+// a timer, a substring reaction, or a repeat waiting for an unbusy response.
 func (c *Client) InputChainActive() bool {
 	c.inputChainMu.Lock()
 	defer c.inputChainMu.Unlock()
 	return len(c.inputChains) > 0
 }
 
+// InputChainStatus returns a live snapshot for the oldest active chain. It is
+// intentionally read-only and cheap enough for the GUI's half-second poll.
+func (c *Client) InputChainStatus() InputChainStatus {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	status := InputChainStatus{Active: len(c.inputChains) > 0, Chains: len(c.inputChains)}
+	if !status.Active {
+		return status
+	}
+	var oldest *inputChain
+	for chain := range c.inputChains {
+		if oldest == nil || chain.id < oldest.id {
+			oldest = chain
+		}
+	}
+	status.Step = oldest.step
+	status.Total = oldest.total
+	status.State = oldest.state
+	status.Detail = oldest.detail
+	status.DurationMS = oldest.duration.Milliseconds()
+	status.Attempts = oldest.attempts
+	status.MaxAttempts = oldest.maxAttempts
+	if !oldest.deadline.IsZero() {
+		status.RemainingMS = time.Until(oldest.deadline).Milliseconds()
+		if status.RemainingMS < 0 {
+			status.RemainingMS = 0
+		}
+	}
+	return status
+}
+
+func (c *Client) setInputChainStatus(chain *inputChain, step int, state, detail string, duration time.Duration, attempts, max int) {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	if _, ok := c.inputChains[chain]; !ok {
+		return
+	}
+	setInputChainStatusLocked(chain, step, state, detail, duration, attempts, max)
+}
+
+func setInputChainStatusLocked(chain *inputChain, step int, state, detail string, duration time.Duration, attempts, max int) {
+	chain.step = step
+	chain.state = state
+	chain.detail = detail
+	chain.duration = duration
+	chain.attempts = attempts
+	chain.maxAttempts = max
+	chain.deadline = time.Time{}
+	if duration > 0 {
+		chain.deadline = time.Now().Add(duration)
+	}
+}
+
 // AbortInputChains immediately discards every queued typed-input continuation.
 // It returns the number of chains canceled. Commands already sent are not
-// recalled, but pending ;; timers are woken and && waiters are removed.
+// recalled, but all timers, reactions, repeats, and && waiters are removed.
 func (c *Client) AbortInputChains() int {
 	c.inputChainMu.Lock()
 	defer c.inputChainMu.Unlock()
@@ -650,7 +957,11 @@ func (c *Client) AbortInputChains() int {
 		close(chain.cancel)
 		delete(c.inputChains, chain)
 	}
+	for _, reaction := range c.inputReactions {
+		close(reaction.done)
+	}
 	c.inputWaiters = nil
+	c.inputReactions = nil
 	return count
 }
 
@@ -663,32 +974,136 @@ func isInputUnbusy(text string) bool {
 	return false
 }
 
-// advanceInputOnUnbusy releases exactly one waiter. FIFO consumption keeps two
-// overlapping typed chains from both treating one server response as theirs.
-func (c *Client) advanceInputOnUnbusy(text string) {
-	if !isInputUnbusy(text) {
-		return
-	}
-
+// advanceInputOnText first resolves substring reactions, then lets an unbusy
+// line release exactly one FIFO waiter. A repeat occupies that same FIFO as an
+// && continuation, so one server response can never retry multiple commands.
+func (c *Client) advanceInputOnText(text string) {
 	c.inputChainMu.Lock()
 	sess := c.session()
+	var completed []*inputReaction
+	for i := 0; i < len(c.inputReactions); {
+		reaction := c.inputReactions[i]
+		if reaction.chain.sess != sess {
+			i++
+			continue
+		}
+		if reaction.cancel != "" && strings.Contains(text, reaction.cancel) {
+			c.cancelInputChainLocked(reaction.chain)
+			continue
+		}
+		if strings.Contains(text, reaction.match) {
+			c.removeInputReactionLocked(reaction)
+			completed = append(completed, reaction)
+			continue
+		}
+		i++
+	}
+
 	var pending *inputContinuation
-	for len(c.inputWaiters) > 0 {
-		candidate := c.inputWaiters[0]
-		c.inputWaiters = c.inputWaiters[1:]
-		if candidate.chain.sess == sess {
-			if _, ok := c.inputChains[candidate.chain]; !ok {
-				continue
+	if isInputUnbusy(text) {
+		for len(c.inputWaiters) > 0 {
+			candidate := c.inputWaiters[0]
+			c.inputWaiters = c.inputWaiters[1:]
+			if candidate.chain.sess == sess {
+				if _, ok := c.inputChains[candidate.chain]; !ok {
+					continue
+				}
+				if candidate.reaction != nil && !c.inputReactionIsActiveLocked(candidate.reaction) {
+					continue
+				}
+				pending = candidate
+				break
 			}
-			pending = candidate
-			break
 		}
 	}
 	c.inputChainMu.Unlock()
 
-	if pending != nil {
-		c.scheduleInputAfterUnbusy(pending)
+	for _, reaction := range completed {
+		c.scheduleInputCommands(reaction.chain, reaction.commands)
 	}
+	if pending != nil {
+		if pending.reaction != nil {
+			c.scheduleRepeatAfterUnbusy(pending.reaction)
+		} else {
+			c.scheduleInputAfterUnbusy(pending)
+		}
+	}
+}
+
+func (c *Client) inputReactionIsActiveLocked(target *inputReaction) bool {
+	for _, reaction := range c.inputReactions {
+		if reaction == target {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Client) scheduleRepeatAfterUnbusy(reaction *inputReaction) {
+	if reaction.chain.unbusyDelay <= 0 {
+		c.retryInputReaction(reaction)
+		return
+	}
+	go func() {
+		timer := time.NewTimer(reaction.chain.unbusyDelay)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+			c.retryInputReaction(reaction)
+		case <-reaction.chain.cancel:
+		}
+	}()
+}
+
+func (c *Client) retryInputReaction(reaction *inputReaction) {
+	c.inputChainMu.Lock()
+	if _, ok := c.inputChains[reaction.chain]; !ok || c.session() != reaction.chain.sess ||
+		!c.inputReactionIsActiveLocked(reaction) {
+		c.inputChainMu.Unlock()
+		return
+	}
+	if reaction.max > 0 && reaction.attempts >= reaction.max {
+		attempts := reaction.attempts
+		command := reaction.repeat
+		c.cancelInputChainLocked(reaction.chain)
+		c.inputChainMu.Unlock()
+		c.emit(types.ErrorEvent{Context: "PraetorScript", Err: fmt.Errorf("repeat reached its maximum of %d attempts for %q", attempts, command)})
+		return
+	}
+	reaction.attempts++
+	setInputChainStatusLocked(reaction.chain, reaction.chain.step, "repeat", reaction.repeat, 0, reaction.attempts, reaction.max)
+	// Re-arm before sending for the same fast-response reason as the first try.
+	c.inputWaiters = append(c.inputWaiters, &inputContinuation{chain: reaction.chain, reaction: reaction})
+	c.inputChainMu.Unlock()
+
+	if err := c.sendCommand(reaction.chain.sess, reaction.repeat); err != nil {
+		c.removeInputReaction(reaction)
+		c.finishInputChain(reaction.chain)
+	}
+}
+
+func (c *Client) cancelInputChainLocked(chain *inputChain) {
+	if _, ok := c.inputChains[chain]; !ok {
+		return
+	}
+	close(chain.cancel)
+	delete(c.inputChains, chain)
+	waiters := c.inputWaiters[:0]
+	for _, pending := range c.inputWaiters {
+		if pending.chain != chain {
+			waiters = append(waiters, pending)
+		}
+	}
+	c.inputWaiters = waiters
+	reactions := c.inputReactions[:0]
+	for _, reaction := range c.inputReactions {
+		if reaction.chain != chain {
+			reactions = append(reactions, reaction)
+		} else {
+			close(reaction.done)
+		}
+	}
+	c.inputReactions = reactions
 }
 
 func (c *Client) scheduleInputAfterUnbusy(pending *inputContinuation) {
@@ -723,6 +1138,15 @@ func (c *Client) clearInputChains(sess *session.Session) {
 		}
 	}
 	c.inputWaiters = kept
+	reactions := c.inputReactions[:0]
+	for _, reaction := range c.inputReactions {
+		if reaction.chain.sess != sess {
+			reactions = append(reactions, reaction)
+		} else {
+			close(reaction.done)
+		}
+	}
+	c.inputReactions = reactions
 	c.inputChainMu.Unlock()
 }
 
@@ -907,8 +1331,8 @@ func (c *Client) handleGameText(line string) {
 
 	if result.Text != "" {
 		c.Engine.Process(result.Text)
-		c.emitStatusUpdate()
-		c.advanceInputOnUnbusy(result.Text)
+		c.emitStatusUpdateIfChanged()
+		c.advanceInputOnText(result.Text)
 	}
 }
 
@@ -935,8 +1359,29 @@ func (c *Client) emitSuppressed(result protocol.HTMLResult, ch IgnoreChannel, na
 	})
 }
 
-// emitStatusUpdate sends a StatusUpdateEvent with current mode, display state, and metrics.
+// emitStatusUpdateIfChanged avoids rebuilding the full state/metrics history on
+// lines that did not mutate either store.
+func (c *Client) emitStatusUpdateIfChanged() {
+	stateRevision := c.Engine.State().Revision()
+	metricsRevision := c.Engine.Metrics().Revision()
+	c.statusMu.Lock()
+	if stateRevision == c.statusStateRevision && metricsRevision == c.statusMetricsRevision {
+		c.statusMu.Unlock()
+		return
+	}
+	c.statusStateRevision = stateRevision
+	c.statusMetricsRevision = metricsRevision
+	c.statusMu.Unlock()
+	c.emitStatusUpdate()
+}
+
+// emitStatusUpdate sends a StatusUpdateEvent with current mode, display state,
+// and metrics. Callers that know the mode changed use this forced form.
 func (c *Client) emitStatusUpdate() {
+	c.statusMu.Lock()
+	c.statusStateRevision = c.Engine.State().Revision()
+	c.statusMetricsRevision = c.Engine.Metrics().Revision()
+	c.statusMu.Unlock()
 	displayVals := c.Engine.State().DisplayValues()
 	var items []types.StateDisplayItem
 	for _, dv := range displayVals {
@@ -1045,7 +1490,7 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 		lastSend = time.Now()
 
 		// Echo engine commands in the output if script echo is enabled.
-		if c.Settings.EchoScript {
+		if c.EchoScript() {
 			c.emitOrStop(types.GameTextEvent{
 				Styled: []types.StyledSegment{{
 					Text:   cmd.Command,
@@ -1147,7 +1592,7 @@ func (c *Client) handleLocalCommand(input string) {
 			return
 		}
 		url := wiki.URL(slug)
-		go OpenBrowser(url)
+		c.openURL(url)
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   "opening wiki: " + url,
@@ -1192,7 +1637,7 @@ func (c *Client) handleLocalCommand(input string) {
 			return
 		}
 		url := wiki.URL(slug)
-		go OpenBrowser(url)
+		c.openURL(url)
 		c.emit(types.GameTextEvent{
 			Styled: []types.StyledSegment{{
 				Text:   "opening map: " + url,

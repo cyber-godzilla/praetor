@@ -203,6 +203,26 @@ func TestSend_PlainSlashCommandRoutesAsCommand(t *testing.T) {
 	}
 }
 
+func TestSend_DirectControlsBypassPraetorScript(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+	want := `say ${target};;one&&two$(wait 9)`
+
+	a.Send(want)
+
+	select {
+	case got := <-recv:
+		if got != want {
+			t.Fatalf("server received %q, want direct-control text unchanged", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received direct-control text")
+	}
+	if a.client().InputChainActive() {
+		t.Fatal("direct control unexpectedly created a PraetorScript chain")
+	}
+}
+
 // TestSend_InteriorNewlineRoutesAsBlock covers real multi-line input: an
 // interior newline means the user is sending a block, which must go out as
 // ONE message with the newline embedded (never split, never interpreted).
@@ -344,6 +364,25 @@ func TestSendInput_UsesCurrentVariablesOnEveryCall(t *testing.T) {
 	}
 }
 
+func TestSendInput_UsesFallbackForMissingOrEmptyVariable(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"empty": "", "count": "10"})
+
+	if err := a.SendInput("missing ${missing:25};;empty ${empty:25};;set ${count:25}"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	for _, want := range []string{"missing 25", "empty 25", "set 10"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+}
+
 func TestSendInput_ValidationIsAtomic(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 
@@ -360,10 +399,10 @@ func TestSendInput_ValidationIsAtomic(t *testing.T) {
 
 func TestSendInput_MultilineBlockExpandsVariablesWithoutChains(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
-	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit", "count": ""})
 
-	input := "say ${target};;look\nsecond line ${target}&&wait"
-	want := "say scarred bandit;;look\nsecond line scarred bandit&&wait"
+	input := "say ${target};;look\nsecond line ${target}&&wait\n$(notify \"literal\")\ncount ${count:25}"
+	want := "say scarred bandit;;look\nsecond line scarred bandit&&wait\n$(notify \"literal\")\ncount 25"
 	if err := a.SendInput(input); err != nil {
 		t.Fatalf("SendInput: %v", err)
 	}
@@ -395,13 +434,13 @@ func TestStartFileSend_ExpandsVariablesWithoutChains(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
 
-	path := writeScript(t, "say ${target};;look\nsecond line ${target}&&wait\n")
+	path := writeScript(t, "say ${target};;look\nsecond line ${target}&&wait\n$(wait 2)\ncount ${count:25}\n")
 	if err := a.StartFileSend(path); err != nil {
 		t.Fatalf("StartFileSend: %v", err)
 	}
 	select {
 	case got := <-recv:
-		want := "say scarred bandit;;look\nsecond line scarred bandit&&wait"
+		want := "say scarred bandit;;look\nsecond line scarred bandit&&wait\n$(wait 2)\ncount 25"
 		if got != want {
 			t.Fatalf("server received %q, want expanded file block %q", got, want)
 		}

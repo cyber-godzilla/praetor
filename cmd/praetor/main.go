@@ -182,7 +182,7 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ui.HelpSearchMsg:
 		if msg.Query == "__wiki__" {
-			go client.OpenBrowser("https://eternal-city.wikidot.com")
+			go client.OpenBrowser(wiki.BaseURL)
 		} else {
 			w.gc.SendCommand("?" + msg.Query)
 		}
@@ -263,9 +263,10 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.MenuEchoTypedMsg:
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
-		w.gc.Settings.EchoTyped = !w.gc.Settings.EchoTyped
+		echoTyped := !w.gc.EchoTyped()
+		w.gc.SetEchoTyped(echoTyped)
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.UI.EchoTyped = w.gc.Settings.EchoTyped
+			w.cfg.UI.EchoTyped = echoTyped
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -275,9 +276,10 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ui.MenuEchoScriptMsg:
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
-		w.gc.Settings.EchoScript = !w.gc.Settings.EchoScript
+		echoScript := !w.gc.EchoScript()
+		w.gc.SetEchoScript(echoScript)
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.UI.EchoScript = w.gc.Settings.EchoScript
+			w.cfg.UI.EchoScript = echoScript
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -755,8 +757,8 @@ func main() {
 		accounts = nil
 	}
 
-	gc.Settings.EchoTyped = cfg.UI.EchoTyped
-	gc.Settings.EchoScript = cfg.UI.EchoScript
+	gc.SetEchoTyped(cfg.UI.EchoTyped)
+	gc.SetEchoScript(cfg.UI.EchoScript)
 
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)

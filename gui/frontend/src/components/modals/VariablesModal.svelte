@@ -6,7 +6,7 @@
 <Modal title="Variables" back>
   <p class="hint">
     Define reusable values for typed commands and action-set buttons. Reference them as
-    <code>{"${name}"}</code>.
+    <code>{"${name}"}</code>, or use <code>{"${name:fallback}"}</code> when an empty or missing variable should have a default.
   </p>
   <VariablesTab />
 </Modal>

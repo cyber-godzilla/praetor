@@ -950,14 +950,15 @@ func TestStartPlay_DoesNotExpandInputVariables(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
 
-	path := writeScript(t, "say ${target}\n")
+	want := `say ${target};;one&&two$(notify "no")`
+	path := writeScript(t, want+"\n")
 	if err := a.StartPlay(path); err != nil {
 		t.Fatalf("StartPlay: %v", err)
 	}
 
 	select {
 	case got := <-recv:
-		if got != "say ${target}" {
+		if got != want {
 			t.Fatalf("server received %q, want play-script text unchanged", got)
 		}
 	case <-time.After(3 * time.Second):

@@ -91,7 +91,7 @@ func (c *Client) SendBlock(text string) error {
 		return err
 	}
 
-	if c.Settings.EchoTyped {
+	if c.EchoTyped() {
 		for _, ln := range strings.Split(block, "\n") {
 			c.emit(types.GameTextEvent{
 				Styled:    []types.StyledSegment{{Text: ln, Italic: true}},

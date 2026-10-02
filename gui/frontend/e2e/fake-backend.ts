@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page } from "@playwright/test";
-import type { InitState, TextPayload, WireEvent } from "../src/lib/types";
+import type { InitState, InputChainStatus, TextPayload, WireEvent } from "../src/lib/types";
 
 export interface FakeCall {
   method: string;
@@ -39,6 +39,7 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
     const listeners = new Map<string, Set<(d: unknown) => void>>();
     const calls: FakeCall[] = [];
     let inputChainActive = false;
+    let inputChainStatus: InputChainStatus = { active: false, chains: 0, step: 0, total: 0, state: "" };
     const emit = (event: string, data: unknown) => {
       for (const cb of listeners.get(event) ?? []) cb(data);
     };
@@ -87,14 +88,27 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
         return (...args: unknown[]) => {
           calls.push({ method: name, args });
           if (name === "InputChainActive") return Promise.resolve(inputChainActive);
+          if (name === "InputChainStatus") return Promise.resolve(inputChainStatus);
           if (name === "AbortInputChains") {
             const canceled = inputChainActive ? 1 : 0;
             inputChainActive = false;
+            inputChainStatus = { active: false, chains: 0, step: 0, total: 0, state: "" };
             return Promise.resolve(canceled);
           }
           if (name === "SendInput") {
             const input = typeof args[0] === "string" ? args[0] : "";
-            if (input.includes(";;") || input.includes("&&")) inputChainActive = true;
+            if (input.includes(";;") || input.includes("&&") || input.includes("$(")) {
+              inputChainActive = true;
+              inputChainStatus = {
+                active: true,
+                chains: 1,
+                step: input.includes("&&") || input.includes(";;") ? 2 : 1,
+                total: input.includes("&&") || input.includes(";;") ? 2 : 1,
+                state: input.includes("wait-for") ? "wait-for" : input.includes("&&") ? "unbusy" : "pacing",
+                ...(input.includes("wait-for") ? { detail: "ready", durationMs: 30000, remainingMs: 30000 } : {}),
+                ...(input.includes(";;") && !input.includes("wait-for") ? { durationMs: 900, remainingMs: 899 } : {}),
+              };
+            }
           }
           if (name === "CalcRankBonus") {
             const [mode, basics, subskill] = args as number[];

@@ -356,14 +356,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if a.state == stateGame {
-			switch msg.Type {
-			case tea.MouseWheelUp:
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
 				if a.tabs[a.activeTab].Kind == TabKindDebug {
 					a.debug.ScrollUp(3)
 				} else {
 					a.tabs[a.activeTab].Pane.ScrollUp(3)
 				}
-			case tea.MouseWheelDown:
+			case tea.MouseButtonWheelDown:
 				if a.tabs[a.activeTab].Kind == TabKindDebug {
 					a.debug.ScrollDown(3)
 				} else {

@@ -380,17 +380,31 @@ onboarding:
   welcome_shown: false  # GUI internal marker for the one-time first-login wiki popup
 ```
 
-Single-line typed input supports `${name}` substitution from
-`commands.variables`, `;;` paced separators, and `&&` separators that wait for
-one of the shared unbusy text fragments before continuing. Expansion is
-non-recursive, the line is validated before anything is sent, and splitting
-occurs before substitution so variable values cannot inject commands. `\${`,
-`\;;`, and `\&&` send the corresponding syntax literally. Action-set buttons
-use the same processing and read current variables on every invocation. `;;`
-commands use `commands.semicolon_delay_ms` (900 ms by default); each unbusy event
+PraetorScript, the lightweight single-line typed-input language, supports
+`${name}` and `${name:fallback}` substitution
+from `commands.variables`; a fallback is literal and applies when the saved
+value is missing or empty. It also supports `;;` paced separators, `&&`
+separators that wait for one of the shared unbusy text fragments, and `$()`
+control steps: `wait` (seconds),
+`wait-for` (future case-sensitive substring, optional `cancel-on` and
+`timeout`), `notify` (optional custom title), and `repeat "command"
+until "success" [cancel-on "failure"] [max attempts]`. Expansion is non-recursive, the whole
+line is validated before anything is sent, and parsing occurs before
+substitution so variable values cannot inject commands or control syntax.
+`\${`, `\$(`, `\;;`, and `\&&` send the corresponding syntax literally.
+Action-set buttons use the same processing and read current variables on every
+invocation. `;;` commands use `commands.semicolon_delay_ms` (900 ms by default);
+each unbusy event
 advances one pending `&&` chain FIFO after `commands.unbusy_delay_ms` (100 ms by
-default). Chains are connection-bound and cleared on disconnect. Variable
-substitution also applies to multiline input and `/send` files, but
+default). Repeats share that FIFO and delay, and all `$()` waits/reactions are
+cancellable through the same chain Stop control. In the GUI's dedicated row
+below the input, a fixed slot on the left shows an idle PraetorScript
+placeholder or the oldest active chain's step, current wait/retry state,
+remaining timeout, and concurrent chain count. Play/Stop and mode remain fixed
+on the right. Pacing shows its fixed starting delay; true waits count down in
+whole seconds. Chains are connection-bound
+and cleared on disconnect. Variable substitution also applies to multiline
+input and `/send` files, but
 neither path interprets `;;` or `&&` separators. Other UI buttons, navigation,
 Lua scripts, and `/play` playback bypass typed-input processing entirely.
 
