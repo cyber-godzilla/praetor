@@ -78,17 +78,16 @@ body {
 /* ---- Retro CRT effects — three independent toggles (Menu → Retro CRT Effects)
    Each layer is a non-interactive overlay gated by its own body class. */
 
-/* Phosphor bloom: each glyph glows in its own color (currentColor resolves per
-   element), plus a faint warm ambient haze. Applied to EVERY element — not just
-   via inheritance — because form controls (button/input/select/textarea) reset
-   text-shadow in the UA stylesheet, so relying on inheritance alone would leave
-   their text un-bloomed. The universal selector guarantees no text is missed;
-   on elements with no text it's a harmless no-op. */
-body.crt-bloom,
-body.crt-bloom * {
+/* Phosphor bloom inherits through ordinary text. Only form controls need an
+   explicit override because their UA rules reset text-shadow. Avoiding a
+   universal selector keeps style matching bounded during output bursts. */
+body.crt-bloom {
   text-shadow:
     0 0 3px currentColor,
     0 0 9px rgba(232, 168, 56, 0.1);
+}
+body.crt-bloom :is(button, input, select, textarea) {
+  text-shadow: inherit;
 }
 
 /* Scanline mask + gentle flicker. Promoted to its own compositor layer so the

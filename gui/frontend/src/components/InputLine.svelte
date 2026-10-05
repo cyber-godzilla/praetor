@@ -13,10 +13,10 @@
   import { searchBackward, dropLastChar } from "../lib/histsearch";
   import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
   import { insertsNewline, caretOnFirstLine, caretOnLastLine } from "../lib/multiline";
-  import { isAllowedDuringPlay } from "../lib/playcmd";
-  import type { PlayState } from "../lib/types";
+  import { chainStateLabel, chainTimeLabel } from "../lib/chainstatus";
+  import type { InputChainStatus, PlayState } from "../lib/types";
   import CommandHint from "./CommandHint.svelte";
-  import { matchCommands } from "../lib/commands";
+  import { matchCommands, tabComplete } from "../lib/commands";
 
   let value = $state("");
   let inputEl: HTMLTextAreaElement;
@@ -26,7 +26,42 @@
 
   // Passive hint above the input. matchCommands returns [] for anything that is
   // not a slash command, so this is empty for ordinary game text.
-  const hintMatches = $derived(matchCommands(value, { playing: store.playActive }));
+  const hintMatches = $derived(
+    matchCommands(value, { playing: store.playActive, modes: store.modeSpecs }),
+  );
+
+  // applyCompletion fills the input from a chosen hint row. completionFor only
+  // ever returns an extension of what is typed, so this can never destroy the
+  // line. The caret placement is deferred and explicit: focus() alone restores
+  // the textarea's previous selection, and the DOM has not taken the new value
+  // yet at this point.
+  function applyCompletion(text: string) {
+    value = text;
+    histIdx = -1; // the line no longer reflects a history position
+    queueMicrotask(() => {
+      inputEl?.focus();
+      inputEl?.setSelectionRange(text.length, text.length);
+    });
+  }
+
+  // Mirror hint visibility for GameView's Tab routing. This must track the same
+  // condition the markup below uses — the history search takes the slot, so the
+  // hint is hidden while it runs. If the two disagree, Tab is swallowed with no
+  // hint on screen.
+  $effect(() => {
+    store.hintActive =
+      !store.histSearchActive && hintMatches.length > 0 && !store.openModal;
+  });
+
+  // GameView bumps this counter when Tab is pressed with the hint showing.
+  let lastHintReq = 0;
+  $effect(() => {
+    const req = store.hintCompleteRequest;
+    if (req === lastHintReq) return;
+    lastHintReq = req;
+    const next = tabComplete(value, hintMatches);
+    if (next !== null) applyCompletion(next);
+  });
 
   // Reverse history search (Ctrl+R), readline-style. Active state is mirrored
   // in store.histSearchActive so GameView's Escape routing can yield to it;
@@ -41,7 +76,29 @@
   // the performer a long %wait or cue wait is a deliberate hold rather than a
   // wedged client — the whole reason this indicator exists.
   const IDLE_PLAY: PlayState = { active: false, paused: false, step: 0, total: 0 };
+  const IDLE_CHAIN: InputChainStatus = { active: false, chains: 0, step: 0, total: 0, state: "" };
   let play = $state<PlayState>(IDLE_PLAY);
+  let chain = $state<InputChainStatus>(IDLE_CHAIN);
+
+  async function refreshInputChain() {
+    try {
+      chain = await api.inputChainStatus();
+    } catch {
+      // A failed local status call is transient; the next poll retries.
+    }
+  }
+
+  async function stopInputChain() {
+    // Swap the control back immediately; the backend cancellation wakes ;; timer
+    // waits synchronously and removes && waiters before this promise resolves.
+    chain = IDLE_CHAIN;
+    try {
+      await api.abortInputChains();
+    } catch (e) {
+      store.addToast("Stop failed", String(e));
+    }
+    await refreshInputChain();
+  }
 
   // refreshPlay pulls the authoritative status once. Called by the poll and
   // immediately after a control action, so the indicator reflects a /pause or
@@ -92,16 +149,40 @@
       return;
     }
     let stopped = false;
-    // The backend is the authority: a performance that ended on its own clears
-    // store.playActive from its answer, which also tears this poll down.
-    const tick = () => {
-      if (!stopped) void refreshPlay();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Await each request before scheduling the next one. A fixed interval can
+    // accumulate bridge calls under load and let an older response overwrite a
+    // newer play state.
+    const tick = async () => {
+      if (stopped) return;
+      await refreshPlay();
+      if (!stopped) timer = setTimeout(tick, 500);
     };
-    tick();
-    const id = setInterval(tick, 500);
+    void tick();
     return () => {
       stopped = true;
-      clearInterval(id);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  });
+
+  // Chains can also be started by action-set buttons, so the input bar samples
+  // the shared scheduler while connected instead of relying only on submit().
+  $effect(() => {
+    if (store.connState !== "connected") {
+      chain = IDLE_CHAIN;
+      return;
+    }
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const tick = async () => {
+      if (stopped) return;
+      await refreshInputChain();
+      if (!stopped) timer = setTimeout(tick, 500);
+    };
+    void tick();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) clearTimeout(timer);
     };
   });
 
@@ -318,12 +399,24 @@
   }
 
   function pushHistory(line: string) {
-    if (line.trim() !== "") {
+    // Skip consecutive duplicates: with keep-input-on-send, re-sending the
+    // same line is the normal workflow and must not flood ArrowUp history.
+    if (line.trim() !== "" && line !== history[history.length - 1]) {
       history.push(line);
       if (history.length > 200) history.shift();
     }
     histIdx = -1;
-    value = "";
+    if (store.config?.UI?.KeepInputOnSend && line !== "") {
+      // Keep the sent line and select it all: Enter re-sends it verbatim,
+      // while any typing or Backspace replaces the whole thing. Assigning
+      // `line` (not leaving `value` be) makes the kept text exactly what was
+      // sent, even if the field changed during submit()'s awaits. Selection is
+      // deferred: the bound textarea has not taken the value yet.
+      value = line;
+      queueMicrotask(() => inputEl?.select());
+    } else {
+      value = "";
+    }
   }
 
   async function submitOnce() {
@@ -332,16 +425,6 @@
     const trimmed = line.trim();
     const lower = trimmed.toLowerCase();
 
-    // Ask the backend rather than trusting a cached flag: a performance can end
-    // on its own (script finished, send failed), and a stale "playing" flag
-    // would lock the user out of their own input with no way back.
-    const playing = await api.playActive();
-    store.playActive = playing; // keep the UI hint in sync as a side effect
-    if (playing && !isAllowedDuringPlay(line)) {
-      store.addToast("Performance running", "Only /pause, /resume, /stop, /next (or Alt+X) are accepted.");
-      pushHistory(line);
-      return;
-    }
     if (lower === "/pause") {
       pushHistory(line);
       if (!(await api.pausePlay())) store.addToast("Play", "Nothing is playing.");
@@ -372,6 +455,11 @@
     // Local commands handled by the UI (mirrors the TUI wrapper).
     if (lower === "/help") {
       store.openModal = "help";
+      pushHistory(line);
+      return;
+    }
+    if (lower === "/guide") {
+      store.openModal = "new-user";
       pushHistory(line);
       return;
     }
@@ -429,8 +517,16 @@
       return;
     }
 
-    // Everything else routes to the core (which interprets other /slash cmds).
-    await api.send(line);
+    // Everything else routes through the typed-input processor. ${name} and
+    // ${name:fallback} variables apply to single- and multi-line input, action
+    // buttons, and /send files. ;; / && chains and $() control steps apply only to
+    // single-line input and action buttons. Lua and /play bypass both.
+    try {
+      await api.sendInput(line);
+    } catch (e) {
+      store.addToast("Input error", String(e));
+    }
+    await refreshInputChain();
     pushHistory(line);
   }
 
@@ -767,7 +863,7 @@
       <span class="hint">Enter sends · Esc cancels · Ctrl+R older</span>
     </div>
   {:else if hintMatches.length > 0 && !store.openModal}
-    <CommandHint matches={hintMatches} />
+    <CommandHint matches={hintMatches} input={value} onchoose={applyCompletion} />
   {/if}
   <div class="inputbar">
     <span class="prompt">›</span>
@@ -785,36 +881,70 @@
       disabled={!store.transportReady || submitting}
       placeholder={store.connState === "connected" ? "" : "(disconnected)"}
     ></textarea>
-    <button
-      class="play"
-      class:active={play.active}
-      class:paused={play.paused}
-      title={!play.active
-        ? "Play a script (/play)"
-        : play.paused
-          ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
-          : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
-      onclick={onPlayClick}
-      tabindex="-1"
-    >
-      {#if !play.active}
-        ▶ play
-      {:else}
-        {play.paused ? "❙❙" : "▶"}
-        {play.step}/{play.total}
-      {/if}
-    </button>
     <button class="send" onclick={submit} aria-label="Send command" disabled={!store.transportReady || submitting}>Send</button>
-    <button
-      class="mode"
-      class:active={!!store.mode && store.mode !== "disable"}
-      title="Switch mode"
-      onclick={() => (store.openModal = "modeselect")}
-      disabled={!store.transportReady}
-      tabindex="-1"
-    >
-      {store.mode && store.mode !== "disable" ? store.mode : "disable"}
-    </button>
+  </div>
+  <!-- Automation Bar: PraetorScript owns the flexible left side; execution
+       controls stay anchored at the right. -->
+  <div class="automation-bar" data-testid="input-controls">
+    {#if chain.active}
+      <div
+        class="chain-status"
+        data-testid="chain-status"
+        title={`PraetorScript chain ${chain.step} of ${chain.total}: ${chainStateLabel(chain)}`}
+      >
+        <span class="chain-step">{chain.step}/{chain.total}</span>
+        <span class="chain-state">{chainStateLabel(chain)}</span>
+        {#if chainTimeLabel(chain)}<span class="chain-time">{chainTimeLabel(chain)}</span>{/if}
+        {#if chain.chains > 1}<span class="chain-more">+{chain.chains - 1}</span>{/if}
+      </div>
+    {:else}
+      <div
+        class="chain-status placeholder"
+        data-testid="chain-status-placeholder"
+        aria-label="No PraetorScript chain running"
+      >PraetorScript idle</div>
+    {/if}
+    <div class="automation-controls">
+      {#if chain.active}
+        <button
+          class="chain-stop"
+          aria-label="Stop command chain"
+          title="Stop queued commands, waits, reactions, and repeats"
+          onclick={stopInputChain}
+          tabindex="-1"
+        >■ stop</button>
+      {:else}
+        <button
+          class="play"
+          class:active={play.active}
+          class:paused={play.paused}
+          title={!play.active
+            ? "Play a script (/play)"
+            : play.paused
+              ? `Paused at step ${play.step} of ${play.total} — click to resume. /stop or Alt+X ends it.`
+              : `Performing step ${play.step} of ${play.total} — click to pause. Only /pause, /resume, /stop, /next (or Alt+X) are accepted.`}
+          onclick={onPlayClick}
+          tabindex="-1"
+        >
+          {#if !play.active}
+            ▶ play
+          {:else}
+            {play.paused ? "❙❙" : "▶"}
+            {play.step}/{play.total}
+          {/if}
+        </button>
+      {/if}
+      <button
+        class="mode"
+        class:active={!!store.mode && store.mode !== "disable"}
+        title="Switch mode"
+        onclick={() => (store.openModal = "modeselect")}
+        disabled={!store.transportReady}
+        tabindex="-1"
+      >
+        {store.mode && store.mode !== "disable" ? store.mode : "disable"}
+      </button>
+    </div>
   </div>
 </div>
 
@@ -846,13 +976,29 @@
   }
   .inputbar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
     padding: 6px 12px;
     background: var(--bg-panel);
     border-top: 1px solid var(--border);
   }
+  .automation-bar {
+    min-height: 37px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 6px;
+    background: var(--bg-panel);
+    border-top: 1px solid var(--border);
+  }
+  .automation-controls {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
   .prompt {
+    padding-top: 3px;
     color: var(--accent);
     font-family: var(--mono);
     font-size: 15px;
@@ -866,6 +1012,16 @@
     overflow-y: auto;
     font-family: inherit;
     line-height: 1.4;
+  }
+  /* The native WebKit marker is only a hairline by default, which is easy to
+     lose against the dark input background. Keep native dictionary/context-
+     menu behavior, but make the misspelling squiggle more legible. */
+  textarea::spelling-error {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: #ff626b;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
   }
   /* Performance indicator. Electric blue rather than the orange accent: while
      this is showing, the input rejects everything but the four control
@@ -896,6 +1052,59 @@
   .play.active.paused {
     color: var(--play-blue-dim);
     border-color: var(--border);
+  }
+  .chain-stop {
+    font-size: 12px;
+    font-family: var(--mono);
+    color: #e06c75;
+    background: var(--bg-elevated);
+    border: 1px solid #e06c75;
+    border-radius: 4px;
+    padding: 4px 10px;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .chain-status {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    color: var(--play-blue);
+    background: var(--bg-elevated);
+    border: 1px solid var(--play-blue-dim);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-align: left;
+    white-space: nowrap;
+  }
+  .chain-status.placeholder {
+    color: var(--fg-dim);
+    border-color: var(--border);
+    opacity: 0.65;
+  }
+  .chain-step,
+  .chain-time,
+  .chain-more {
+    flex: none;
+    color: var(--fg-dim);
+  }
+  .chain-state {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .chain-time {
+    color: var(--accent);
+  }
+  .chain-more {
+    color: var(--accent);
+  }
+  .chain-stop:hover {
+    color: var(--bg);
+    background: #e06c75;
   }
   .mode {
     font-size: 12px;
@@ -945,6 +1154,9 @@
       padding-inline: 8px;
       text-overflow: ellipsis;
       white-space: nowrap;
+    }
+    .automation-bar {
+      padding-inline: 8px;
     }
   }
 </style>

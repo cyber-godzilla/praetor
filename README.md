@@ -115,6 +115,26 @@ EOF
 sudo yum install praetor
 ```
 
+### Pacman (Arch Linux)
+
+x86_64 only. Add the repository to `/etc/pacman.conf` (the `1.0.0` in the
+section name is the repository layout version, not the Praetor version, and
+does not change between releases):
+
+```ini
+[praetor-1.0.0]
+SigLevel = Never
+Server = https://packages.buildkite.com/cybergodzilla-2099/praetor-arch/files
+```
+
+```bash
+# Install (provides both `praetor` GUI and `praetor-tui`)
+sudo pacman -Sy praetor
+```
+
+The package depends on Arch's `gtk3` and `webkit2gtk-4.1`. The `.pkg.tar.zst`
+is also attached to each GitHub release for `pacman -U`.
+
 ### Chocolatey (Windows)
 
 ```powershell
@@ -179,13 +199,19 @@ The self-signed fallback encrypts traffic but is not expected to be trusted by b
 
 Praetor shows a splash screen, then either an account selection screen (if you have stored credentials) or a login form. Desktop installs use the system keyring by default; headless services can explicitly use an encrypted credential file with a separately managed key. Credential-storage failures never block an otherwise successful TEC connection, and Praetor never falls back to plaintext storage.
 
+On a new installation, the first successful GUI login also shows a one-time
+welcome popup with links to the [Praetor overview](https://tec-wiki.com/praetor),
+[Praetor guide](https://tec-wiki.com/praetor-guide), and
+[Praetor scripts](https://tec-wiki.com/praetor-scripts) wiki pages.
+Nothing opens automatically; choose a link in the popup to open it.
+
 ### Key Bindings
 
 | Key | Action |
 |-----|--------|
 | Tab / Shift+Tab | Next / previous tab |
 | Alt+1..9, Alt+0 | Jump to tab (0 = 10th) |
-| Alt+S | Toggle sidebar |
+| Alt+S | Toggle sidebar (GUI); cycle sidebar → topbar → off (TUI) |
 | Alt+M | Quick-cycle automation mode |
 | Esc | Open menu |
 | Ctrl+C | Clear input / confirm quit |
@@ -200,6 +226,7 @@ Praetor shows a splash screen, then either an account selection screen (if you h
 | Command | Description |
 |---------|-------------|
 | `/mode <name> [args]` | Set automation mode (alias `/sm`) |
+| `/guide` | Reopen the welcome popup with Praetor wiki links |
 | `/list` | List / select available modes |
 | `/toggle <label>` | Toggle a boolean state value |
 | `/set <label> <val>` | Set a state value |

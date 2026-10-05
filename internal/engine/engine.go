@@ -22,7 +22,7 @@ type ModeChange struct {
 type Engine struct {
 	mu           sync.Mutex
 	notifyMu     sync.RWMutex
-	notifySink   func(title, message string)
+	notify       func(title, message string)
 	vm           *LuaVM
 	state        *ModeState
 	queue        *CommandQueue
@@ -41,13 +41,18 @@ type Engine struct {
 	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
 }
 
-// SetNotificationSink installs the shell-specific delivery path for Lua's
-// notify(title, message). It is independent of the engine lock because Lua
-// callbacks execute while that lock is already held.
-func (e *Engine) SetNotificationSink(sink func(title, message string)) {
+// SetNotifyHandler sets the application callback used by Lua's notify().
+// It may be replaced at runtime; passing nil restores log-only behavior.
+func (e *Engine) SetNotifyHandler(fn func(title, message string)) {
 	e.notifyMu.Lock()
-	e.notifySink = sink
+	e.notify = fn
 	e.notifyMu.Unlock()
+}
+
+// SetNotificationSink is kept as a compatibility alias for shells that use the
+// older name. New callers should use SetNotifyHandler.
+func (e *Engine) SetNotificationSink(fn func(title, message string)) {
+	e.SetNotifyHandler(fn)
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -512,6 +517,20 @@ func (e *Engine) ModeNames() []string {
 	return names
 }
 
+// ModeSpecs returns the declared metadata for all loaded modes, sorted by name
+// and excluding library modules, matching ModeNames' filtering exactly.
+func (e *Engine) ModeSpecs() []ModeSpec {
+	all := e.vm.ModeSpecs()
+	specs := make([]ModeSpec, 0, len(all))
+	for _, s := range all {
+		if strings.HasPrefix(s.Name, "lib_") {
+			continue
+		}
+		specs = append(specs, s)
+	}
+	return specs
+}
+
 // HasMode reports whether a mode matching the given name (case-insensitively) is
 // loaded.
 func (e *Engine) HasMode(name string) bool {
@@ -538,15 +557,17 @@ func (e *Engine) OnSetMode(mode string, args []string) {
 	e.runSwitch(mode, args)
 }
 
-// OnNotify logs and delivers a notification through the active shell sink.
+// OnNotify forwards a Lua notification request to the application. Engines
+// constructed directly by tests or tools retain a log-only fallback.
 func (e *Engine) OnNotify(title, message string) {
-	log.Printf("[NOTIFY] %s: %s", title, message)
 	e.notifyMu.RLock()
-	sink := e.notifySink
+	notify := e.notify
 	e.notifyMu.RUnlock()
-	if sink != nil {
-		sink(title, message)
+	if notify != nil {
+		notify(title, message)
+		return
 	}
+	log.Printf("[NOTIFY] %s: %s", title, message)
 }
 
 // OnLog logs a message from Lua.

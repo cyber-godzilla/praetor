@@ -15,3 +15,7 @@ build/bin/
 # Stray dev-mode binaries from `go build .` (named after the module dir)
 /gui
 /praetor-gui
+
+# Playwright output
+frontend/playwright-report/
+frontend/test-results/

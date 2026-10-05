@@ -356,14 +356,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		if a.state == stateGame {
-			switch msg.Type {
-			case tea.MouseWheelUp:
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
 				if a.tabs[a.activeTab].Kind == TabKindDebug {
 					a.debug.ScrollUp(3)
 				} else {
 					a.tabs[a.activeTab].Pane.ScrollUp(3)
 				}
-			case tea.MouseWheelDown:
+			case tea.MouseButtonWheelDown:
 				if a.tabs[a.activeTab].Kind == TabKindDebug {
 					a.debug.ScrollDown(3)
 				} else {
@@ -1318,26 +1318,6 @@ func (a *App) ShowKudosLoginPrompt(count int) {
 		Bold:  true,
 		Color: "#e8a838",
 	}})
-}
-
-// findTabByKind returns the index of the first tab with the given kind, or -1.
-func (a App) findTabByKind(kind TabKind) int {
-	for i, t := range a.tabs {
-		if t.Kind == kind {
-			return i
-		}
-	}
-	return -1
-}
-
-// SwitchToDebug switches to the debug tab and enables debug mode.
-func (a *App) SwitchToDebug() {
-	a.debugMode = true
-	idx := a.findTabByKind(TabKindDebug)
-	if idx >= 0 {
-		a.tabs[idx].Visible = true
-		a.switchTab(idx)
-	}
 }
 
 // switchTab switches to the given tab and clears its unread flag.

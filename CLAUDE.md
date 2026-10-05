@@ -67,6 +67,7 @@ The GUI lives in a **nested Go module** (`gui/go.mod` with a `replace` directive
 - `make -C gui build` — builds `gui/build/bin/praetor`
 - `make -C gui installer` — Windows NSIS installer
 - `make -C gui check` — frontend build + facade tests + dev-mode compile (no webview)
+- `make -C gui e2e` — Playwright smoke suite against the built frontend with a fake Wails bridge (Chromium; `make -C gui e2e-deps` once). Separate from `check`; CI runs it as the `e2e` job. See `gui/frontend/e2e/README.md`.
 
 When changing shared core behavior, verify **both** clients: `make check` at the root and the relevant `gui/` build/tests.
 
@@ -144,13 +145,14 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 - Pattern matching in Go (substring + wildcard→regex), Lua only called on match
 - Action functions receive the matched text as first argument: `action = function(text)`
 - Mode names are resolved case-insensitively for `/mode`, `/sm`, and `set_mode` (the canonical stored name is used for `currentMode`, metrics, and events).
+- **Mode metadata:** a mode may declare `usage`, `desc`, `chains`, and `hidden` on its table; `loadModeFile` reads them at load time into `LuaMode`, and `Engine.ModeSpecs()` exposes them (same `lib_` exclusion and sort as `ModeNames()`). The GUI resolves `/mode`'s hint against them — typing `/mode ` lists the corpus, a partial name narrows it, a resolved name shows that mode's own signature. `chains` is reported, never acted on: appending `[after:<mode>]` is the hint's business and the chaining itself lives in Lua (`lib_after`). `hidden` drops a mode from the hint only — it stays loaded, the picker still lists it, and `/mode <name>` still runs it; a hidden mode is indistinguishable from a nonexistent one in the hint, so its silence cannot leak that it exists. Clearing `usage`/`desc` does not hide a mode. Wrong-typed fields are treated as undeclared rather than failing the load. See [docs/lua-api.md](docs/lua-api.md#mode-metadata).
 - **Mode switch order:** the outgoing mode's pending queue is cleared *before* its `on_stop` runs, so `on_stop`'s own `send()`s (sheathe/stand cleanup) survive into the new mode instead of being wiped. Timers/state clear after `on_stop`.
 
 ### Command Queue & Drainer
 
 - A single long-lived drainer goroutine per connection owns all sending (started/stopped with the connection lifecycle). Because it is the only sender, `min_interval` pacing is race-free and enqueue order is preserved across differing per-command delays. It drains on enqueue (a timer's `send()` goes out on an idle link) and drops a command a mode switch retired mid-delay (queue generation check).
 - The queue clears on both connect and disconnect, so commands the engine queues while offline never burst onto the next login.
-- Admission drops are observable (logged at warn, rate-limited; counted via `Dropped()`). A full queue drops a normal command, but a `high_priority` command instead **evicts** the newest normal command so emergency commands (stand/flee) aren't lost. Duplicate commands already queued are dropped.
+- Admission drops are observable in warning logs, rate-limited per reason. A full queue drops a normal command, but a `high_priority` command instead **evicts** the newest normal command so emergency commands (stand/flee) aren't lost. Duplicate commands already queued are dropped.
 - Lifecycle events (connect/disconnect/mode change) are delivered guaranteed (never dropped under a text flood); bulk events (text/SKOOT/status) stay droppable. The engine's mode-change channel coalesces (latest mode wins).
 
 ### Lua API
@@ -158,7 +160,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 ```lua
 send(command [, delay_ms])           -- queue game command
 set_mode(name [, {args}])           -- switch mode
-notify(title, message)               -- desktop notification
+notify(title, message)               -- desktop notification (when allowed in Notifications)
 log(message)
 random_item(table)
 time.now() / time.since(ms)
@@ -174,14 +176,14 @@ set_timeout(fn, ms) / set_interval(fn, ms) / clear_timer(id)
 
 ## Key Bindings (Game View)
 
-These are the **terminal client** bindings. The desktop GUI mirrors the same keys with its own handlers (in `gui/frontend/src`), so document/behaviour changes here should be reflected there too. The "Reserved Alt Keys" note below is a terminal (VT100/readline) constraint and does not apply to the GUI.
+These are the **terminal client** bindings. The desktop GUI mirrors the same keys with its own handlers (in `gui/frontend/src`), except that Alt+S only toggles the GUI sidebar; `topbar` is TUI-only. Document/behaviour changes here should otherwise be reflected there too. The "Reserved Alt Keys" note below is a terminal (VT100/readline) constraint and does not apply to the GUI.
 
 | Key | Action |
 |-----|--------|
 | Tab | Next tab |
 | Shift+Tab | Previous tab |
 | Alt+1..9, Alt+0 | Jump to tab N (0 = 10th) |
-| Alt+S | Toggle sidebar |
+| Alt+S | Cycle sidebar → topbar → off |
 | Alt+M | Quick-cycle modes (persisted to config) |
 
 | Esc | Open menu |
@@ -206,6 +208,13 @@ The desktop GUI adds bindings the TUI does not have:
 | Ctrl+R | Reverse history search, readline-style (type to filter, Ctrl+R = older match, Enter sends, Esc cancels, arrows/Home/End accept into the input) |
 | Alt+X | Abort: cancels an in-flight /send, switches to the `disable` mode, and stops an active `/play` performance |
 | Alt+I | Toggle reveal of suppressed (ignored) lines |
+| Tab | Complete the slash-command hint when it is showing (longest shared prefix; a unique match completes in full). Otherwise cycles tabs as usual — Shift+Tab always cycles. |
+
+Hint rows are also clickable: a row that can extend what you have typed fills the
+input with it (never sends). A row that could only shorten the line — the
+signature still showing while you type arguments — is inert. See `completionFor`
+/ `tabComplete` in `lib/commands.ts`; Tab routes through `hintActive` /
+`hintCompleteRequest` in `store.svelte.ts`, the same split as the reverse search.
 
 Search matches are tinted in the output and the current match line is outlined.
 Both are handled in GameView's capture-phase keydown (see `searchOpen` /
@@ -323,21 +332,27 @@ commands:
   default_delay: 900ms
   min_interval: 400ms
   max_queue_size: 20
+  semicolon_delay_ms: 900 # delay between ;; commands; GUI range 100-10000
+  unbusy_delay_ms: 100    # delay after && response; GUI range 0-10000
   high_priority: []
+  variables: {}           # GUI-managed ${name} substitutions for typed input
 ui:
-  sidebar_open: true
+  display_mode: sidebar   # TUI: sidebar | topbar | off; GUI: sidebar | off
   default_tab: all
   scrollback: 5000
-  sidebar_width: 40
-  minimap_scale: 0.8
-  minimap_height: 12
+  sidebar_width: 40       # TUI columns
+  gui_sidebar_width: 260  # GUI pixels
+  minimap_scale: 1.0
+  minimap_height: 12      # TUI rows
+  gui_minimap_height: 160 # GUI pixels
   quick_cycle_modes:
     - disable
   color_words: false
   echo_typed_commands: true
   echo_script_commands: true
   hide_ips: false
-  input_spellcheck: true       # GUI: webview spellcheck on the command input
+  input_spellcheck: true       # GUI: native spellcheck on the command input
+  keep_input_on_send: false    # GUI: keep the sent command selected in the input instead of clearing
   numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
   custom_tabs: []
   action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons
@@ -346,6 +361,7 @@ updates:
   check: true           # GUI: startup check against GitHub releases (toast on newer)
 notifications:
   desktop:
+    sound: false          # all-or-nothing OS default notification sound
     health_below:
       enabled: true
       threshold: 25
@@ -361,7 +377,49 @@ logging:
   session:
     enabled: true
     path: ""
+onboarding:
+  welcome_shown: false  # GUI internal marker for the one-time first-login wiki popup
 ```
+
+PraetorScript, the lightweight single-line typed-input language, supports
+`${name}` and `${name:fallback}` substitution
+from `commands.variables`; a fallback is literal and applies when the saved
+value is missing or empty. It also supports `;;` paced separators, `&&`
+separators that wait for one of the shared unbusy text fragments, and `$()`
+control steps: `wait` (seconds),
+`wait-for` (future case-sensitive substring, optional `cancel-on` and
+`timeout`), `notify` (optional custom title), and `repeat "command"
+until "success" [cancel-on "failure"] [max attempts]`. Expansion is non-recursive, the whole
+line is validated before anything is sent, and parsing occurs before
+substitution so variable values cannot inject commands or control syntax.
+`\${`, `\$(`, `\;;`, and `\&&` send the corresponding syntax literally.
+Action-set buttons use the same processing and read current variables on every
+invocation. `;;` commands use `commands.semicolon_delay_ms` (900 ms by default);
+each unbusy event
+advances one pending `&&` chain FIFO after `commands.unbusy_delay_ms` (100 ms by
+default). Repeats share that FIFO and delay, and all `$()` waits/reactions are
+cancellable through the same chain Stop control. In the GUI's dedicated row
+below the input, a fixed slot on the left shows an idle PraetorScript
+placeholder or the oldest active chain's step, current wait/retry state,
+remaining timeout, and concurrent chain count. Play/Stop and mode remain fixed
+on the right. Pacing shows its fixed starting delay; true waits count down in
+whole seconds. Chains are connection-bound
+and cleared on disconnect. Variable substitution also applies to multiline
+input and `/send` files, but
+neither path interprets `;;` or `&&` separators. Other UI buttons, navigation,
+Lua scripts, and `/play` playback bypass typed-input processing entirely.
+
+On a new GUI installation, the first successful login shows a one-time welcome
+popup linking to the Praetor overview, guide, and scripts wiki pages. Links open
+only when clicked. Configs from older releases are migrated as already welcomed,
+so upgrading does not show the popup unexpectedly. This is GUI shell behavior;
+the TUI is unchanged. The GUI-only `/guide` command reopens the same popup.
+
+## Packaging
+
+Tag-triggered (`v*`) release pipeline in `.github/workflows/release.yaml`; one native job per OS because Wails cannot cross-compile. Channels: Homebrew tap (`packaging/homebrew/`), deb + rpm via nfpm (`packaging/linux/`) pushed to Buildkite deb/rpm registries, Chocolatey (`packaging/choco/`) pushed to a Buildkite NuGet registry, and an Arch package (`packaging/arch/`). Every registry push treats HTTP 409 (version already published) as a skip, not a failure, so re-running a release job for an existing tag gets through to its later steps; deb/rpm go via `packaging/buildkite-push.sh`.
+
+**Arch:** Buildkite has no pacman registry, so `packaging/arch/publish.sh` builds the package with nfpm's `archlinux` packager, builds a one-package repo db with `repo-add`, and pushes both to the **Files** registry `praetor-arch`. Files-registry rules dictate the naming: every filename must match `{BASENAME}-{SEMVER}.{EXT}`, so the package is renamed to `praetor-<ver>-1.x86_64.pkg.tar.zst` (nfpm's default with `-x86_64` is rejected), and the repo db is `praetor-1.0.0.db` — users reference it as `[praetor-1.0.0]`, where `1.0.0` is the repo *layout* version, not the app version. Same-name re-upload is a 409, so the script deletes the old db before uploading (token needs `delete_packages`). x86_64 only; amd64 leg of the Linux job. `DRY_RUN=1` builds without network; `packaging/arch/verify-local.sh` installs the result in an `archlinux` container; `Dockerfile.pacman-test` checks the live registry after a release.
 
 ## Testing
 
@@ -372,6 +430,7 @@ Tests across the project:
 - `internal/config/` — YAML loading with defaults
 - `internal/colorwords/` — color word detection, adjectives, suffixes, plurals, rainbow
 - `internal/client/` — session logging
+- `gui/frontend/e2e/` — Playwright smoke tests (15) over the built GUI: boot/login, output rendering + burst tail-follow, input/multiline/history/hint, menu/sidebar/tabs/toasts, Ctrl+F search, numpad
 
 
 ## Known Limitations

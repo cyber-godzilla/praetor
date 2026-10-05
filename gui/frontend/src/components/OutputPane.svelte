@@ -55,6 +55,10 @@
   let userScrollActive = false;
   let userScrollTimer: ReturnType<typeof setTimeout> | undefined;
   let lastTouchY: number | undefined;
+  // Keep the last sampled position as a fallback signal for programmatic test
+  // harnesses and accessibility controls that move scrollTop directly without
+  // first producing a wheel or touch event.
+  let lastTop = 0;
   let ignoreScroll = false;
 
   function bandPx(): number {
@@ -78,17 +82,21 @@
   // gesture is allowed to take ownership of scrollback.
   function onScroll() {
     if (!viewport) return;
+    const top = viewport.scrollTop;
     if (ignoreScroll) {
       ignoreScroll = false;
+      lastTop = top;
       sampleMetrics();
       return;
     }
+    const movedUp = top < lastTop;
     autoFollow = nextAutoFollow({
       gapPx: gapToBottom(viewport),
       bandPx: bandPx(),
       current: autoFollow,
-      userMovedAway: userScrollActive,
+      userMovedAway: userScrollActive || movedUp,
     });
+    lastTop = top;
     // Native wheel/touch momentum can continue after its input event. Keep the
     // user-intent window alive until scrolling itself has gone quiet.
     if (userScrollActive) markUserScroll();
@@ -127,6 +135,7 @@
       current: autoFollow,
       userMovedAway: movedAway,
     });
+    lastTop = viewport.scrollTop;
     sampleMetrics();
   }
 
@@ -202,10 +211,13 @@
   let tailFrame = 0;
   let verifyFrame = 0;
   let destroyed = false;
+  let forceFollowQueued = false;
 
-  function setTailPosition() {
-    if (!viewport || !autoFollow) return;
+  function setTailPosition(force = false) {
+    if (!viewport || (!autoFollow && !force)) return;
+    if (force) autoFollow = true;
     viewport.scrollTop = viewport.scrollHeight;
+    lastTop = viewport.scrollTop;
     sampleMetrics();
   }
 
@@ -217,12 +229,14 @@
       if (gapToBottom(viewport) > TAIL_TOLERANCE_PX) {
         viewport.scrollTop = viewport.scrollHeight;
       }
+      lastTop = viewport.scrollTop;
       sampleMetrics();
     });
   }
 
-  function followTail(immediate = false) {
-    if (immediate) setTailPosition();
+  function followTail(immediate = false, force = false) {
+    if (force) forceFollowQueued = true;
+    if (immediate) setTailPosition(force);
     if (tailScheduled || destroyed) return;
     tailScheduled = true;
     void tick().then(() => {
@@ -233,8 +247,10 @@
       tailFrame = requestAnimationFrame(() => {
         tailFrame = 0;
         tailScheduled = false;
-        if (!viewport || !autoFollow) return;
-        setTailPosition();
+        const forceThisFrame = forceFollowQueued;
+        forceFollowQueued = false;
+        if (!viewport || (!autoFollow && !forceThisFrame)) return;
+        setTailPosition(forceThisFrame);
         queueTailVerification();
       });
     });
@@ -250,6 +266,7 @@
       ignoreScroll = true;
       viewport.scrollTop = 0;
     }
+    lastTop = 0;
     sampleMetrics();
   }
   function toEnd() {
@@ -272,12 +289,16 @@
     else applyUserScrollPosition(movedAway);
   }
 
+  let firstLineID: number | undefined;
   $effect(() => {
     // At the scrollback cap, length returns to the same value after every head
     // trim. Also depend on the newest identity so every append schedules follow.
     void tab.lines.length;
     void tab.lines[tab.lines.length - 1]?.id;
-    if (autoFollow) followTail();
+    const nextFirstLineID = tab.lines[0]?.id;
+    const frontTrimmed = firstLineID !== undefined && nextFirstLineID !== firstLineID;
+    firstLineID = nextFirstLineID;
+    if (autoFollow) followTail(false, frontTrimmed);
     sampleMetrics();
   });
 
@@ -486,6 +507,7 @@
   <div
     class="pane"
     class:following={autoFollow}
+    data-testid="e2e-output"
     bind:this={viewport}
     onscroll={onScroll}
     onwheel={onViewportWheel}
@@ -495,7 +517,7 @@
     ontouchcancel={onViewportTouchEnd}
     style="font-size:{fontSize}px"
   >
-    <div class="content" bind:this={contentEl}>
+    <div class="scroll-content" bind:this={contentEl}>
       {#each tab.lines as line (line.id)}
         {#if isBlank(line)}
           <div class="line blank">&nbsp;</div>
@@ -582,13 +604,14 @@
     line-height: 1.4;
     background: var(--bg);
     user-select: text;
+    contain: layout style paint;
   }
   /* While following, application code owns tail anchoring. When detached,
      restore native anchoring so a reader's scrollback position stays stable. */
   .pane.following {
     overflow-anchor: none;
   }
-  .content {
+  .scroll-content {
     min-width: 0;
   }
   /* Hide the native scrollbar — the custom rail replaces it. Scrolling via
@@ -721,6 +744,10 @@
     white-space: pre-wrap;
     word-break: break-word;
     min-height: 1.4em;
+    /* Let the webview skip layout/paint for off-screen scrollback while keeping
+       every logical row in the DOM for search, selection, and exact scrolling. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 1.4em;
   }
   .line.search-current {
     outline: 1px solid var(--accent);

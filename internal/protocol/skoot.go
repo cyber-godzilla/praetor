@@ -95,8 +95,11 @@ func parseMinimap(payload string) *types.SKOOTUpdateEvent {
 		// renderers degrade gracefully, but nonsense shouldn't reach them). Skip
 		// the single bad room rather than blanking the whole map. Bounds are
 		// generous relative to real SKOOT data.
-		if math.IsNaN(brightness) || math.IsInf(brightness, 0) || brightness < 0 || brightness > 200 {
+		if math.IsNaN(brightness) || math.IsInf(brightness, 0) || brightness < 0 {
 			continue
+		}
+		if brightness > 200 {
+			brightness = 200
 		}
 		if x < -10000 || x > 10000 || y < -10000 || y > 10000 || size <= 0 || size > 2048 {
 			continue

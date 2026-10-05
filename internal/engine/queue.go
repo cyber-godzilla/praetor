@@ -31,9 +31,6 @@ type CommandQueue struct {
 	// drains promptly even on an idle connection (no incoming game text).
 	notify chan struct{}
 
-	// dropped counts commands the queue refused (full, duplicate, or evicted for
-	// priority). Exposed via Dropped() so drops are observable instead of silent.
-	dropped     uint64
 	lastDropLog map[string]time.Time
 }
 
@@ -57,18 +54,9 @@ func NewCommandQueue(maxSize int, defaultDelay, minInterval time.Duration, highP
 	}
 }
 
-// Dropped returns the total number of commands the queue has refused (full,
-// duplicate, or evicted to make room for a high-priority command).
-func (q *CommandQueue) Dropped() uint64 {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	return q.dropped
-}
-
-// recordDrop counts a refused command and logs it at warn, rate-limited to once
+// recordDrop logs a refused command at warn, rate-limited to once
 // per second per reason so a runaway script can't flood the log. Caller holds mu.
 func (q *CommandQueue) recordDrop(command, reason string) {
-	q.dropped++
 	now := time.Now()
 	if last, ok := q.lastDropLog[reason]; !ok || now.Sub(last) >= time.Second {
 		q.lastDropLog[reason] = now
@@ -178,14 +166,6 @@ func (q *CommandQueue) Enqueue(command string, delayMs int) {
 	}
 
 	q.signal()
-}
-
-// Dequeue removes and returns the next command from the queue.
-// Returns false if the queue is empty. Used by tests as the queue-inspection
-// primitive; production uses DequeueGen (which also carries the generation).
-func (q *CommandQueue) Dequeue() (QueuedCommand, bool) {
-	cmd, _, ok := q.DequeueGen()
-	return cmd, ok
 }
 
 // DequeueGen is Dequeue plus the queue generation the command belonged to. A

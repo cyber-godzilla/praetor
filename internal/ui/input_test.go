@@ -3,7 +3,41 @@ package ui
 import (
 	"strings"
 	"testing"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
+
+// submit types a line into the input and presses Enter, returning the
+// updated Input (Update is value-receiver).
+func submitLine(i Input, line string) Input {
+	i.textinput.SetValue(line)
+	i, _ = i.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	return i
+}
+
+func TestInput_History_SkipsConsecutiveDuplicates(t *testing.T) {
+	i := NewInput()
+	i = submitLine(i, "kill rat")
+	i = submitLine(i, "kill rat")
+	i = submitLine(i, "kill rat")
+	if len(i.history) != 1 {
+		t.Fatalf("history after re-sending the same line = %v, want one entry", i.history)
+	}
+
+	// Only consecutive duplicates collapse: an earlier copy separated by
+	// another command is deliberately kept.
+	i = submitLine(i, "look")
+	i = submitLine(i, "kill rat")
+	want := []string{"kill rat", "look", "kill rat"}
+	if len(i.history) != len(want) {
+		t.Fatalf("history = %v, want %v", i.history, want)
+	}
+	for n, w := range want {
+		if i.history[n] != w {
+			t.Fatalf("history = %v, want %v", i.history, want)
+		}
+	}
+}
 
 func TestInput_View_BorderCachedBySetWidth(t *testing.T) {
 	i := NewInput()

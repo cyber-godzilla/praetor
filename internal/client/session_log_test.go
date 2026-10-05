@@ -1,12 +1,31 @@
 package client
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestSessionLogger_CloseDrainsQueuedEntries(t *testing.T) {
+	dir := t.TempDir()
+	sl, err := NewSessionLogger(true, dir)
+	if err != nil {
+		t.Fatalf("NewSessionLogger: %v", err)
+	}
+	for i := 0; i < 2000; i++ {
+		sl.Log(time.Unix(int64(i), 0), fmt.Sprintf("entry-%d", i))
+	}
+	if err := sl.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	content := readSessionLog(t, dir)
+	if got := strings.Count(content, "entry-"); got != 2000 {
+		t.Fatalf("log contains %d queued entries, want 2000", got)
+	}
+}
 
 func TestSessionLogger_SingleLine(t *testing.T) {
 	dir := t.TempDir()

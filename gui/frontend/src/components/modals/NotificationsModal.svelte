@@ -6,6 +6,8 @@
 
   const src = store.config?.Notifications?.Desktop;
   let cfg = $state<DesktopNotificationsConfig>({
+    AllowScriptNotifications: src?.AllowScriptNotifications ?? false,
+    Sound: src?.Sound ?? false,
     HealthBelow: { ...(src?.HealthBelow ?? { Enabled: false, Threshold: 25 }) },
     FatigueBelow: { ...(src?.FatigueBelow ?? { Enabled: false, Threshold: 10 }) },
     Patterns: (src?.Patterns ?? []).map((p) => ({ ...p })),
@@ -50,6 +52,12 @@
     </div>
   {/if}
   <div class="section">
+    <label class="chk"><input type="checkbox" bind:checked={cfg.AllowScriptNotifications} /> Allow Script Notifications</label>
+  </div>
+  <div class="section">
+    <label class="chk"><input type="checkbox" bind:checked={cfg.Sound} /> Play the OS default sound for notifications</label>
+  </div>
+  <div class="section">
     <label class="chk"><input type="checkbox" bind:checked={cfg.HealthBelow.Enabled} /> Notify when health below</label>
     <input class="num" type="number" min="0" max="100" bind:value={cfg.HealthBelow.Threshold} />
   </div>
@@ -64,6 +72,7 @@
       <input type="checkbox" bind:checked={p.Enabled} title="Enabled" />
       <input type="text" bind:value={p.Pattern} placeholder="match text" />
       <input type="text" bind:value={p.Title} placeholder="title (optional)" />
+      <input class="message" type="text" bind:value={p.Message} placeholder="message (optional)" />
       <button class="danger sm" onclick={() => removePattern(i)}>✕</button>
     </div>
   {/each}
@@ -109,13 +118,17 @@
     letter-spacing: 1px;
   }
   .pat {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto minmax(120px, 1fr) minmax(120px, 1fr) auto;
     align-items: center;
     gap: 6px;
     margin-bottom: 6px;
   }
   .pat input[type="text"] {
-    flex: 1;
+    min-width: 0;
+  }
+  .pat .message {
+    grid-column: 2 / 4;
   }
   .sm {
     padding: 4px 10px;

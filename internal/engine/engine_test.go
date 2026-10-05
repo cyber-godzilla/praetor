@@ -800,3 +800,44 @@ func TestEngineNotificationSink(t *testing.T) {
 		t.Fatal("notification sink was not called")
 	}
 }
+
+func TestEngine_ModeSpecsExcludesLibPrefixAndSorts(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+
+	writeEngineMode(t, modesDir, "zeta", `
+local M = {}
+M.desc = 'last alphabetically'
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "alpha", `
+local M = {}
+M.usage = '[flag]'
+M.desc = 'first alphabetically'
+M.reactions = {}
+return M
+`)
+	writeEngineMode(t, modesDir, "lib_util", `
+local M = {}
+M.desc = 'a library, not a mode'
+M.reactions = {}
+return M
+`)
+
+	e := newTestEngine(t, modesDir, libDir)
+
+	specs := e.ModeSpecs()
+	var names []string
+	for _, s := range specs {
+		if s.Name == "lib_util" {
+			t.Errorf("ModeSpecs() = %+v, should exclude lib_-prefixed modes", specs)
+		}
+		names = append(names, s.Name)
+	}
+	if len(names) != 2 || names[0] != "alpha" || names[1] != "zeta" {
+		t.Fatalf("ModeSpecs() names = %v, want [alpha zeta]", names)
+	}
+	if specs[0].Usage != "[flag]" || specs[0].Desc != "first alphabetically" {
+		t.Errorf("ModeSpecs()[0] = %+v, want usage and desc carried through", specs[0])
+	}
+}

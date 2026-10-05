@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/cyber-godzilla/praetor/internal/gui"
 	versioninfo "github.com/cyber-godzilla/praetor/internal/version"
@@ -37,14 +38,32 @@ var assets embed.FS
 // wailsEmitter implements gui.Emitter by forwarding to the Wails runtime.
 // The context is captured at startup; emits before startup are dropped.
 type wailsEmitter struct {
+	mu  sync.RWMutex
 	ctx context.Context
 }
 
 func (e *wailsEmitter) Emit(event string, data any) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	if e.ctx == nil {
 		return
 	}
 	wailsruntime.EventsEmit(e.ctx, event, data)
+}
+
+func (e *wailsEmitter) SetContext(ctx context.Context) {
+	e.mu.Lock()
+	e.ctx = ctx
+	e.mu.Unlock()
+}
+
+// Disable waits for any in-flight native emit and prevents new ones. This must
+// happen before Wails destroys the webview; calling EventsEmit afterward can
+// reach already-freed WebKit state on Linux.
+func (e *wailsEmitter) Disable() {
+	e.mu.Lock()
+	e.ctx = nil
+	e.mu.Unlock()
 }
 
 // wailsClipboard implements gui.Clipboard via the Wails runtime. The context is
@@ -101,10 +120,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("bootstrap: %v", err)
 	}
-	defer deps.Close()
-
 	emitter := &wailsEmitter{}
 	app := gui.NewGuiApp(deps, emitter)
+	var shutdownOnce sync.Once
+	shutdown := func() {
+		shutdownOnce.Do(func() {
+			emitter.Disable()
+			app.Shutdown()
+			deps.Close()
+		})
+	}
+	defer shutdown()
 
 	err = wails.Run(&options.App{
 		Title:  "Praetor — The Eternal City",
@@ -128,15 +154,32 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			// Capture the runtime context so the emitter can push events and the
 			// clipboard can read/write.
-			emitter.ctx = ctx
+			emitter.SetContext(ctx)
 			deps.Clipboard = &wailsClipboard{ctx: ctx}
 			deps.Dialogs = &wailsDialogs{ctx: ctx}
+		},
+		// OnBeforeClose runs while the native webview still exists. OnShutdown is a
+		// fallback for platform-level termination paths; shutdownOnce makes the two
+		// callbacks and the defer safely converge on one ordered teardown.
+		OnBeforeClose: func(context.Context) bool {
+			shutdown()
+			return false
+		},
+		OnShutdown: func(context.Context) {
+			shutdown()
+		},
+		OnDomReady: func(context.Context) {
+			// WebKitGTK requires its shared context to be enabled separately;
+			// this is a no-op on platforms whose webviews honor the HTML
+			// spellcheck attribute directly.
+			enableSpellcheck()
 		},
 		Bind: []any{
 			app,
 		},
 	})
 	if err != nil {
+		shutdown()
 		log.Fatalf("wails: %v", err)
 	}
 }

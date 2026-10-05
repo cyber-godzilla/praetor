@@ -8,6 +8,7 @@
   let {
     title,
     wide = false,
+    extraWide = false,
     back = false,
     onclose,
     onsave,
@@ -17,6 +18,7 @@
   }: {
     title: string;
     wide?: boolean;
+    extraWide?: boolean;
     back?: boolean;
     onclose?: () => void;
     // When provided, the shell renders a "Save" button that calls onsave().
@@ -78,7 +80,7 @@
      the ✕ button, the Back button, or Esc (handled once in GameView). This
      prevents stray outside clicks from dismissing a submenu mid-interaction. -->
 <div class="backdrop" role="presentation">
-  <div class="modal" class:wide bind:this={modalEl} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="modal" class:wide class:extra-wide={extraWide} bind:this={modalEl} role="dialog" aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}
@@ -123,6 +125,9 @@
   }
   .modal.wide {
     width: 720px;
+  }
+  .modal.extra-wide {
+    width: 1040px;
   }
   .mhead {
     display: flex;

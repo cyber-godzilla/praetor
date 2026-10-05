@@ -1,10 +1,14 @@
 <script lang="ts">
+  import { store } from "../lib/store.svelte";
+  import * as api from "../lib/bridge";
   import MapNavigation from "./MapNavigation.svelte";
   import SidebarVitals from "./SidebarVitals.svelte";
   import SidebarTabs from "./SidebarTabs.svelte";
+
+  const sidebarPx = $derived(store.config?.UI?.GUISidebarWidth || 260);
 </script>
 
-<div class="sidebar">
+<div class="sidebar" class:web={api.inWeb()} style="width:{sidebarPx}px">
   <MapNavigation />
   <SidebarVitals />
   <SidebarTabs />
@@ -12,7 +16,6 @@
 
 <style>
   .sidebar {
-    width: 260px;
     flex-shrink: 0;
     background: var(--bg-panel);
     border-left: 1px solid var(--border);
@@ -23,7 +26,7 @@
     overflow-y: auto;
   }
   @media (max-width: 899px) {
-    .sidebar {
+    .sidebar.web {
       display: none;
     }
   }

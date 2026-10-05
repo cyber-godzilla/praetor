@@ -15,6 +15,9 @@
   let colorWords = $state(seed?.UI?.ColorWords ?? false);
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
+  let keepInputOnSend = $state(seed?.UI?.KeepInputOnSend ?? false);
+  let semicolonDelayMS = $state(seed?.Commands?.SemicolonDelayMS ?? 900);
+  let unbusyDelayMS = $state(seed?.Commands?.UnbusyDelayMS ?? 100);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
   let mobileShowToolbar = $state(seed?.UI?.MobileShowToolbar ?? true);
   let mobileShowTabBar = $state(seed?.UI?.MobileShowTabBar ?? true);
@@ -27,6 +30,8 @@
   let compassScale = $state(seed?.UI?.CompassScale ?? 1);
   let fontSize = $state(seed?.UI?.OutputFontSize || 14);
   let mobileFontSize = $state(seed?.UI?.MobileOutputFontSize || seed?.UI?.OutputFontSize || 14);
+  let guiSidebarWidth = $state(seed?.UI?.GUISidebarWidth || 260);
+  let guiMinimapHeight = $state(seed?.UI?.GUIMinimapHeight || 160);
   let numpadNav = $state(seed?.UI?.NumpadNavigation ?? "numlock");
 
   async function save() {
@@ -38,6 +43,9 @@
       await api.setColorWords(colorWords);
       await api.setHideIPs(hideIPs);
       await api.setInputSpellcheck(inputSpellcheck);
+      await api.setKeepInputOnSend(keepInputOnSend);
+      await api.setSemicolonDelay(semicolonDelayMS);
+      await api.setUnbusyDelay(unbusyDelayMS);
       await api.setUpdateCheck(updateCheck);
       if (api.inWeb()) {
         await api.setMobileShowToolbar(mobileShowToolbar);
@@ -52,6 +60,7 @@
       await api.setMinimapScale(minimapScale);
       await api.setCompassScale(compassScale);
       await api.setOutputFontSize(fontSize);
+      await api.setGUILayout(guiSidebarWidth, guiMinimapHeight);
       await api.setNumpadNavigation(numpadNav);
       if (store.config) {
         Object.assign(store.config.UI, {
@@ -65,15 +74,20 @@
           MobileHideNavigationOnInput: mobileHideNavigationOnInput,
           MobileLowercaseFirstLetter: mobileLowercaseFirstLetter,
           MobileOutputFontSize: mobileFontSize,
+          KeepInputOnSend: keepInputOnSend,
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
+          GUISidebarWidth: guiSidebarWidth,
+          GUIMinimapHeight: guiMinimapHeight,
           NumpadNavigation: numpadNav,
         });
         store.config.Updates = { Check: updateCheck };
         store.config.Logging.App.Retain = retainAppLogs;
         store.config.Logging.Session.Enabled = sessionLogging;
         store.config.Logging.Session.Path = logPath;
+        store.config.Commands.SemicolonDelayMS = semicolonDelayMS;
+        store.config.Commands.UnbusyDelayMS = unbusyDelayMS;
       }
       store.addToast("Settings", "Saved");
       store.openModal = null;
@@ -90,17 +104,34 @@
     <label class="t"><span>Color words</span><input type="checkbox" bind:checked={colorWords} /></label>
     <label class="t"><span>Hide IP addresses</span><input type="checkbox" bind:checked={hideIPs} /></label>
     <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
+    <label class="t"><span>Retain Input After Send</span><input type="checkbox" bind:checked={keepInputOnSend} /></label>
     <label class="t"><span>Check for updates on startup</span><input type="checkbox" bind:checked={updateCheck} /></label>
     <label class="t"><span>Session transcript logging</span><input type="checkbox" bind:checked={sessionLogging} /></label>
     <label class="t"><span>Retain application logs (applies next launch)</span><input type="checkbox" bind:checked={retainAppLogs} /></label>
 
     <div class="field">
-      <span>Minimap scale</span>
-      <input type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />
+      <span>;; chain delay (ms)</span>
+      <input aria-label="Command chain delay" type="number" min="100" max="10000" step="50" bind:value={semicolonDelayMS} />
+    </div>
+    <div class="field">
+      <span>&amp;&amp; response delay (ms)</span>
+      <input aria-label="Unbusy response delay" type="number" min="0" max="10000" step="25" bind:value={unbusyDelayMS} />
+    </div>
+    <div class="field">
+      <span>Minimap Scale (Zoom)</span>
+      <input aria-label="Minimap Scale (Zoom)" type="number" min="0.2" max="3" step="0.1" bind:value={minimapScale} />
     </div>
     <div class="field">
       <span>Compass scale</span>
       <input type="number" min="0.5" max="3" step="0.1" bind:value={compassScale} />
+    </div>
+    <div class="field">
+      <span>GUI sidebar width (px)</span>
+      <input aria-label="GUI sidebar width" type="number" min="180" max="600" step="10" bind:value={guiSidebarWidth} />
+    </div>
+    <div class="field">
+      <span>GUI map height (px)</span>
+      <input aria-label="GUI map height" type="number" min="80" max="400" step="10" bind:value={guiMinimapHeight} />
     </div>
     <div class="field">
       <span>{api.inWeb() ? "Desktop output text size" : "Output text size"}</span>

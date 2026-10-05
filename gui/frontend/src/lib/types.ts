@@ -164,6 +164,8 @@ export interface NotifyPatternConfig {
 }
 
 export interface DesktopNotificationsConfig {
+  AllowScriptNotifications: boolean;
+  Sound: boolean;
   HealthBelow: ThresholdConfig;
   FatigueBelow: ThresholdConfig;
   Patterns: NotifyPatternConfig[] | null;
@@ -184,8 +186,10 @@ export interface UIConfig {
   DefaultTab: string;
   Scrollback: number;
   SidebarWidth: number;
+  GUISidebarWidth: number;
   MinimapScale: number;
   MinimapHeight: number;
+  GUIMinimapHeight: number;
   CompassScale: number;
   OutputFontSize: number;
   CRTScanlines: boolean;
@@ -202,6 +206,7 @@ export interface UIConfig {
   MobileShowTabBar: boolean;
   MobileHideNavigationOnInput: boolean;
   MobileLowercaseFirstLetter: boolean;
+  KeepInputOnSend: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
   CustomTabs: CustomTabConfig[] | null;
   ActionSets: ActionSet[] | null;
@@ -209,7 +214,13 @@ export interface UIConfig {
 
 export interface AppConfig {
   Server: Record<string, unknown>;
-  Commands: { HighPriority: string[] | null; [k: string]: unknown };
+  Commands: {
+    SemicolonDelayMS: number;
+    UnbusyDelayMS: number;
+    HighPriority: string[] | null;
+    Variables: Record<string, string> | null;
+    [k: string]: unknown;
+  };
   Scripts: string[] | null;
   UI: UIConfig;
   Highlights: HighlightConfig[] | null;
@@ -222,6 +233,7 @@ export interface AppConfig {
     [k: string]: unknown;
   };
   Updates: { Check: boolean };
+  Onboarding: { WelcomeShown: boolean };
 }
 
 // UpdateInfo mirrors internal/update.Info (json tags).
@@ -232,6 +244,21 @@ export interface UpdateInfo {
   url: string;
 }
 
+// ModeSpec mirrors engine.ModeSpec: the metadata a Lua mode declares about
+// itself. Unlike the static COMMANDS catalog this comes from whatever scripts
+// the player has loaded, so /mode is the one command whose signature is
+// resolved at runtime. An empty usage means the mode takes no arguments.
+export interface ModeSpec {
+  name: string;
+  usage: string;
+  desc: string;
+  chains: boolean;
+  // Keep this mode out of the command hint. A display hint only — the mode
+  // stays loaded, /mode <name> still runs it, and the mode picker still lists
+  // it, so hiding declutters typing without hiding the mode itself.
+  hidden?: boolean;
+}
+
 export interface InitState {
   version: string;
   debug: boolean;
@@ -239,6 +266,7 @@ export interface InitState {
   credentialStore: CredentialStoreStatus;
   hasModes: boolean;
   modeNames: string[] | null;
+  modeSpecs: ModeSpec[] | null;
   config: AppConfig;
 }
 
@@ -292,6 +320,15 @@ export interface RBResult {
   cells: RBCell[];
 }
 
+export interface TrainingCostRow {
+  slot: number;
+  basic: number;
+  easy: number;
+  average: number;
+  difficult: number;
+  impossible: number;
+}
+
 export interface NoteSummary {
   title: string;
   preview: string;
@@ -321,6 +358,19 @@ export interface PlayState {
   paused: boolean;
   step: number;
   total: number;
+}
+
+export interface InputChainStatus {
+  active: boolean;
+  chains: number;
+  step: number;
+  total: number;
+  state: string;
+  detail?: string;
+  durationMs?: number;
+  remainingMs?: number;
+  attempts?: number;
+  maxAttempts?: number;
 }
 
 export interface PlayPreview {

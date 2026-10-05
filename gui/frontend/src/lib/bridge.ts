@@ -3,11 +3,13 @@
 
 import type {
   InitState,
+  ModeSpec,
   AppConfig,
   KudosConfig,
   PersistentKeyInfo,
   WikiSection,
   RBResult,
+  TrainingCostRow,
   WireEvent,
   HighlightConfig,
   CustomTabConfig,
@@ -21,6 +23,7 @@ import type {
   PlayState,
   AccountState,
   ConnectResult,
+  InputChainStatus,
 } from "./types";
 import type { PraetorTransport, SystemUpdate } from "./transport";
 import { WebAuthRequiredError } from "./transport";
@@ -65,6 +68,7 @@ export const getInitState = () =>
     },
     hasModes: false,
     modeNames: [],
+    modeSpecs: [],
     config: {} as AppConfig,
   });
 
@@ -88,20 +92,26 @@ export const connectNew = (u: string, p: string, store: boolean) =>
     credentialsSaved: false,
   }, u, p, store);
 export const connectStored = (u: string) => call<void>("ConnectStored", undefined, u);
-export const saveAccount = (u: string, p: string) => call<void>("SaveAccount", undefined, u, p);
 export const removeAccount = (u: string) => call<void>("RemoveAccount", undefined, u);
 export const disconnect = () => call<void>("Disconnect", undefined);
 
 // ---- Input / modes ----
 export const send = (input: string) => call<void>("Send", undefined, input);
+export const sendInput = (input: string) => call<void>("SendInput", undefined, input);
+export const inputChainActive = () => call<boolean>("InputChainActive", false);
+export const inputChainStatus = () => call<InputChainStatus>("InputChainStatus", {
+  active: false,
+  chains: 0,
+  step: 0,
+  total: 0,
+  state: "",
+});
+export const abortInputChains = () => call<number>("AbortInputChains", 0);
 export const modeNames = () => call<string[]>("ModeNames", []);
-export const currentMode = () => call<string>("CurrentMode", "");
+export const modeSpecs = () => call<ModeSpec[]>("ModeSpecs", []);
 export const setMode = (name: string, args: string[]) =>
   call<void>("SetMode", undefined, name, args);
 export const reloadScripts = () => call<void>("ReloadScripts", undefined);
-
-// ---- Graphics ----
-export const refreshGraphics = () => call<void>("RefreshGraphics", undefined);
 
 // ---- Clipboard ----
 export const clipboardGet = () => call<string>("ClipboardGet", "");
@@ -113,6 +123,9 @@ export const setEchoScript = (v: boolean) => call<void>("SetEchoScript", undefin
 export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefined, v);
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
+export const setKeepInputOnSend = (v: boolean) => call<void>("SetKeepInputOnSend", undefined, v);
+export const setSemicolonDelay = (ms: number) => call<void>("SetSemicolonDelay", undefined, ms);
+export const setUnbusyDelay = (ms: number) => call<void>("SetUnbusyDelay", undefined, ms);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);
 export const setMobileShowToolbar = (v: boolean) =>
   call<void>("SetMobileShowToolbar", undefined, v);
@@ -132,6 +145,8 @@ export const setNumpadNavigation = (m: string) => call<void>("SetNumpadNavigatio
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
 export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
 export const setOutputFontSize = (px: number) => call<void>("SetOutputFontSize", undefined, px);
+export const setGUILayout = (sidebarWidth: number, minimapHeight: number) =>
+  call<void>("SetGUILayout", undefined, sidebarWidth, minimapHeight);
 export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean) =>
   call<void>("SetCRTEffects", undefined, scanlines, roll, bloom);
 
@@ -141,6 +156,8 @@ export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs
 export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);
 export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", undefined, c);
+export const setInputVariables = (v: Record<string, string>) =>
+  call<void>("SetInputVariables", undefined, v);
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);
 export const setIgnoreThink = (n: string[]) => call<void>("SetIgnoreThink", undefined, n);
 export const setScriptDirs = (d: string[]) => call<void>("SetScriptDirs", undefined, d);
@@ -170,15 +187,25 @@ export const openURL = (url: string) => call<void>("OpenURL", undefined, url);
 export const openWikiSlug = (slug: string) => call<void>("OpenWikiSlug", undefined, slug);
 export const calcRankBonus = (mode: number, basics: number, subskill: number) =>
   call<RBResult>("CalcRankBonus", { mode, basics, subskill, basicsRB: 0, subskillRB: 0, cells: [] }, mode, basics, subskill);
-export const calcTrainCost = (
-  curRank: number,
-  desRank: number,
-  slot: number,
-  difficulty: number,
+export const calcTrainingCosts = (
+  curBasics: number,
+  curSub: number,
+  tgtBasics: number,
+  tgtSub: number,
   selfTrained: boolean,
   selfTaught: boolean,
   healing: boolean,
-) => call<number>("CalcTrainCost", 0, curRank, desRank, slot, difficulty, selfTrained, selfTaught, healing);
+) => call<TrainingCostRow[]>(
+  "CalcTrainingCosts",
+  [],
+  curBasics,
+  curSub,
+  tgtBasics,
+  tgtSub,
+  selfTrained,
+  selfTaught,
+  healing,
+);
 
 // ---- Updates ----
 export const checkForUpdate = () =>

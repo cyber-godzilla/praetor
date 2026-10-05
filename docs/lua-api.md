@@ -9,6 +9,14 @@ A **mode** is a Lua file that returns a table with `reactions` and optionally `o
 ```lua
 local M = {}
 
+-- Optional metadata, read when the script loads. The GUI uses it to describe
+-- the mode as /mode is typed and to annotate the mode picker. See "Mode
+-- Metadata" below.
+M.usage = '<item> [count]'
+M.desc = 'One line describing what the mode does'
+M.chains = true
+M.hidden = false   -- true keeps the mode out of the hint (it still runs)
+
 function M.on_start(args)
     -- Called when the mode is activated via /mode <name> [args]
     -- args is a table of strings from the command
@@ -36,6 +44,48 @@ M.reactions = {
 
 return M
 ```
+
+### Mode Metadata
+
+Four optional fields let a mode describe itself to the client. They are read
+once at load time — everything a mode registers at runtime (`metrics.track`,
+`state.display`) is only known after `on_start` has fired, which is too late to
+describe a mode the player has not started yet.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `usage` | string | Argument signature, without the mode name. Omit when the mode takes no arguments. |
+| `desc` | string | One line, sentence case, no trailing period. |
+| `chains` | boolean | The mode honors an `after:<mode>` argument. |
+| `hidden` | boolean | Keep the mode out of the command hint. |
+
+Notation for `usage` follows the convention in the scripts repo: `<required>`,
+`[optional]`, `[flagword]` for a literal word, `a|b|c` to pick one,
+`key:<value>` for a named option, and `[repeatable...]`.
+
+Typing `/mode ` lists every loaded mode; typing part of a name narrows the list;
+once the name resolves, the hint shows that mode's own signature and
+description, appending `[after:<mode>]` when `chains` is set. Set `chains` only
+when the mode genuinely honors the token — declaring it on a mode that parses
+`after:` and then ignores it advertises something that will not happen.
+
+`hidden` suppresses a mode in the hint only, for helpers that are real modes but
+noise while typing — an internal route leg, or a mode that exists to be chained
+into. It is not access control and not unloading: the mode stays loaded, the
+mode picker still lists it, and `/mode <name>` still runs it, because mode
+resolution goes through `HasMode`, which never consults this. A hidden mode is
+invisible to the hint at every stage, including when its name is typed in full;
+the hint falls back to the generic `/mode` signature exactly as it does for a
+name that does not exist, so a hidden mode is indistinguishable from an absent
+one.
+
+Removing `usage` and `desc` does **not** hide a mode — it still appears as a
+bare name with nothing beside it. Only `hidden` removes it.
+
+All of these are descriptive only. Nothing validates arguments against `usage`,
+and a field of the wrong type is treated as undeclared rather than failing the
+load, so a typo in metadata never costs a working mode. A mode that declares
+nothing behaves exactly as it always has.
 
 A **library** is a Lua file loaded via `require()`:
 
@@ -79,6 +129,9 @@ set_mode(name, {args})     -- Switch with arguments (passed to on_start)
 notify(title, message)     -- Send a shell notification (native desktop or all web clients)
 log(message)               -- Write to the application log
 ```
+
+`notify()` is ignored unless **Allow Script Notifications** is enabled under
+Notifications. The permission is off by default.
 
 ### Utilities
 
@@ -148,7 +201,9 @@ end, 10000)                -- Fire every 10 seconds
 clear_timer(id)            -- Cancel a timer
 ```
 
-All timers are automatically cancelled on mode switch.
+All timers are automatically cancelled on mode switch. Repeating intervals must
+be at least 10 ms; shorter or non-positive values are rejected instead of being
+allowed to create a CPU-saturating loop.
 
 ## Time
 

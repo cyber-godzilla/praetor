@@ -97,6 +97,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/game/connect-stored", s.protected(true, s.handleConnectStored))
 	s.mux.HandleFunc("POST /api/v1/game/disconnect", s.protected(true, s.handleDisconnect))
 	s.mux.HandleFunc("POST /api/v1/commands", s.protected(true, s.handleCommand))
+	s.mux.HandleFunc("GET /api/v1/input-chain", s.protected(false, s.handleInputChainStatus))
+	s.mux.HandleFunc("DELETE /api/v1/input-chain", s.protected(true, s.handleAbortInputChains))
 	s.mux.HandleFunc("GET /api/v1/accounts", s.protected(false, s.handleAccounts))
 	s.mux.HandleFunc("PUT /api/v1/accounts/{name}", s.protected(true, s.handleSaveAccount))
 	s.mux.HandleFunc("DELETE /api/v1/accounts/{name}", s.protected(true, s.handleRemoveAccount))

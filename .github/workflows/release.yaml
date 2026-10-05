@@ -11,6 +11,8 @@ name: Release
 # exact names:
 #   Praetor_<ver>_darwin_universal.zip
 #   praetor-tui_<ver>_darwin_amd64.tar.gz / _arm64.tar.gz
+#   praetor-<ver>-1.x86_64.pkg.tar.zst   (Arch; name dictated by the Buildkite
+#                                          Files registry — see packaging/arch/publish.sh)
 
 on:
   push:
@@ -21,7 +23,7 @@ permissions:
   contents: write
 
 env:
-  WAILS_VERSION: v2.13.0
+  WAILS_VERSION: v2.16.0
 
 jobs:
   # ── Coordinator ──────────────────────────────────────────────────────────
@@ -35,7 +37,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
       - name: Test gate (block the release if tests fail)
         run: go test ./... -count=1
       - name: Compute version (strip leading v)
@@ -71,7 +73,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -86,8 +88,13 @@ jobs:
             echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4 >/dev/null
           fi
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          # For the Arch repo db: pacman-package-manager ships repo-add, makepkg
+          # its bash library (only a Recommends), and libarchive-tools the
+          # bsdtar repo-add uses to validate packages (not a dependency at all;
+          # without it every package is "not a package file").
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            pacman-package-manager makepkg libarchive-tools
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
           # GOTOOLCHAIN=auto lets `go install` fetch the newer Go toolchain nfpm
           # may require to build (setup-go pins GOTOOLCHAIN=local otherwise).
           GOTOOLCHAIN=auto go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
@@ -129,23 +136,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release upload "$GITHUB_REF_NAME" dist/*.deb dist/*.rpm dist/*.tar.gz --clobber
 
+      # The Buildkite pushes tolerate 409 (version already published) so a
+      # re-run of this job for an existing tag gets past them to later steps.
       - name: Push .deb to Buildkite
-        run: |
-          for f in dist/*.deb; do
-            curl -f -X POST \
-              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-debian/packages" \
-              -H "Authorization: Bearer ${{ secrets.BUILDKITE_DEB_TOKEN }}" \
-              -F "file=@$f"
-          done
+        env:
+          BUILDKITE_TOKEN: ${{ secrets.BUILDKITE_DEB_TOKEN }}
+        run: bash packaging/buildkite-push.sh praetor-debian dist/*.deb
 
       - name: Push .rpm to Buildkite
-        run: |
-          for f in dist/*.rpm; do
-            curl -f -X POST \
-              "https://api.buildkite.com/v2/packages/organizations/cybergodzilla-2099/registries/praetor-rpm/packages" \
-              -H "Authorization: Bearer ${{ secrets.BUILDKITE_RPM_TOKEN }}" \
-              -F "file=@$f"
-          done
+        env:
+          BUILDKITE_TOKEN: ${{ secrets.BUILDKITE_RPM_TOKEN }}
+        run: bash packaging/buildkite-push.sh praetor-rpm dist/*.rpm
+
+      # ── Arch (amd64 only): build → attach to release → publish to Buildkite Files.
+      # Ordered last so an Arch publish failure can't block deb/rpm. The build
+      # is split from the publish so the GitHub asset is attached even if the
+      # registry push fails, and the same bytes go to both.
+      - name: Build Arch package + pacman repo db
+        if: matrix.arch == 'amd64'
+        run: DRY_RUN=1 bash packaging/arch/publish.sh
+
+      - name: Upload Arch package to the GitHub release
+        if: matrix.arch == 'amd64'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/arch/*.pkg.tar.zst --clobber
+
+      - name: Push Arch package + repo db to Buildkite Files
+        if: matrix.arch == 'amd64'
+        env:
+          BUILDKITE_FILES_TOKEN: ${{ secrets.BUILDKITE_FILES_TOKEN }}
+        run: PUBLISH_ONLY=1 bash packaging/arch/publish.sh
 
   # ── macOS: GUI cask (.app) + TUI formula (universal + per-arch) ──────────
   macos:
@@ -157,14 +178,14 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Wails
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Build GUI (universal .app)
@@ -219,14 +240,14 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.25"
+          go-version: "1.25.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install Wails
         run: |
-          go install github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Install NSIS (for the -nsis installer)
@@ -266,8 +287,17 @@ jobs:
 
       - name: Push .nupkg to Buildkite NuGet
         run: |
+          # Tolerate 409 (version already published) so a re-run of this job
+          # for an existing tag doesn't fail here; any other error still does.
           for f in dist/*.nupkg; do
-            choco push "$f" \
-              --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
-              --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}"
+            if out="$(choco push "$f" \
+                --source="https://packages.buildkite.com/cybergodzilla-2099/praetor-nuget/nuget/package" \
+                --api-key="${{ secrets.BUILDKITE_NUGET_TOKEN }}" 2>&1)"; then
+              echo "$out" | tail -n 2
+            elif grep -qE '409|Conflict' <<<"$out"; then
+              echo "already in praetor-nuget, skipping: $f (409)"
+            else
+              echo "$out" >&2
+              exit 1
+            fi
           done

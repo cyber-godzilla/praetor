@@ -45,7 +45,7 @@ func TestLookupMap_PreservesColonInSlug(t *testing.T) {
 
 func TestMapURLWithColonSlug(t *testing.T) {
 	url := URL("hg:monlon-ravines")
-	want := "http://eternal-city.wikidot.com/hg:monlon-ravines"
+	want := "https://tec-wiki.com/hg:monlon-ravines"
 	if url != want {
 		t.Errorf("URL = %q, want %q", url, want)
 	}

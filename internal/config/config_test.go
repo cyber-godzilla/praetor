@@ -528,6 +528,61 @@ func TestValidate_NotificationThresholds(t *testing.T) {
 	}
 }
 
+func TestDefaults_NotificationSoundIsOptIn(t *testing.T) {
+	if Defaults().Notifications.Desktop.Sound {
+		t.Fatal("notification sound should default off")
+	}
+}
+
+func TestDefaults_ScriptNotificationsAreOptIn(t *testing.T) {
+	if Defaults().Notifications.Desktop.AllowScriptNotifications {
+		t.Fatal("script notifications should default off")
+	}
+}
+
+func TestDefaults_CommandVariablesEmpty(t *testing.T) {
+	vars := Defaults().Commands.Variables
+	if vars == nil || len(vars) != 0 {
+		t.Fatalf("Commands.Variables = %#v, want initialized empty map", vars)
+	}
+}
+
+func TestCommandVariablesRoundTripAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	cfg := Defaults()
+	cfg.Commands.Variables = map[string]string{
+		"target":   "scarred bandit",
+		"weapon_2": "short sword; polished",
+		"bad-name": "dropped",
+	}
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(got.Commands.Variables) != 2 {
+		t.Fatalf("Commands.Variables = %#v, want two valid entries", got.Commands.Variables)
+	}
+	if got.Commands.Variables["target"] != "scarred bandit" || got.Commands.Variables["weapon_2"] != "short sword; polished" {
+		t.Fatalf("Commands.Variables = %#v", got.Commands.Variables)
+	}
+}
+
+func TestValidVariableName(t *testing.T) {
+	for _, name := range []string{"target", "Target2", "_weapon"} {
+		if !ValidVariableName(name) {
+			t.Errorf("ValidVariableName(%q) = false, want true", name)
+		}
+	}
+	for _, name := range []string{"", "2target", "bad-name", "two words", "na.me"} {
+		if ValidVariableName(name) {
+			t.Errorf("ValidVariableName(%q) = true, want false", name)
+		}
+	}
+}
+
 func TestConfigDefaultsMinimapFields(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
@@ -552,6 +607,12 @@ server:
 	}
 	if cfg.UI.MinimapHeight != 12 {
 		t.Errorf("default MinimapHeight = %d, want 12", cfg.UI.MinimapHeight)
+	}
+	if cfg.UI.GUISidebarWidth != 260 {
+		t.Errorf("default GUISidebarWidth = %d, want 260", cfg.UI.GUISidebarWidth)
+	}
+	if cfg.UI.GUIMinimapHeight != 160 {
+		t.Errorf("default GUIMinimapHeight = %d, want 160", cfg.UI.GUIMinimapHeight)
 	}
 }
 
@@ -710,8 +771,104 @@ server:
 	if cfg.Commands.DefaultDelay.String() != "1s" {
 		t.Errorf("default DefaultDelay = %v, want 1s", cfg.Commands.DefaultDelay)
 	}
+	if cfg.Commands.SemicolonDelayMS != DefaultSemicolonDelayMS {
+		t.Errorf("default SemicolonDelayMS = %d, want %d", cfg.Commands.SemicolonDelayMS, DefaultSemicolonDelayMS)
+	}
+	if cfg.Commands.UnbusyDelayMS != DefaultUnbusyDelayMS {
+		t.Errorf("default UnbusyDelayMS = %d, want %d", cfg.Commands.UnbusyDelayMS, DefaultUnbusyDelayMS)
+	}
 	if cfg.UI.Scrollback != 5000 {
 		t.Errorf("default Scrollback = %d, want 5000", cfg.UI.Scrollback)
+	}
+}
+
+func TestValidateSemicolonDelay(t *testing.T) {
+	for _, invalid := range []int{0, MinSemicolonDelayMS - 1, MaxSemicolonDelayMS + 1} {
+		cfg := Defaults()
+		cfg.Commands.SemicolonDelayMS = invalid
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate(%d): %v", invalid, err)
+		}
+		if got := cfg.Commands.SemicolonDelayMS; got != DefaultSemicolonDelayMS {
+			t.Errorf("Validate(%d) produced %d, want default %d", invalid, got, DefaultSemicolonDelayMS)
+		}
+	}
+
+	cfg := Defaults()
+	cfg.Commands.SemicolonDelayMS = 1250
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate(1250): %v", err)
+	}
+	if got := cfg.Commands.SemicolonDelayMS; got != 1250 {
+		t.Errorf("Validate(1250) produced %d", got)
+	}
+}
+
+func TestValidateUnbusyDelay(t *testing.T) {
+	for _, invalid := range []int{MinUnbusyDelayMS - 1, MaxUnbusyDelayMS + 1} {
+		cfg := Defaults()
+		cfg.Commands.UnbusyDelayMS = invalid
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate(%d): %v", invalid, err)
+		}
+		if got := cfg.Commands.UnbusyDelayMS; got != DefaultUnbusyDelayMS {
+			t.Errorf("Validate(%d) produced %d, want default %d", invalid, got, DefaultUnbusyDelayMS)
+		}
+	}
+
+	cfg := Defaults()
+	cfg.Commands.UnbusyDelayMS = 0
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate(0): %v", err)
+	}
+	if got := cfg.Commands.UnbusyDelayMS; got != 0 {
+		t.Errorf("Validate(0) produced %d", got)
+	}
+}
+
+func TestLoad_OnboardingWelcomeMigration(t *testing.T) {
+	tests := []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{
+			name: "legacy config is already onboarded",
+			yaml: "server:\n  host: game.example.com\n",
+			want: true,
+		},
+		{
+			name: "fresh install explicitly remains pending",
+			yaml: "server:\n  host: game.example.com\nonboarding:\n  welcome_shown: false\n",
+			want: false,
+		},
+		{
+			name: "completed onboarding stays complete",
+			yaml: "server:\n  host: game.example.com\nonboarding:\n  welcome_shown: true\n",
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte(tt.yaml), 0o644); err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Onboarding.WelcomeShown != tt.want {
+				t.Fatalf("WelcomeShown = %v, want %v", cfg.Onboarding.WelcomeShown, tt.want)
+			}
+		})
+	}
+}
+
+func TestDefaults_NewInstallHasPendingWelcome(t *testing.T) {
+	if Defaults().Onboarding.WelcomeShown {
+		t.Fatal("new-install defaults should leave the welcome popup pending")
 	}
 }
 

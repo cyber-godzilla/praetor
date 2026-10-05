@@ -11,7 +11,7 @@ WAILS_TAGS ?= webkit2_41
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS    := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: dev build installer deps check clean
+.PHONY: dev build installer deps check clean e2e e2e-deps
 
 ## dev: run the live-reloading Wails dev server
 dev:
@@ -25,16 +25,25 @@ build:
 installer:
 	wails build -tags "$(WAILS_TAGS)" -nsis $(LDFLAGS)
 
-## check: toolchain-free checks (no webview needed): frontend + dev-mode compile
+## check: frontend tests plus a tagged native-webview compile/test/vet pass
 check:
 	cd frontend && npm run build && npm test
-	go build -o /dev/null ./...
-	go vet ./...
+	go build -tags "$(WAILS_TAGS)" -o /dev/null ./...
+	go test -tags "$(WAILS_TAGS)" ./...
+	go vet -tags "$(WAILS_TAGS)" ./...
 
 ## deps: install the Wails CLI and frontend dependencies
 deps:
 	go install github.com/wailsapp/wails/v2/cmd/wails@v2.13.0
 	cd frontend && npm install
+
+## e2e: Playwright smoke suite against the built frontend (Chromium: make e2e-deps first)
+e2e:
+	cd frontend && npm run e2e
+
+## e2e-deps: install the Playwright Chromium build
+e2e-deps:
+	cd frontend && npx playwright install chromium
 
 ## clean: remove build output
 clean:

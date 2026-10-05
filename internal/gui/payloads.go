@@ -52,7 +52,6 @@ const (
 	KindConn       = "conn"       // connection state change
 	KindNotify     = "notify"     // desktop notification mirror
 	KindError      = "error"      // error event
-	KindCommand    = "command"    // a command was sent to the server (from queue)
 	KindOpenMenu   = "openMenu"   // client asks the UI to open a menu (wiki/maps/calc)
 	KindMinimap    = "minimap"    // minimap PNG (base64 data URI) — synthesized, not a core event
 	KindCompass    = "compass"    // compass PNG (base64 data URI) — synthesized
@@ -71,7 +70,6 @@ type WireEvent struct {
 	Conn       *ConnPayload     `json:"conn,omitempty"`
 	Notify     *NotifyPayload   `json:"notify,omitempty"`
 	Error      *ErrorPayload    `json:"error,omitempty"`
-	Command    string           `json:"command,omitempty"`
 	OpenMenu   string           `json:"openMenu,omitempty"`
 	Image      *ImagePayload    `json:"image,omitempty"`
 	Debug      *DebugPayload    `json:"debug,omitempty"`

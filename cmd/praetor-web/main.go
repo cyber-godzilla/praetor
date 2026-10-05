@@ -66,6 +66,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("bootstrap: %v", err)
 	}
+	deps.Client.SetDesktopNotificationHandler(nil)
 	defer deps.Close()
 
 	certificateFile := *tlsCert

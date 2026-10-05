@@ -179,7 +179,11 @@ func (m Minimap) Render(mode graphics.Mode, imageID int) (placeholder string, es
 }
 
 func (m Minimap) computeScale(imgW, imgH, playerIdx int) float64 {
-	scale := m.scale
+	// Establish a safe auto-fit baseline first, then apply the user's setting as
+	// an actual zoom multiplier. Previously the setting was the starting value
+	// and the caps below often reduced every selectable value to the same number,
+	// making the GUI control appear to do nothing on large rooms/areas.
+	scale := 1.0
 
 	maxRoomSize := 0
 	for _, r := range m.rooms {
@@ -250,7 +254,7 @@ func (m Minimap) computeScale(imgW, imgH, playerIdx int) float64 {
 		}
 	}
 
-	return scale
+	return scale * m.scale
 }
 
 // drawLineV2 draws a line between two points with given thickness.

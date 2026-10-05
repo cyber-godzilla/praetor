@@ -3,9 +3,19 @@ package gui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
+
+// withConfig serializes a mutation and persists it through the rollback-aware
+// save helper used by the web and native frontends.
+func (a *GuiApp) withConfig(mutate func()) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	mutate()
+	return a.save()
+}
 
 // save persists the current config to disk. Returns any write error.
 func (a *GuiApp) save() error {
@@ -25,30 +35,18 @@ func (a *GuiApp) save() error {
 
 // SetEchoTyped enables/disables echoing of user-typed commands.
 func (a *GuiApp) SetEchoTyped(v bool) error {
-	a.configMu.Lock()
-	defer a.configMu.Unlock()
-	old := a.client().Settings.EchoTyped
-	a.cfg().UI.EchoTyped = v
-	a.client().Settings.EchoTyped = v
-	if err := a.save(); err != nil {
-		a.client().Settings.EchoTyped = old
-		return err
-	}
-	return nil
+	return a.withConfig(func() {
+		a.cfg().UI.EchoTyped = v
+		a.client().SetEchoTyped(v)
+	})
 }
 
 // SetEchoScript enables/disables echoing of script-sent commands.
 func (a *GuiApp) SetEchoScript(v bool) error {
-	a.configMu.Lock()
-	defer a.configMu.Unlock()
-	old := a.client().Settings.EchoScript
-	a.cfg().UI.EchoScript = v
-	a.client().Settings.EchoScript = v
-	if err := a.save(); err != nil {
-		a.client().Settings.EchoScript = old
-		return err
-	}
-	return nil
+	return a.withConfig(func() {
+		a.cfg().UI.EchoScript = v
+		a.client().SetEchoScript(v)
+	})
 }
 
 // SetColorWords toggles color-word rendering (applied in the event loop).
@@ -80,6 +78,36 @@ func (a *GuiApp) SetInputSpellcheck(v bool) error {
 	defer a.configMu.Unlock()
 	a.cfg().UI.InputSpellcheck = v
 	return a.save()
+}
+
+// SetKeepInputOnSend toggles keeping the sent command in the input (selected)
+// instead of clearing it. Applied live in the frontend's submit path.
+func (a *GuiApp) SetKeepInputOnSend(v bool) error {
+	return a.withConfig(func() { a.cfg().UI.KeepInputOnSend = v })
+}
+
+// SetSemicolonDelay persists and applies the delay for newly submitted ;;
+// command chains.
+func (a *GuiApp) SetSemicolonDelay(ms int) error {
+	if ms < config.MinSemicolonDelayMS || ms > config.MaxSemicolonDelayMS {
+		return fmt.Errorf(";; delay must be between %d and %d milliseconds", config.MinSemicolonDelayMS, config.MaxSemicolonDelayMS)
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.SemicolonDelayMS = ms
+		a.client().SetSemicolonDelay(time.Duration(ms) * time.Millisecond)
+	})
+}
+
+// SetUnbusyDelay persists and applies the delay after an &&-advancing response
+// for newly submitted command chains.
+func (a *GuiApp) SetUnbusyDelay(ms int) error {
+	if ms < config.MinUnbusyDelayMS || ms > config.MaxUnbusyDelayMS {
+		return fmt.Errorf("&& response delay must be between %d and %d milliseconds", config.MinUnbusyDelayMS, config.MaxUnbusyDelayMS)
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.UnbusyDelayMS = ms
+		a.client().SetUnbusyDelay(time.Duration(ms) * time.Millisecond)
+	})
 }
 
 // SetUpdateCheck toggles the startup check for newer releases.
@@ -204,10 +232,7 @@ func (a *GuiApp) SetDisplayMode(mode string) error {
 	if mode != "sidebar" && mode != "topbar" && mode != "off" {
 		return fmt.Errorf("display mode must be sidebar, topbar, or off")
 	}
-	a.configMu.Lock()
-	defer a.configMu.Unlock()
-	a.cfg().UI.DisplayMode = mode
-	return a.save()
+	return a.withConfig(func() { a.cfg().UI.DisplayMode = mode })
 }
 
 // SetNumpadNavigation persists the numpad-navigation mode (numlock/always/off).
@@ -227,16 +252,13 @@ func (a *GuiApp) SetMinimapScale(scale float64) error {
 	if scale < 0.2 || scale > 3 {
 		return fmt.Errorf("minimap scale must be between 0.2 and 3")
 	}
-	a.configMu.Lock()
-	defer a.configMu.Unlock()
-	old := a.cfg().UI.MinimapScale
-	a.cfg().UI.MinimapScale = scale
-	a.render.setScale(scale)
-	if err := a.save(); err != nil {
-		a.render.setScale(old)
+	if err := a.withConfig(func() {
+		a.cfg().UI.MinimapScale = scale
+		a.render.setScale(scale)
+	}); err != nil {
 		return err
 	}
-	a.RefreshGraphics()
+	a.refreshGraphics()
 	return nil
 }
 
@@ -250,6 +272,22 @@ func (a *GuiApp) SetOutputFontSize(px int) error {
 	defer a.configMu.Unlock()
 	a.cfg().UI.OutputFontSize = px
 	return a.save()
+}
+
+// SetGUILayout persists the browser-native pixel dimensions used by the GUI.
+// The TUI's column/row settings remain independent because they are not
+// meaningful CSS dimensions.
+func (a *GuiApp) SetGUILayout(sidebarWidth, minimapHeight int) error {
+	if sidebarWidth < 180 || sidebarWidth > 600 {
+		return fmt.Errorf("GUI sidebar width must be between 180 and 600 pixels")
+	}
+	if minimapHeight < 80 || minimapHeight > 400 {
+		return fmt.Errorf("GUI minimap height must be between 80 and 400 pixels")
+	}
+	return a.withConfig(func() {
+		a.cfg().UI.GUISidebarWidth = sidebarWidth
+		a.cfg().UI.GUIMinimapHeight = minimapHeight
+	})
 }
 
 // SetCRTEffects persists the three retro CRT effect toggles (scanlines, the
@@ -338,6 +376,25 @@ func (a *GuiApp) SetHighPriority(cmds []string) error {
 	return nil
 }
 
+// SetInputVariables replaces the name/value map used for ${name} and
+// ${name:fallback} substitutions in typed command-line input and applies it
+// live.
+func (a *GuiApp) SetInputVariables(variables map[string]string) error {
+	for name := range variables {
+		if !config.ValidVariableName(name) {
+			return fmt.Errorf("invalid variable name %q", name)
+		}
+	}
+	cloned := make(map[string]string, len(variables))
+	for name, value := range variables {
+		cloned[name] = value
+	}
+	return a.withConfig(func() {
+		a.cfg().Commands.Variables = cloned
+		a.client().SetInputVariables(cloned)
+	})
+}
+
 // SetIgnoreOOC replaces the OOC ignorelist and applies it live.
 func (a *GuiApp) SetIgnoreOOC(names []string) error {
 	a.configMu.Lock()
@@ -372,14 +429,14 @@ func (a *GuiApp) SetNotifications(cfg config.DesktopNotificationsConfig) error {
 		cfg.FatigueBelow.Threshold < 0 || cfg.FatigueBelow.Threshold > 100 {
 		return fmt.Errorf("notification thresholds must be between 0 and 100")
 	}
-	a.configMu.Lock()
-	defer a.configMu.Unlock()
-	old := a.cfg().Notifications.Desktop
-	a.cfg().Notifications.Desktop = cfg
-	a.deps.DesktopNotify.UpdateConfig(cfg)
-	if err := a.save(); err != nil {
-		a.deps.DesktopNotify.UpdateConfig(old)
+	if err := a.withConfig(func() {
+		a.cfg().Notifications.Desktop = cfg
+	}); err != nil {
 		return err
+	}
+	a.client().SetScriptNotificationPreferences(cfg.AllowScriptNotifications, cfg.Sound)
+	if a.deps.DesktopNotify != nil {
+		a.deps.DesktopNotify.UpdateConfig(cfg)
 	}
 	return nil
 }

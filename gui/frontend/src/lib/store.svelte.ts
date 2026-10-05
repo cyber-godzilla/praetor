@@ -8,6 +8,7 @@ import type {
   BarsPayload,
   ConnPayload,
   CustomTabConfig,
+  ModeSpec,
   PlayPreview,
   Segment,
   SendPreview,
@@ -18,6 +19,7 @@ import type {
   CredentialStoreStatus,
 } from "./types";
 import { Kind } from "./types";
+import type { DisplayMode } from "./display";
 
 // Extra lines the scrollback buffer may hold above the configured cap before a
 // front-trim runs, so the O(n) keyed-each reconciliation amortizes over a burst.
@@ -109,6 +111,7 @@ class AppStore {
   });
   config = $state<AppConfig | null>(null);
   modeNames = $state<string[]>([]);
+  modeSpecs = $state<ModeSpec[]>([]);
   hasModes = $state(false);
 
   tabs = $state<Tab[]>([]);
@@ -143,13 +146,13 @@ class AppStore {
   compass = $state<string>("");
 
   // UI chrome
-  sidebarOpen = $state(true);
   // Ephemeral focus signal shared only between InputLine and the mobile dock.
   // It is never persisted or projected to another browser.
   mobileCommandInputActive = $state(false);
+  displayMode = $state<DisplayMode>("sidebar");
   // Collapsed state of the sidebar's accordion sections. Session-only (resets to
   // all-expanded on restart); held here rather than in Frame so it survives an
-  // Alt+S sidebar unmount/remount.
+  // Alt+S display-mode unmount/remount.
   collapsed = $state({ map: false, exits: false, vitals: false });
   openModal = $state<string | null>(null);
   // True while the custom right-click context menu is open, so the game view's
@@ -192,6 +195,12 @@ class AppStore {
   histSearchRequest = $state(0);
   histSearchCancel = $state(0);
   histSearchActive = $state(false);
+  // Slash-command hint completion (Tab). Same split as the reverse search above:
+  // GameView owns the capture-phase Tab but only InputLine owns the input value,
+  // so InputLine mirrors whether the hint is on screen and performs the
+  // completion when the counter is bumped.
+  hintActive = $state(false);
+  hintCompleteRequest = $state(0);
   // Global reveal of all suppressed lines (Alt+I), complementing per-line click.
   expandAllSuppressed = $state(false);
   // Where Esc goes from the currently-open modal: "menu" for submenus (with a

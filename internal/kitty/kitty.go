@@ -52,12 +52,6 @@ func Encode(img image.Image, cols, rows, imageID int) string {
 	return result.String()
 }
 
-// DeleteByID returns the kitty escape that deletes a specific image
-// by its id without touching other images. q=2 suppresses responses.
-func DeleteByID(imageID int) string {
-	return fmt.Sprintf("\033_Ga=d,d=I,i=%d,q=2;\033\\", imageID)
-}
-
 // DeleteAll returns the kitty escape that deletes all images and frees their
 // data (d=A). Emitted on exit so a terminal whose alt-screen teardown doesn't
 // clear graphics is left clean. q=2 suppresses responses.

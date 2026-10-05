@@ -1,8 +1,6 @@
 package gui
 
 import (
-	"sync"
-
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -16,31 +14,6 @@ type Emitter interface {
 // EventChannel is the single frontend event name carrying a batch of
 // WireEvents in delivery order.
 const EventChannel = "praetor:events"
-
-// captureEmitter is a test/inspection Emitter that records everything.
-type captureEmitter struct {
-	mu     sync.Mutex
-	events []capturedEmit
-}
-
-type capturedEmit struct {
-	name string
-	data any
-}
-
-func (c *captureEmitter) Emit(event string, data any) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.events = append(c.events, capturedEmit{name: event, data: data})
-}
-
-func (c *captureEmitter) snapshot() []capturedEmit {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	out := make([]capturedEmit, len(c.events))
-	copy(out, c.events)
-	return out
-}
 
 // toWire converts a single core event into a WireEvent for the frontend.
 // It returns (event, true) when the event should be forwarded as-is, or
@@ -95,9 +68,6 @@ func toWire(ev types.Event) (WireEvent, bool) {
 			msg = e.Err.Error()
 		}
 		return WireEvent{Kind: KindError, Error: &ErrorPayload{Context: e.Context, Error: msg}}, true
-
-	case types.CommandEvent:
-		return WireEvent{Kind: KindCommand, Command: e.Command}, true
 
 	case types.WikiOpenMenuEvent:
 		return WireEvent{Kind: KindOpenMenu, OpenMenu: "wiki"}, true

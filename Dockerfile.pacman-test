@@ -1,0 +1,7 @@
+FROM archlinux:latest
+
+RUN printf '[praetor-1.0.0]\n\
+SigLevel = Never\n\
+Server = https://packages.buildkite.com/cybergodzilla-2099/praetor-arch/files\n' >> /etc/pacman.conf
+
+RUN pacman -Sy --noconfirm praetor && praetor-tui --version

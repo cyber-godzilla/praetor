@@ -18,12 +18,6 @@ const (
 	keyringAccountKey = "accounts"
 )
 
-// Account holds a username and password pair.
-type Account struct {
-	Username string
-	Password string
-}
-
 // CredentialStore defines the interface for storing and retrieving
 // multiple user accounts (username/password pairs).
 type CredentialStore interface {
@@ -31,11 +25,8 @@ type CredentialStore interface {
 	ListAccounts() ([]string, error)
 	GetAccount(username string) (string, error)
 	SetAccount(username, password string) error
-	RemoveAccount(username string) error
-	// RepairAccounts overwrites the whole store with a single account, discarding
-	// any existing (including corrupt/unreadable) contents. For explicit
-	// user-driven recovery only — see loadAccounts.
 	RepairAccounts(username, password string) error
+	RemoveAccount(username string) error
 }
 
 // CredentialStoreDescriptor contains non-secret, static backend capabilities.
@@ -73,10 +64,8 @@ func (k *KeyringStore) loadAccounts() (map[string]string, error) {
 	if err := json.Unmarshal([]byte(raw), &accounts); err != nil {
 		// A corrupt/truncated blob must NOT read as "no accounts stored" — the
 		// ordinary SetAccount would then overwrite the entry and could destroy a
-		// merely-misread blob. Surface the error so read paths report "unreadable"
-		// and the ordinary write paths refuse. Explicit recovery (the user chose
-		// to re-store after seeing the error) goes through RepairAccounts, which
-		// overwrites from scratch.
+		// merely-misread blob. Surface the error so read and write paths refuse to
+		// modify the unreadable entry.
 		return nil, fmt.Errorf("keyring blob corrupt: %w", err)
 	}
 	if accounts == nil {
@@ -139,13 +128,13 @@ func (k *KeyringStore) SetAccount(username, password string) error {
 	return k.saveAccounts(accounts)
 }
 
-// RepairAccounts overwrites the entire accounts blob with a single account,
-// discarding whatever was there (including a corrupt/unreadable blob). Use ONLY
-// for explicit user-driven recovery after a read path surfaced a corrupt blob —
-// the ordinary SetAccount deliberately refuses to overwrite an unreadable blob.
+// RepairAccounts explicitly replaces an unreadable/corrupt account blob with
+// a new single-account store after the user has chosen recovery.
 func (k *KeyringStore) RepairAccounts(username, password string) error {
 	keyringMu.Lock()
 	defer keyringMu.Unlock()
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	return k.saveAccounts(map[string]string{username: password})
 }
 

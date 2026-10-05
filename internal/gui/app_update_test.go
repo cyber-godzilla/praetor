@@ -36,6 +36,23 @@ func TestSetInputSpellcheck_Persists(t *testing.T) {
 	}
 }
 
+func TestSetKeepInputOnSend_Persists(t *testing.T) {
+	a := newTestApp(t)
+	if a.cfg().UI.KeepInputOnSend {
+		t.Fatal("keep-input-on-send should default off")
+	}
+	if err := a.SetKeepInputOnSend(true); err != nil {
+		t.Fatalf("SetKeepInputOnSend: %v", err)
+	}
+	got, err := config.Load(a.deps.ConfigPath)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !got.UI.KeepInputOnSend {
+		t.Error("persisted config should have keep_input_on_send=true")
+	}
+}
+
 func TestSetUpdateCheck_Persists(t *testing.T) {
 	a := newTestApp(t)
 	if err := a.SetUpdateCheck(false); err != nil {

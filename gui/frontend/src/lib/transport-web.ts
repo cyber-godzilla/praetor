@@ -136,9 +136,26 @@ export class WebTransport implements PraetorTransport {
       case "Send":
         await this.request("POST", "/api/v1/commands", { input: args[0] });
         return undefined as T;
+      case "SendInput":
+        await this.request("POST", "/api/v1/commands", { input: args[0], typed: true });
+        return undefined as T;
+      case "InputChainActive": {
+        const status = await this.request<{ active: boolean }>("GET", "/api/v1/input-chain");
+        return !!status.active as T;
+      }
+      case "InputChainStatus":
+        return (await this.request("GET", "/api/v1/input-chain")) as T;
+      case "AbortInputChains": {
+        const result = await this.request<{ aborted: number }>("DELETE", "/api/v1/input-chain");
+        return (result.aborted ?? 0) as T;
+      }
       case "ModeNames": {
         const data = await this.request<{ modeNames: string[] }>("GET", "/api/v1/modes");
         return (data.modeNames ?? []) as T;
+      }
+      case "ModeSpecs": {
+        const data = await this.request<{ modeSpecs: unknown[] }>("GET", "/api/v1/modes");
+        return (data.modeSpecs ?? []) as T;
       }
       case "CurrentMode": {
         const data = await this.request<{ currentMode: string }>("GET", "/api/v1/modes");
@@ -254,9 +271,9 @@ export class WebTransport implements PraetorTransport {
         return (await this.request("POST", "/api/v1/calc/rank-bonus", {
           mode: args[0], basics: args[1], subskill: args[2],
         })) as T;
-      case "CalcTrainCost":
+      case "CalcTrainingCosts":
         return (await this.request("POST", "/api/v1/calc/train-cost", {
-          current: args[0], desired: args[1], slot: args[2], difficulty: args[3],
+          currentBasics: args[0], currentSub: args[1], targetBasics: args[2], targetSub: args[3],
           selfTrained: args[4], selfTaught: args[5], healing: args[6],
         })) as T;
       case "CheckForUpdate":
@@ -735,6 +752,9 @@ export const settingsOperations: Record<string, string> = {
   SetColorWords: "color-words",
   SetHideIPs: "hide-ips",
   SetInputSpellcheck: "input-spellcheck",
+  SetKeepInputOnSend: "keep-input-on-send",
+  SetSemicolonDelay: "semicolon-delay",
+  SetUnbusyDelay: "unbusy-delay",
   SetUpdateCheck: "update-check",
   SetMobileShowToolbar: "mobile-show-toolbar",
   SetMobileShowTabBar: "mobile-show-tab-bar",
@@ -749,12 +769,14 @@ export const settingsOperations: Record<string, string> = {
   SetMinimapScale: "minimap-scale",
   SetCompassScale: "compass-scale",
   SetOutputFontSize: "output-font-size",
+  SetGUILayout: "gui-layout",
   SetCRTEffects: "crt-effects",
   SetHighlights: "highlights",
   SetCustomTabs: "custom-tabs",
   SetActionSets: "action-sets",
   SetQuickCycleModes: "quick-cycle-modes",
   SetHighPriority: "high-priority",
+  SetInputVariables: "input-variables",
   SetIgnoreOOC: "ignore-ooc",
   SetIgnoreThink: "ignore-think",
   SetNotifications: "notifications",
@@ -771,7 +793,12 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "RemoveAccount",
   "Disconnect",
   "Send",
+  "SendInput",
+  "InputChainActive",
+  "InputChainStatus",
+  "AbortInputChains",
   "ModeNames",
+  "ModeSpecs",
   "CurrentMode",
   "SetMode",
   "ReloadScripts",
@@ -806,7 +833,7 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "OpenURL",
   "OpenWikiSlug",
   "CalcRankBonus",
-  "CalcTrainCost",
+  "CalcTrainingCosts",
   "CheckForUpdate",
   ...Object.keys(settingsOperations),
 ]);
@@ -814,6 +841,9 @@ export const WEB_SUPPORTED_METHODS = new Set([
 function settingPayload(method: string, args: any[]): unknown {
   if (method === "SetCRTEffects") {
     return { scanlines: args[0], roll: args[1], bloom: args[2] };
+  }
+  if (method === "SetGUILayout") {
+    return { sidebarWidth: args[0], minimapHeight: args[1] };
   }
   return args[0];
 }

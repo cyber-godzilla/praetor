@@ -118,6 +118,7 @@ func (s *Server) handleDisconnect(w http.ResponseWriter, _ *http.Request, _ stri
 func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request, _ string) {
 	var req struct {
 		Input string `json:"input"`
+		Typed bool   `json:"typed"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid command request.")
@@ -133,9 +134,31 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request, _ string)
 		s.writeError(w, http.StatusConflict, "session_not_connected", "The shared game session is not connected.")
 		return
 	}
-	s.app.Send(req.Input)
+	if req.Typed {
+		if err := s.app.SendInput(req.Input); err != nil {
+			s.opMu.Unlock()
+			s.writeError(w, http.StatusBadRequest, "input_failed", err.Error())
+			return
+		}
+	} else {
+		s.app.Send(req.Input)
+	}
 	s.opMu.Unlock()
 	s.writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleInputChainStatus(w http.ResponseWriter, _ *http.Request, _ string) {
+	s.opMu.Lock()
+	status := s.app.InputChainStatus()
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleAbortInputChains(w http.ResponseWriter, _ *http.Request, _ string) {
+	s.opMu.Lock()
+	aborted := s.app.AbortInputChains()
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]int{"aborted": aborted})
 }
 
 func (s *Server) handleAccounts(w http.ResponseWriter, _ *http.Request, _ string) {
@@ -196,8 +219,9 @@ func (s *Server) handleModes(w http.ResponseWriter, _ *http.Request, _ string) {
 	s.opMu.Lock()
 	names := s.app.ModeNames()
 	current := s.app.CurrentMode()
+	specs := s.app.ModeSpecs()
 	s.opMu.Unlock()
-	s.writeJSON(w, http.StatusOK, map[string]any{"modeNames": names, "currentMode": current})
+	s.writeJSON(w, http.StatusOK, map[string]any{"modeNames": names, "modeSpecs": specs, "currentMode": current})
 }
 
 func (s *Server) handleSetMode(w http.ResponseWriter, r *http.Request, _ string) {
@@ -284,6 +308,12 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetHideIPs)
 	case "input-spellcheck":
 		return settingValue(raw, s.app.SetInputSpellcheck)
+	case "keep-input-on-send":
+		return settingValue(raw, s.app.SetKeepInputOnSend)
+	case "semicolon-delay":
+		return settingValue(raw, s.app.SetSemicolonDelay)
+	case "unbusy-delay":
+		return settingValue(raw, s.app.SetUnbusyDelay)
 	case "update-check":
 		return settingValue(raw, s.app.SetUpdateCheck)
 	case "mobile-show-toolbar":
@@ -312,6 +342,15 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetCompassScale)
 	case "output-font-size":
 		return settingValue(raw, s.app.SetOutputFontSize)
+	case "gui-layout":
+		value, err := decodeValue[struct {
+			SidebarWidth  int `json:"sidebarWidth"`
+			MinimapHeight int `json:"minimapHeight"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		return s.app.SetGUILayout(value.SidebarWidth, value.MinimapHeight)
 	case "crt-effects":
 		value, err := decodeValue[struct {
 			Scanlines bool `json:"scanlines"`
@@ -332,6 +371,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue[[]string](raw, s.app.SetQuickCycleModes)
 	case "high-priority":
 		return settingValue[[]string](raw, s.app.SetHighPriority)
+	case "input-variables":
+		return settingValue[map[string]string](raw, s.app.SetInputVariables)
 	case "ignore-ooc":
 		return settingValue[[]string](raw, s.app.SetIgnoreOOC)
 	case "ignore-think":
@@ -557,19 +598,19 @@ func (s *Server) handleRankBonus(w http.ResponseWriter, r *http.Request, _ strin
 
 func (s *Server) handleTrainCost(w http.ResponseWriter, r *http.Request, _ string) {
 	var req struct {
-		Current     int  `json:"current"`
-		Desired     int  `json:"desired"`
-		Slot        int  `json:"slot"`
-		Difficulty  int  `json:"difficulty"`
-		SelfTrained bool `json:"selfTrained"`
-		SelfTaught  bool `json:"selfTaught"`
-		Healing     bool `json:"healing"`
+		CurrentBasics int  `json:"currentBasics"`
+		CurrentSub    int  `json:"currentSub"`
+		TargetBasics  int  `json:"targetBasics"`
+		TargetSub     int  `json:"targetSub"`
+		SelfTrained   bool `json:"selfTrained"`
+		SelfTaught    bool `json:"selfTaught"`
+		Healing       bool `json:"healing"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid calculation input.")
 		return
 	}
-	value := s.app.CalcTrainCost(req.Current, req.Desired, req.Slot, req.Difficulty, req.SelfTrained, req.SelfTaught, req.Healing)
+	value := s.app.CalcTrainingCosts(req.CurrentBasics, req.CurrentSub, req.TargetBasics, req.TargetSub, req.SelfTrained, req.SelfTaught, req.Healing)
 	s.writeJSON(w, http.StatusOK, value)
 }
 

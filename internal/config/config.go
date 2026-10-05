@@ -51,6 +51,7 @@ type Config struct {
 	Logging       LoggingConfig       `yaml:"logging"`
 	Updates       UpdatesConfig       `yaml:"updates"`
 	Play          PlayConfig          `yaml:"play"`
+	Onboarding    OnboardingConfig    `yaml:"onboarding"`
 }
 
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
@@ -83,6 +84,13 @@ type EncryptedFileCredentialsConfig struct {
 	KeyEnv string `yaml:"key_env"`
 }
 
+// OnboardingConfig records one-time first-login experiences. It is persisted
+// separately from user-facing UI preferences so reconnects and later launches
+// cannot repeat them.
+type OnboardingConfig struct {
+	WelcomeShown bool `yaml:"welcome_shown"`
+}
+
 type ServerConfig struct {
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
@@ -91,11 +99,27 @@ type ServerConfig struct {
 }
 
 type CommandsConfig struct {
-	DefaultDelay Duration `yaml:"default_delay"`
-	MinInterval  Duration `yaml:"min_interval"`
-	MaxQueueSize int      `yaml:"max_queue_size"`
-	HighPriority []string `yaml:"high_priority"`
+	DefaultDelay     Duration `yaml:"default_delay"`
+	MinInterval      Duration `yaml:"min_interval"`
+	MaxQueueSize     int      `yaml:"max_queue_size"`
+	SemicolonDelayMS int      `yaml:"semicolon_delay_ms"`
+	UnbusyDelayMS    int      `yaml:"unbusy_delay_ms"`
+	HighPriority     []string `yaml:"high_priority"`
+	// Variables are substituted in typed command-line input using ${name} or
+	// ${name:fallback}.
+	// They are deliberately separate from Lua mode state and never expand
+	// recursively.
+	Variables map[string]string `yaml:"variables"`
 }
+
+const (
+	DefaultSemicolonDelayMS = 900
+	MinSemicolonDelayMS     = 100
+	MaxSemicolonDelayMS     = 10000
+	DefaultUnbusyDelayMS    = 100
+	MinUnbusyDelayMS        = 0
+	MaxUnbusyDelayMS        = 10000
+)
 
 type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
@@ -188,9 +212,11 @@ type NotificationsConfig struct {
 }
 
 type DesktopNotificationsConfig struct {
-	HealthBelow  ThresholdConfig       `yaml:"health_below"`
-	FatigueBelow ThresholdConfig       `yaml:"fatigue_below"`
-	Patterns     []NotifyPatternConfig `yaml:"patterns"`
+	AllowScriptNotifications bool                  `yaml:"allow_script_notifications"`
+	Sound                    bool                  `yaml:"sound"`
+	HealthBelow              ThresholdConfig       `yaml:"health_below"`
+	FatigueBelow             ThresholdConfig       `yaml:"fatigue_below"`
+	Patterns                 []NotifyPatternConfig `yaml:"patterns"`
 }
 
 type ThresholdConfig struct {
@@ -227,22 +253,24 @@ type UIConfig struct {
 	//   "topbar"  — horizontal strip across the top
 	//   "off"     — game pane only, sidebar/topbar hidden
 	// Migrated from the legacy sidebar_open bool by migrateLegacyDisplay.
-	DisplayMode     string   `yaml:"display_mode"`
-	DefaultTab      string   `yaml:"default_tab"`
-	Scrollback      int      `yaml:"scrollback"`
-	SidebarWidth    int      `yaml:"sidebar_width"`
-	MinimapScale    float64  `yaml:"minimap_scale"`
-	MinimapHeight   int      `yaml:"minimap_height"`
-	CompassScale    float64  `yaml:"compass_scale"`
-	OutputFontSize  int      `yaml:"output_font_size"`
-	CRTScanlines    bool     `yaml:"crt_scanlines"`
-	CRTRoll         bool     `yaml:"crt_roll"`
-	CRTBloom        bool     `yaml:"crt_bloom"`
-	QuickCycleModes []string `yaml:"quick_cycle_modes"`
-	ColorWords      bool     `yaml:"color_words"`
-	EchoTyped       bool     `yaml:"echo_typed_commands"`
-	EchoScript      bool     `yaml:"echo_script_commands"`
-	HideIPs         bool     `yaml:"hide_ips"`
+	DisplayMode      string   `yaml:"display_mode"`
+	DefaultTab       string   `yaml:"default_tab"`
+	Scrollback       int      `yaml:"scrollback"`
+	SidebarWidth     int      `yaml:"sidebar_width"`
+	GUISidebarWidth  int      `yaml:"gui_sidebar_width"` // pixels
+	MinimapScale     float64  `yaml:"minimap_scale"`
+	MinimapHeight    int      `yaml:"minimap_height"`
+	GUIMinimapHeight int      `yaml:"gui_minimap_height"` // pixels
+	CompassScale     float64  `yaml:"compass_scale"`
+	OutputFontSize   int      `yaml:"output_font_size"`
+	CRTScanlines     bool     `yaml:"crt_scanlines"`
+	CRTRoll          bool     `yaml:"crt_roll"`
+	CRTBloom         bool     `yaml:"crt_bloom"`
+	QuickCycleModes  []string `yaml:"quick_cycle_modes"`
+	ColorWords       bool     `yaml:"color_words"`
+	EchoTyped        bool     `yaml:"echo_typed_commands"`
+	EchoScript       bool     `yaml:"echo_script_commands"`
+	HideIPs          bool     `yaml:"hide_ips"`
 	// InputSpellcheck enables the webview's native spellchecker on the GUI
 	// command input (red squiggles under misspelled words while composing says
 	// and emotes). Engine support varies by platform webview.
@@ -254,6 +282,10 @@ type UIConfig struct {
 	MobileShowTabBar            bool `yaml:"mobile_show_tab_bar"`
 	MobileHideNavigationOnInput bool `yaml:"mobile_hide_navigation_on_input"`
 	MobileLowercaseFirstLetter  bool `yaml:"mobile_lowercase_first_letter"`
+	// KeepInputOnSend keeps the sent command in the GUI input, selected,
+	// instead of clearing it: Enter re-sends it, and any typing or Backspace
+	// replaces the whole line (native select-all semantics).
+	KeepInputOnSend bool `yaml:"keep_input_on_send"`
 	// NumpadNavigation controls the GUI numpad-walking behavior:
 	//   "numlock" — move when NumLock is off; type digits when on (default)
 	//   "always"  — numpad always sends movement (needed on macOS, which has
@@ -299,10 +331,13 @@ func Defaults() *Config {
 			LoginURL: "https://login.eternalcitygame.com/login.php",
 		},
 		Commands: CommandsConfig{
-			DefaultDelay: Duration{1000 * time.Millisecond},
-			MinInterval:  Duration{500 * time.Millisecond},
-			MaxQueueSize: 20,
-			HighPriority: []string{},
+			DefaultDelay:     Duration{1000 * time.Millisecond},
+			MinInterval:      Duration{500 * time.Millisecond},
+			MaxQueueSize:     20,
+			SemicolonDelayMS: DefaultSemicolonDelayMS,
+			UnbusyDelayMS:    DefaultUnbusyDelayMS,
+			HighPriority:     []string{},
+			Variables:        map[string]string{},
 		},
 		Credentials: CredentialsConfig{
 			Backend: "keyring",
@@ -317,8 +352,10 @@ func Defaults() *Config {
 			DefaultTab:           "all",
 			Scrollback:           5000,
 			SidebarWidth:         40,
+			GUISidebarWidth:      260,
 			MinimapScale:         1.0,
 			MinimapHeight:        12,
+			GUIMinimapHeight:     160,
 			CompassScale:         1.0,
 			OutputFontSize:       14,
 			CRTScanlines:         true,
@@ -340,6 +377,7 @@ func Defaults() *Config {
 		},
 		Notifications: NotificationsConfig{
 			Desktop: DesktopNotificationsConfig{
+				Sound: false,
 				HealthBelow: ThresholdConfig{
 					Enabled:   true,
 					Threshold: 25,
@@ -367,6 +405,9 @@ func Defaults() *Config {
 		},
 		Play: PlayConfig{
 			WaitForTimeout: Duration{60 * time.Second},
+		},
+		Onboarding: OnboardingConfig{
+			WelcomeShown: false,
 		},
 	}
 }
@@ -410,6 +451,7 @@ func Load(path string) (*Config, error) {
 	migrateLegacyEcho(cfg, data)
 	migrateLegacyDisplay(cfg, data)
 	migrateMobileOutputFontSize(cfg, data)
+	migrateLegacyOnboarding(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
@@ -441,6 +483,20 @@ func migrateMobileOutputFontSize(cfg *Config, data []byte) {
 			size = 40
 		}
 		cfg.UI.MobileOutputFontSize = size
+	}
+}
+
+// migrateLegacyOnboarding prevents the first-login welcome popup from
+// surprising existing installations after an upgrade. Fresh configs are saved
+// with an explicit onboarding section and false marker; only configs predating
+// the feature lack the section and are treated as already onboarded.
+func migrateLegacyOnboarding(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if _, ok := raw["onboarding"]; !ok {
+		cfg.Onboarding.WelcomeShown = true
 	}
 }
 
@@ -551,6 +607,21 @@ func (c *Config) Validate() error {
 	if c.Commands.MaxQueueSize < 1 {
 		c.Commands.MaxQueueSize = 20
 	}
+	if c.Commands.SemicolonDelayMS < MinSemicolonDelayMS || c.Commands.SemicolonDelayMS > MaxSemicolonDelayMS {
+		c.Commands.SemicolonDelayMS = DefaultSemicolonDelayMS
+	}
+	if c.Commands.UnbusyDelayMS < MinUnbusyDelayMS || c.Commands.UnbusyDelayMS > MaxUnbusyDelayMS {
+		c.Commands.UnbusyDelayMS = DefaultUnbusyDelayMS
+	}
+	if c.Commands.Variables == nil {
+		c.Commands.Variables = map[string]string{}
+	}
+	for name := range c.Commands.Variables {
+		if !ValidVariableName(name) {
+			log.Printf("[CONFIG] dropping command variable with invalid name %q", name)
+			delete(c.Commands.Variables, name)
+		}
+	}
 
 	// Play
 	if c.Play.WaitForTimeout.Duration <= 0 {
@@ -590,11 +661,21 @@ func (c *Config) Validate() error {
 	if c.UI.SidebarWidth < 20 {
 		c.UI.SidebarWidth = 40
 	}
+	if c.UI.GUISidebarWidth < 180 {
+		c.UI.GUISidebarWidth = 260
+	} else if c.UI.GUISidebarWidth > 600 {
+		c.UI.GUISidebarWidth = 600
+	}
 	if c.UI.MinimapScale <= 0 {
 		c.UI.MinimapScale = 1.0
 	}
 	if c.UI.MinimapHeight < 4 {
 		c.UI.MinimapHeight = 12
+	}
+	if c.UI.GUIMinimapHeight < 80 {
+		c.UI.GUIMinimapHeight = 160
+	} else if c.UI.GUIMinimapHeight > 400 {
+		c.UI.GUIMinimapHeight = 400
 	}
 	if c.UI.CompassScale <= 0 {
 		c.UI.CompassScale = 1.0
@@ -655,4 +736,20 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+// ValidVariableName reports whether name can be referenced as ${name} or as the
+// name portion of ${name:fallback}. Keeping the grammar identifier-like makes references
+// unambiguous and portable across the GUI, YAML, and future clients.
+func ValidVariableName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }

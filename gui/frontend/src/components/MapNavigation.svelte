@@ -8,6 +8,7 @@
   // scale remains a desktop presentation setting; allowing it to shrink the
   // mobile compass would create inaccessible movement targets.
   const compassPx = $derived(compact ? 132 : Math.round(120 * (store.config?.UI?.CompassScale ?? 1)));
+  const mapPx = $derived(store.config?.UI?.GUIMinimapHeight || 160);
 
   function go(direction: string) {
     if (!store.transportReady) return;
@@ -22,7 +23,7 @@
 
 <div class="navigation" class:compact>
   <Frame title="Map" collapsible={!compact} bind:collapsed={store.collapsed.map}>
-    <div class="mapbox">
+    <div class="mapbox" style:height={compact ? undefined : `${mapPx}px`}>
       {#if store.minimap}
         <button class="mapbtn" title="Size up the area" aria-label="Size up the current area" onclick={sizeup} tabindex="-1" disabled={!store.transportReady}>
           <img src={store.minimap} alt="minimap" />
@@ -104,6 +105,7 @@
   .mapbox img {
     display: block;
     max-width: 100%;
+    max-height: 100%;
     image-rendering: pixelated;
   }
   .compass {

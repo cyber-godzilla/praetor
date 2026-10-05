@@ -37,6 +37,32 @@ func TestClient_Drainer_SendsOnIdleConnection(t *testing.T) {
 	c.Disconnect()
 }
 
+func TestClient_Drainer_DoesNotExpandInputVariables(t *testing.T) {
+	srv, wsURL, recv := newRecordingServer(t)
+	defer srv.Close()
+
+	c := newDiscTestClient(t)
+	c.SetInputVariables(map[string]string{"target": "scarred bandit"})
+	connectTestSession(t, c, wsURL)
+	go c.Run()
+	waitForConnected(t, c)
+
+	// Lua send() feeds this same engine queue. PraetorScript belongs only to
+	// user-authored input and Action Sets, so queued script text stays literal.
+	want := `say ${target};;one&&two$(notify "no")`
+	c.Engine.Queue().Enqueue(want, 1)
+
+	select {
+	case cmd := <-recv:
+		if cmd != want {
+			t.Fatalf("got %q, want script text unchanged", cmd)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("queued script command was never drained")
+	}
+	c.Disconnect()
+}
+
 func TestClient_Drainer_PreservesOrderAcrossDelays(t *testing.T) {
 	srv, wsURL, recv := newRecordingServer(t)
 	defer srv.Close()

@@ -1,11 +1,13 @@
 <script lang="ts">
   import ActionsTab from "./sidebar/ActionsTab.svelte";
   import ModesTab from "./sidebar/ModesTab.svelte";
+  import VariablesTab from "./sidebar/VariablesTab.svelte";
 
-  type TabId = "actions" | "modes";
+  type TabId = "actions" | "modes" | "variables";
   const tabs: { id: TabId; label: string }[] = [
     { id: "actions", label: "Actions" },
     { id: "modes", label: "Modes" },
+    { id: "variables", label: "Variables" },
   ];
 
   // Default = Actions; component-local, resets on relaunch (not persisted).
@@ -21,8 +23,10 @@
   <div class="content">
     {#if active === "actions"}
       <ActionsTab />
-    {:else}
+    {:else if active === "modes"}
       <ModesTab />
+    {:else}
+      <VariablesTab />
     {/if}
   </div>
 </div>

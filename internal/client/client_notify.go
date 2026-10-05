@@ -36,10 +36,12 @@ type NotificationSinkFunc func(title, message string)
 
 func (f NotificationSinkFunc) Notify(title, message string) { f(title, message) }
 
-type NativeNotificationSink struct{}
+type NativeNotificationSink struct {
+	Sound bool
+}
 
-func (NativeNotificationSink) Notify(title, message string) {
-	go sendDesktopNotification(title, message)
+func (s NativeNotificationSink) Notify(title, message string) {
+	go sendDesktopNotification(title, message, s.Sound)
 }
 
 type compiledNotifyPattern struct {
@@ -56,7 +58,7 @@ func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier 
 		cfg:      cfg,
 		lastSent: make(map[string]time.Time),
 		cooldown: 30 * time.Second,
-		sink:     NativeNotificationSink{},
+		sink:     NativeNotificationSink{Sound: cfg.Sound},
 	}
 
 	for _, p := range cfg.Patterns {
@@ -94,6 +96,9 @@ func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
 	defer dn.mu.Unlock()
 
 	dn.cfg = cfg
+	if _, native := dn.sink.(NativeNotificationSink); native {
+		dn.sink = NativeNotificationSink{Sound: cfg.Sound}
+	}
 
 	dn.patterns = nil
 	for _, p := range cfg.Patterns {
@@ -210,12 +215,32 @@ func (dn *DesktopNotifier) send(title, message, dedupKey string) {
 
 // sendDesktopNotification sends a notification using the platform's native mechanism.
 // All arguments are passed as separate command args to avoid shell injection.
-func sendDesktopNotification(title, message string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
+func sendDesktopNotification(title, message string, sound bool) {
+	cmd := desktopNotificationCommand(runtime.GOOS, title, message, sound)
+	if cmd == nil {
+		log.Printf("[NOTIFY] desktop notifications not supported on %s", runtime.GOOS)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Printf("[NOTIFY] desktop notification failed: %v", err)
+	}
+	// Reap the child process to avoid zombies (#4).
+	go cmd.Wait()
+}
+
+// desktopNotificationCommand builds the native notification command for goos.
+// sound selects the OS-managed default alert sound; false explicitly suppresses
+// sound where the platform notification API supports doing so.
+func desktopNotificationCommand(goos, title, message string, sound bool) *exec.Cmd {
+	switch goos {
 	case "linux":
 		// notify-send takes title and message as separate args — no shell.
-		cmd = exec.Command("notify-send", title, message)
+		hint := "boolean:suppress-sound:true"
+		if sound {
+			hint = "string:sound-name:message-new-instant"
+		}
+		return exec.Command("notify-send", "--hint="+hint, title, message)
 	case "darwin":
 		// Pass title and message via -e args to avoid shell injection.
 		// osascript receives pre-escaped strings via separate arguments.
@@ -230,27 +255,32 @@ func sendDesktopNotification(title, message string) {
 		sanitizedTitle := sanitize(title)
 		sanitizedMsg := sanitize(message)
 		script := `display notification "` + sanitizedMsg + `" with title "` + sanitizedTitle + `"`
-		cmd = exec.Command("osascript", "-e", script)
+		if sound {
+			script += ` sound name "default"`
+		}
+		return exec.Command("osascript", "-e", script)
 	case "windows":
 		// Use PowerShell with escaped single quotes.
 		escapedTitle := strings.ReplaceAll(title, "'", "''")
 		escapedMsg := strings.ReplaceAll(message, "'", "''")
+		audioValue := "ms-winsoundevent:Notification.Default"
+		audioAttribute := "src"
+		if !sound {
+			audioValue = "true"
+			audioAttribute = "silent"
+		}
 		ps := `[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null; ` +
 			`$template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent(0); ` +
 			`$text = $template.GetElementsByTagName('text'); ` +
 			`$text.Item(0).AppendChild($template.CreateTextNode('` + escapedTitle + `')) | Out-Null; ` +
 			`$text.Item(1).AppendChild($template.CreateTextNode('` + escapedMsg + `')) | Out-Null; ` +
+			`$audio = $template.CreateElement('audio'); ` +
+			`$audio.SetAttribute('` + audioAttribute + `', '` + audioValue + `'); ` +
+			`$template.DocumentElement.AppendChild($audio) | Out-Null; ` +
 			`$toast = [Windows.UI.Notifications.ToastNotification]::new($template); ` +
 			`[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Praetor').Show($toast)`
-		cmd = exec.Command("powershell", "-Command", ps)
+		return exec.Command("powershell", "-Command", ps)
 	default:
-		log.Printf("[NOTIFY] desktop notifications not supported on %s", runtime.GOOS)
-		return
+		return nil
 	}
-
-	if err := cmd.Start(); err != nil {
-		log.Printf("[NOTIFY] desktop notification failed: %v", err)
-	}
-	// Reap the child process to avoid zombies (#4).
-	go cmd.Wait()
 }

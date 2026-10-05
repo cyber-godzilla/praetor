@@ -10,6 +10,7 @@
   import InputLine from "./InputLine.svelte";
   import Sidebar from "./Sidebar.svelte";
   import MobileDock from "./MobileDock.svelte";
+  import { nextDisplayMode } from "../lib/display";
 
   function visibleTabs() {
     return store.tabs.filter((t) => t.visible);
@@ -36,6 +37,17 @@
     } catch (e) {
       store.addToast("Mode error", String(e));
     }
+  }
+
+  let displaySave: Promise<void> = Promise.resolve();
+
+  function cycleDisplay() {
+    const mode = nextDisplayMode(store.displayMode);
+    store.displayMode = mode;
+    if (store.config?.UI) store.config.UI.DisplayMode = mode;
+    displaySave = displaySave
+      .then(() => api.setDisplayMode(mode))
+      .catch((e) => store.addToast("Settings error", String(e)));
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -116,6 +128,16 @@
     // e.code stays "Tab" regardless of the Shift modifier.
     if (e.code === "Tab") {
       e.preventDefault();
+      // The command hint owns Tab while it is showing — completion is what the
+      // player means there. Shift+Tab always cycles, so tab-switching is never
+      // unreachable without first clearing the input. Tab is consumed even when
+      // there is nothing left to complete: falling through to cycleTab on those
+      // inputs would make Tab do two unrelated things depending on how many
+      // modes happen to share a prefix, which reads as broken.
+      if (!e.shiftKey && store.hintActive) {
+        store.hintCompleteRequest++;
+        return;
+      }
       cycleTab(e.shiftKey ? -1 : 1);
       return;
     }
@@ -126,7 +148,7 @@
       const digit = e.code.match(/^Digit(\d)$/);
       if (e.code === "KeyS") {
         e.preventDefault();
-        store.sidebarOpen = !store.sidebarOpen;
+        cycleDisplay();
       } else if (e.code === "KeyM") {
         e.preventDefault();
         quickCycleMode();
@@ -137,6 +159,7 @@
         // actually went out), so deliberately none is raised here.
         e.preventDefault();
         api.abortSend().catch((err) => store.addToast("Abort failed", String(err)));
+        api.abortInputChains().catch((err) => store.addToast("Abort failed", String(err)));
         api.setMode("disable", []).catch((err) => store.addToast("Mode error", String(err)));
         api.stopPlay().catch((err) => store.addToast("Stop failed", String(err)));
         store.playActive = false;
@@ -189,7 +212,7 @@
       {/if}
       <InputLine />
     </div>
-    {#if store.sidebarOpen}
+    {#if store.displayMode === "sidebar"}
       <Sidebar />
       <MobileDock />
     {/if}

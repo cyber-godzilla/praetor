@@ -294,6 +294,22 @@ func TestInterpretSkoot_MinimapRooms(t *testing.T) {
 	}
 }
 
+func TestInterpretSkoot_ClampsMinimapBrightnessAbove200(t *testing.T) {
+	ev := InterpretSkoot(6, "-10,-10,20,#ff0000,215.0,10,-10,20,#ffffff,200.0")
+	if ev == nil {
+		t.Fatal("expected non-nil event for minimap rooms")
+	}
+	if len(ev.Rooms) != 2 {
+		t.Fatalf("expected both rooms to survive parsing, got %d", len(ev.Rooms))
+	}
+	if ev.Rooms[0].Brightness != 200 {
+		t.Errorf("room 0 brightness: got %f, want clamped value 200", ev.Rooms[0].Brightness)
+	}
+	if ev.Rooms[1].Brightness != 200 {
+		t.Errorf("room 1 brightness: got %f, want unchanged value 200", ev.Rooms[1].Brightness)
+	}
+}
+
 func TestInterpretSkoot_MinimapRoomsInvalid(t *testing.T) {
 	// Not a multiple of 5
 	ev := InterpretSkoot(6, "0,0,10,#ff0000")

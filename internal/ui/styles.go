@@ -6,9 +6,7 @@ var (
 	colorOrange   = lipgloss.Color("#e8a838")
 	colorGreen    = lipgloss.Color("#55cc55")
 	colorRed      = lipgloss.Color("#cc4444")
-	colorBlue     = lipgloss.Color("#88aaff")
 	colorDim      = lipgloss.Color("#888888")
-	colorBG       = lipgloss.Color("#0a0a14")
 	colorBorder   = lipgloss.Color("#444444")
 	colorBarEmpty = lipgloss.Color("#333333")
 

@@ -3,6 +3,8 @@ package gui
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -80,7 +82,21 @@ func newSendRoutingApp(t *testing.T) (*GuiApp, <-chan string) {
 	srv, wsURL, recv := newSendRoutingServer(t)
 	t.Cleanup(srv.Close)
 
-	c, err := client.NewClient(config.Defaults(), nil, t.TempDir(), nil)
+	modeDir := t.TempDir()
+	modePath := filepath.Join(modeDir, "aggro.lua")
+	modeBody := `
+local M = {}
+M.on_start = function(args)
+    if args[1] then send("arg " .. args[1]) end
+end
+M.reactions = {}
+return M
+`
+	if err := os.WriteFile(modePath, []byte(modeBody), 0o644); err != nil {
+		t.Fatalf("write test mode: %v", err)
+	}
+
+	c, err := client.NewClient(config.Defaults(), []string{modeDir}, t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -160,7 +176,7 @@ func TestSend_TrailingNewlineStillRoutesSlashCommand(t *testing.T) {
 
 	a.Send("/mode aggro\n")
 
-	if got := a.CurrentMode(); got != "aggro" {
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
 		t.Fatalf("CurrentMode() = %q, want %q — trailing newline should not have routed to SendBlock", got, "aggro")
 	}
 	select {
@@ -177,13 +193,33 @@ func TestSend_PlainSlashCommandRoutesAsCommand(t *testing.T) {
 
 	a.Send("/mode aggro")
 
-	if got := a.CurrentMode(); got != "aggro" {
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
 		t.Fatalf("CurrentMode() = %q, want %q", got, "aggro")
 	}
 	select {
 	case msg := <-recv:
 		t.Fatalf("server received %q — /mode must be handled locally, never sent over the wire", msg)
 	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSend_DirectControlsBypassPraetorScript(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+	want := `say ${target};;one&&two$(wait 9)`
+
+	a.Send(want)
+
+	select {
+	case got := <-recv:
+		if got != want {
+			t.Fatalf("server received %q, want direct-control text unchanged", got)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received direct-control text")
+	}
+	if a.client().InputChainActive() {
+		t.Fatal("direct control unexpectedly created a PraetorScript chain")
 	}
 }
 
@@ -204,7 +240,7 @@ func TestSend_InteriorNewlineRoutesAsBlock(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("server never received the block")
 	}
-	if got := a.CurrentMode(); got == "line" {
+	if got := a.client().Engine.CurrentMode(); got == "line" {
 		t.Fatalf("CurrentMode() = %q — block input must not be interpreted as a command", got)
 	}
 }
@@ -226,5 +262,207 @@ func TestSend_InteriorNewlinePlusTrailingNewlineStillRoutesAsBlock(t *testing.T)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("server never received the block")
+	}
+}
+
+func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	if err := a.SendInput("kill ${target};;look;;inventory"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+
+	var receivedAt []time.Time
+	for _, want := range []string{"kill scarred bandit", "look", "inventory"} {
+		select {
+		case got := <-recv:
+			receivedAt = append(receivedAt, time.Now())
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+	for i := 1; i < len(receivedAt); i++ {
+		if gap := receivedAt[i].Sub(receivedAt[i-1]); gap < client.InputCommandDelay-50*time.Millisecond {
+			t.Fatalf("command gap %d = %s, want approximately %s or longer", i, gap, client.InputCommandDelay)
+		} else {
+			t.Logf("observed ;; command gap %d: %s", i, gap)
+		}
+	}
+}
+
+func TestSendInput_ActionModeCommandValidatesAndPassesExpandedArgs(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{
+		"mode":   "AGGRO",
+		"target": "scarred bandit",
+	})
+
+	if err := a.SendInput("/mode ${mode} ${target}"); err != nil {
+		t.Fatalf("SendInput(valid /mode): %v", err)
+	}
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
+		t.Fatalf("CurrentMode() = %q, want canonical %q", got, "aggro")
+	}
+	queued, _, ok := a.client().Engine.Queue().DequeueGen()
+	if !ok || queued.Command != "arg scarred" {
+		// Slash-command args follow shell-style whitespace splitting, so the mode
+		// receives "scarred" and "bandit" as separate arguments.
+		t.Fatalf("queued mode output = %+v, %v; want first arg %q", queued, ok, "arg scarred")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received local Action-set command %q", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	if err := a.SendInput("/mode missing target"); err == nil || !strings.Contains(err.Error(), `unknown mode "missing"`) {
+		t.Fatalf("SendInput(unknown /mode) error = %v, want unknown-mode error", err)
+	}
+	if got := a.client().Engine.CurrentMode(); got != "aggro" {
+		t.Fatalf("invalid Action-set mode changed CurrentMode() to %q", got)
+	}
+}
+
+func TestSendInput_ActionChainValidatesModeBeforeSendingAnything(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("look;;/mode missing")
+	if err == nil || !strings.Contains(err.Error(), `unknown mode "missing"`) {
+		t.Fatalf("SendInput error = %v, want unknown-mode error", err)
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before the later /mode failed validation", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSendInput_UsesCurrentVariablesOnEveryCall(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "first bandit"})
+	if err := a.SendInput("attack ${target}"); err != nil {
+		t.Fatalf("first SendInput: %v", err)
+	}
+	a.client().SetInputVariables(map[string]string{"target": "second bandit"})
+	if err := a.SendInput("attack ${target}"); err != nil {
+		t.Fatalf("second SendInput: %v", err)
+	}
+
+	for _, want := range []string{"attack first bandit", "attack second bandit"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+}
+
+func TestSendInput_UsesFallbackForMissingOrEmptyVariable(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"empty": "", "count": "10"})
+
+	if err := a.SendInput("missing ${missing:25};;empty ${empty:25};;set ${count:25}"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	for _, want := range []string{"missing 25", "empty 25", "set 10"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received %q", want)
+		}
+	}
+}
+
+func TestSendInput_ValidationIsAtomic(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("look;;kill ${missing}")
+	if err == nil {
+		t.Fatal("SendInput returned nil, want unknown-variable error")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before the later command failed validation", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestSendInput_MultilineBlockExpandsVariablesWithoutChains(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit", "count": ""})
+
+	input := "say ${target};;look\nsecond line ${target}&&wait\n$(notify \"literal\")\ncount ${count:25}"
+	want := "say scarred bandit;;look\nsecond line scarred bandit&&wait\n$(notify \"literal\")\ncount 25"
+	if err := a.SendInput(input); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	select {
+	case got := <-recv:
+		if got != want {
+			t.Fatalf("server received %q, want expanded block %q", got, want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received multiline block")
+	}
+}
+
+func TestSendInput_MultilineVariableValidationIsAtomic(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	err := a.SendInput("first line\nkill ${missing}")
+	if err == nil {
+		t.Fatal("SendInput returned nil, want unknown-variable error")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before multiline validation failed", got)
+	case <-time.After(200 * time.Millisecond):
+	}
+}
+
+func TestStartFileSend_ExpandsVariablesWithoutChains(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	a.client().SetInputVariables(map[string]string{"target": "scarred bandit"})
+
+	path := writeScript(t, "say ${target};;look\nsecond line ${target}&&wait\n$(wait 2)\ncount ${count:25}\n")
+	if err := a.StartFileSend(path); err != nil {
+		t.Fatalf("StartFileSend: %v", err)
+	}
+	select {
+	case got := <-recv:
+		want := "say scarred bandit;;look\nsecond line scarred bandit&&wait\n$(wait 2)\ncount 25"
+		if got != want {
+			t.Fatalf("server received %q, want expanded file block %q", got, want)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received /send block")
+	}
+}
+
+func TestStartFileSend_RejectsUnknownVariableBeforeSending(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	path := writeScript(t, "first line\nkill ${missing}\n")
+	err := a.StartFileSend(path)
+	if err == nil {
+		t.Fatal("StartFileSend returned nil, want unknown-variable error")
+	}
+	if a.sendActive() {
+		t.Fatal("send became active after variable validation failed")
+	}
+	select {
+	case got := <-recv:
+		t.Fatalf("server received %q before /send variable validation failed", got)
+	case <-time.After(200 * time.Millisecond):
 	}
 }

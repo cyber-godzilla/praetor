@@ -1,15 +1,14 @@
 // Package wiki contains curated bookmarks for the Eternal City wiki at
-// http://eternal-city.wikidot.com. The bookmark list is hand-curated;
+// https://tec-wiki.com. The bookmark list is hand-curated;
 // regenerate from docs/wiki-bookmarks-draft.md if it changes.
 package wiki
 
 import (
-	"sort"
 	"strings"
 )
 
 // BaseURL is the wiki root.
-const BaseURL = "http://eternal-city.wikidot.com"
+const BaseURL = "https://tec-wiki.com"
 
 // Bookmark is a (key, slug) pair. URL is BaseURL + "/" + Slug.
 type Bookmark struct {
@@ -46,18 +45,6 @@ func Lookup(key string) (string, bool) {
 		}
 	}
 	return "", false
-}
-
-// Keys returns all bookmark keys, sorted alphabetically.
-func Keys() []string {
-	var out []string
-	for _, sec := range sections {
-		for _, bm := range sec.Bookmarks {
-			out = append(out, bm.Key)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 func normalize(s string) string {

@@ -2,6 +2,7 @@
   import { store } from "../lib/store.svelte";
   import MenuModal from "./modals/MenuModal.svelte";
   import SettingsModal from "./modals/SettingsModal.svelte";
+  import VariablesModal from "./modals/VariablesModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
   import CustomTabsModal from "./modals/CustomTabsModal.svelte";
   import ActionSetsModal from "./modals/ActionSetsModal.svelte";
@@ -21,6 +22,7 @@
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
   import CRTEffectsModal from "./modals/CRTEffectsModal.svelte";
   import MobileActionsModal from "./modals/MobileActionsModal.svelte";
+  import NewUserModal from "./modals/NewUserModal.svelte";
   import * as api from "../lib/bridge";
 
   const m = $derived(store.openModal);
@@ -53,12 +55,16 @@
 
 {#if m === "menu"}
   <MenuModal />
+{:else if m === "new-user"}
+  <NewUserModal />
 {:else if m === "help"}
   <HelpModal />
 {:else if m === "modeselect"}
   <ModeSelectModal />
 {:else if m === "settings"}
   <SettingsModal />
+{:else if m === "variables"}
+  <VariablesModal />
 {:else if m === "crt"}
   <CRTEffectsModal />
 {:else if m === "highlights"}

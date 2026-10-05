@@ -1,6 +1,7 @@
 package minimap
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -29,6 +30,29 @@ func TestBuildImage_NilWithNoRooms(t *testing.T) {
 	m.SetSize(40, 12)
 	if img := m.BuildImage(); img != nil {
 		t.Fatal("BuildImage should return nil when no rooms are loaded")
+	}
+}
+
+func TestComputeScale_UserScaleMultipliesAutoFitZoom(t *testing.T) {
+	m := NewMinimap()
+	m.SetSize(38, 12)
+	m.Update([]types.MinimapRoom{
+		{X: 0, Y: 0, Size: 100, Color: "#ff0000", Brightness: 25},
+		{X: 50, Y: 0, Size: 100, Color: "#ffffff", Brightness: 22},
+	}, nil)
+	player := FindPlayerRoom(m.rooms)
+
+	m.SetScale(0.8)
+	zoomedOut := m.computeScale(190, 120, player)
+	m.SetScale(2.0)
+	zoomedIn := m.computeScale(190, 120, player)
+
+	if zoomedIn <= zoomedOut {
+		t.Fatalf("scale 2.0 produced %f, want greater than scale 0.8 (%f)", zoomedIn, zoomedOut)
+	}
+	wantRatio := 2.0 / 0.8
+	if got := zoomedIn / zoomedOut; math.Abs(got-wantRatio) > 0.001 {
+		t.Fatalf("effective zoom ratio = %f, want %f", got, wantRatio)
 	}
 }
 

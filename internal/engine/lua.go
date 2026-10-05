@@ -60,10 +60,40 @@ type LuaReaction struct {
 // LuaMode is a loaded mode.
 type LuaMode struct {
 	Name       string
+	Usage      string
+	Desc       string
+	Chains     bool
+	Hidden     bool
 	Reactions  []LuaReaction
 	HasOnStop  bool
 	onStartRef *lua.LFunction
 	onStopRef  *lua.LFunction
+}
+
+// ModeSpec is a mode's self-declared metadata, read off the mode table at load
+// time. It exists so a shell can describe a mode — its arguments and what it
+// does — without running it: everything a mode registers at runtime
+// (metrics.track, state.display) is only known once on_start has fired.
+//
+// All fields are optional. An empty Usage means the mode takes no arguments,
+// and Desc is the signal that a mode declared anything at all.
+type ModeSpec struct {
+	Name string `json:"name"`
+	// Usage is the argument signature without the mode name, e.g.
+	// "<item> [corpse#]".
+	Usage string `json:"usage"`
+	// Desc is a one-line description of what the mode does.
+	Desc string `json:"desc"`
+	// Chains reports that the mode honors an "after:<mode>" argument. It is
+	// reported, never acted on — appending the token to a displayed signature
+	// is the shell's business, and the chaining itself lives in Lua.
+	Chains bool `json:"chains"`
+	// Hidden asks the command hint not to offer this mode, for helpers that are
+	// real modes but noise while typing — an internal route leg, a mode another
+	// mode chains into. It is a display hint only: the mode stays loaded and
+	// "/mode <name>" still runs it, because mode resolution goes through
+	// HasMode, which never consults this.
+	Hidden bool `json:"hidden"`
 }
 
 // LuaVM manages the gopher-lua state, mode registry, and hot reload.
@@ -211,27 +241,6 @@ func (vm *LuaVM) ScriptDirs() []string {
 	return vm.scriptDirs
 }
 
-// ModeFileExists checks whether the mode's .lua file exists in any script directory.
-func (vm *LuaVM) ModeFileExists(name string) bool {
-	vm.mu.Lock()
-	defer vm.mu.Unlock()
-
-	for _, dir := range vm.scriptDirs {
-		path := filepath.Join(dir, name+".lua")
-		if _, err := os.Stat(path); err == nil {
-			return true
-		}
-	}
-	return false
-}
-
-// RemoveMode removes a mode from the loaded modes map.
-func (vm *LuaVM) RemoveMode(name string) {
-	vm.mu.Lock()
-	defer vm.mu.Unlock()
-	delete(vm.modes, name)
-}
-
 // clearLibCache removes all entries from Lua's package.loaded table
 // so that subsequent require() calls re-read files from disk.
 func (vm *LuaVM) clearLibCache() {
@@ -266,6 +275,25 @@ func (vm *LuaVM) ModeNames() []string {
 	}
 	sort.Strings(names)
 	return names
+}
+
+// ModeSpecs returns the declared metadata for every loaded mode, sorted by name.
+func (vm *LuaVM) ModeSpecs() []ModeSpec {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+
+	specs := make([]ModeSpec, 0, len(vm.modes))
+	for name, mode := range vm.modes {
+		specs = append(specs, ModeSpec{
+			Name:   name,
+			Usage:  mode.Usage,
+			Desc:   mode.Desc,
+			Chains: mode.Chains,
+			Hidden: mode.Hidden,
+		})
+	}
+	sort.Slice(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
+	return specs
 }
 
 // State returns the underlying lua.LState for bridge registration.
@@ -312,6 +340,22 @@ func (vm *LuaVM) loadModeFile(name, path string) (*LuaMode, error) {
 
 	mode := &LuaMode{
 		Name: name,
+	}
+
+	// Extract the declared metadata (all optional). A field of the wrong type is
+	// treated as undeclared rather than failing the load: metadata is
+	// descriptive, and a typo in it must never cost the player a working mode.
+	if s, ok := tbl.RawGetString("usage").(lua.LString); ok {
+		mode.Usage = string(s)
+	}
+	if s, ok := tbl.RawGetString("desc").(lua.LString); ok {
+		mode.Desc = string(s)
+	}
+	if b, ok := tbl.RawGetString("chains").(lua.LBool); ok {
+		mode.Chains = bool(b)
+	}
+	if b, ok := tbl.RawGetString("hidden").(lua.LBool); ok {
+		mode.Hidden = bool(b)
 	}
 
 	// Extract on_start

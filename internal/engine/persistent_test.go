@@ -114,11 +114,20 @@ func TestPersistentStore_Debounce(t *testing.T) {
 		t.Error("file should not exist before debounce fires")
 	}
 
-	time.Sleep(200 * time.Millisecond)
-
-	raw, err := os.ReadFile(filePath)
-	if err != nil {
-		t.Fatalf("file not written after debounce: %v", err)
+	// Poll rather than sleeping a fixed interval: on a loaded CI runner the
+	// debounced flush can land well past the nominal 100ms delay.
+	var raw []byte
+	var err error
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		raw, err = os.ReadFile(filePath)
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("file not written after debounce: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	var allData map[string]map[string]interface{}
 	json.Unmarshal(raw, &allData) //nolint:errcheck

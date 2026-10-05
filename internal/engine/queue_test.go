@@ -182,7 +182,7 @@ func TestCommandQueue_MinInterval(t *testing.T) {
 	}
 }
 
-func TestCommandQueue_FullDropIsObservable(t *testing.T) {
+func TestCommandQueue_FullDropsNewCommand(t *testing.T) {
 	q := NewCommandQueue(2, 900*time.Millisecond, 300*time.Millisecond, nil)
 
 	q.Enqueue("a", 0)
@@ -192,19 +192,16 @@ func TestCommandQueue_FullDropIsObservable(t *testing.T) {
 	if q.Len() != 2 {
 		t.Fatalf("Len() = %d, want 2", q.Len())
 	}
-	if q.Dropped() != 1 {
-		t.Errorf("Dropped() = %d, want 1 after a full-queue drop", q.Dropped())
-	}
 }
 
-func TestCommandQueue_DuplicateDropIsObservable(t *testing.T) {
+func TestCommandQueue_DuplicateIsDropped(t *testing.T) {
 	q := NewCommandQueue(10, 900*time.Millisecond, 300*time.Millisecond, nil)
 
 	q.Enqueue("look", 0)
 	q.Enqueue("look", 0) // duplicate: dropped
 
-	if q.Dropped() != 1 {
-		t.Errorf("Dropped() = %d, want 1 after a duplicate drop", q.Dropped())
+	if q.Len() != 1 {
+		t.Errorf("Len() = %d, want 1 after duplicate enqueue", q.Len())
 	}
 }
 
@@ -226,9 +223,6 @@ func TestCommandQueue_HighPriorityEvictsWhenFull(t *testing.T) {
 	cmd, _ = q.Dequeue()
 	if cmd.Command != "look" {
 		t.Errorf("second = %q, want look (north should have been the evicted one)", cmd.Command)
-	}
-	if q.Dropped() != 1 {
-		t.Errorf("Dropped() = %d, want 1 (the evicted normal command)", q.Dropped())
 	}
 }
 

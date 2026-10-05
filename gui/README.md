@@ -37,13 +37,16 @@ the GUI fixes Windows).
 - Platform webview toolchain:
   - **Windows**: WebView2 runtime (preinstalled on Win10/11).
   - **macOS**: Xcode command-line tools.
-  - **Linux**: GTK3 + WebKit2GTK dev packages. Modern distros (Ubuntu 24.04+,
+  - **Linux**: GTK3 + WebKit2GTK dev packages and a Hunspell dictionary.
+    Modern distros (Ubuntu 24.04+,
     incl. 25.10) ship **4.1**, which requires the `webkit2_41` build tag:
     ```bash
-    sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev
+    sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev hunspell-en-us
     ```
     Older distros with 4.0 can omit the tag. The `Makefile` always passes
     `-tags webkit2_41` (harmless on macOS/Windows), so you never have to.
+    The equivalent English dictionary packages are `hunspell-en-US` on Fedora
+    and `hunspell-en_us` on Arch Linux.
 
 Run `wails doctor` to verify your environment.
 

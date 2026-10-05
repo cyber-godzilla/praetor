@@ -84,21 +84,108 @@ commands:
   default_delay: 900ms            # Delay between queued commands
   min_interval: 400ms             # Minimum time between any two sends
   max_queue_size: 20              # Maximum commands in queue
+  semicolon_delay_ms: 900         # Delay between ;; commands (100-10000)
+  unbusy_delay_ms: 100            # Delay after && unbusy response (0-10000)
   high_priority: []               # Commands that jump to front of queue
+  variables:                      # Typed-input substitutions
+    target: scarred bandit
 ```
 
 High priority commands can be configured via Esc → Priority Commands. When a high-priority command is queued, it's inserted at the front (after other high-priority items) instead of the back.
+
+### PraetorScript
+
+Variables can also be managed via Esc → **Variables** or in the sidebar's
+**Variables** tab. Reference one as `${name}` in a typed command, such as
+`attack ${target}`. Add a literal fallback after a colon, such as
+`${count:25}`: a non-empty saved `count` wins, while a missing or empty one
+inserts `25`. References are case-sensitive, and saved values and fallbacks are
+substituted once rather than recursively. An unknown reference without a
+fallback, or any malformed reference, rejects the entire input line without
+sending any part of it. Use `\${` to send a literal `${`.
+
+Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
+roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
+for an unbusy response plus the configured 100 ms default before sending
+`climb wall`, then waits the configured `;;` delay (900 ms by default) before
+sending `look`. Change either delay under Esc → Display & Behavior → Settings.
+Each unbusy response advances one pending chain in submission order.
+Recognized responses mirror `praetor-scripts`: no longer busy, no longer
+stunned, wield/grab/already-wielding confirmations, successful training, and
+stopping walking.
+
+A single `;` or `&` remains ordinary text. `\;;` and `\&&` send literal
+separators. Praetor splits the line before substituting variables, so a
+variable value containing either separator cannot create extra commands. These
+features apply to single-line command-input submissions and Action-set buttons.
+
+Use `$()` control steps as complete steps within those chains:
+
+```text
+$(wait 2.5)                                      # pause for seconds
+$(wait-for "The latch clicks")                   # wait for a future matching line
+$(wait-for "The gate opens" timeout 30)          # cancel the chain after 30 seconds
+$(wait-for "open" cancel-on "locked" timeout 30)
+$(notify "Training complete")                    # notify, then continue
+$(notify "Training" "Complete")                  # custom title and message
+$(repeat "climb wall" until "You reach the top")
+$(repeat "climb wall" until "You reach the top" cancel-on "You fall")
+$(repeat "climb wall" until "You reach the top" max 10)
+```
+
+Each directive occupies one chain step, so compose it with the existing
+separators—for example, `look;;$(wait 2);;inventory`. Separators around a
+directive retain their normal configured delay or unbusy behavior; an explicit
+`wait` adds its duration at that point in the chain. The safety exception is a
+`wait-for` immediately after a sent command: Praetor arms that matcher before
+sending the command so a fast response cannot be missed; the separator there
+serves as syntax rather than delaying matcher registration.
+
+`wait-for` can optionally use `cancel-on "text"`, `timeout seconds`, or both.
+The cancellation text and timeout stop the entire chain instead of advancing
+it. A timeout must be positive. Without either clause, the wait remains active
+until it matches or the user presses Stop.
+
+`repeat` requires a game command (not a local `/` command), sends it
+immediately, then sends it again after each recognized unbusy response and the
+configured unbusy delay. Its success text
+advances the surrounding chain; its optional cancellation text stops the whole
+chain without advancing. `max N` counts the initial send as attempt 1 and
+cancels the chain rather than sending attempt N+1. Without `max`, retries remain
+unbounded. Matching is case-sensitive substring matching. Text
+arguments may contain separators because quoted strings are parsed before the
+outer chain. Escape a quote or backslash inside them as `\"` or `\\`. Use
+`\$(` to send a literal `$(`. Variables work in directive arguments and, like
+the rest of the line, are validated before anything is sent.
+
+Variables are read afresh every time either is invoked, so edits take effect
+immediately. Variables also apply to multiline input and `/send` files, but
+those paths do not interpret command-chain separators. Other sidebar buttons,
+numpad movement, Lua scripts, and `/play` playback bypass typed-input
+processing. A single line is limited to 100 commands across both separator
+types and control steps. Pending chains are discarded on disconnect. In the
+GUI, a dedicated row below the input keeps PraetorScript status on the left and
+the Play/Stop and mode controls on the right. The status slot remains visible
+as an idle placeholder when no chain is running; an active chain fills it with
+the active step, wait/retry state, remaining timeout, and count of additional
+concurrent chains, and replaces Play with Stop. A `;;` pacing step shows
+its original configured delay for the whole pause rather than counting down;
+explicit waits and timed `wait-for` steps count down in whole seconds, rounded
+up so a new 30-second wait begins at `30s`. Stop cancels queued
+commands, explicit waits, substring reactions, and repeats.
 
 ## UI
 
 ```yaml
 ui:
-  sidebar_open: true              # Sidebar visible on start
+  display_mode: sidebar           # TUI: sidebar | topbar | off; GUI: sidebar | off
   default_tab: all                # Initial tab: all, metrics
   scrollback: 5000                # Lines of scrollback per tab
-  sidebar_width: 40               # Sidebar width in columns
-  minimap_scale: 0.8              # Minimap zoom level
-  minimap_height: 12              # Minimap height in terminal rows
+  sidebar_width: 40               # TUI sidebar width in columns
+  gui_sidebar_width: 260          # GUI sidebar width in pixels (180-600)
+  minimap_scale: 1.0              # Minimap zoom multiplier (0.5-3.0)
+  minimap_height: 12              # TUI minimap height in terminal rows
+  gui_minimap_height: 160         # GUI map height in pixels (80-400)
   quick_cycle_modes:              # Modes cycled by Alt+M
     - disable
   color_words: false              # Color word highlighting
@@ -111,6 +198,7 @@ ui:
   mobile_show_tab_bar: true       # Web: show the tab selector on mobile
   mobile_hide_navigation_on_input: false # Web: hide map/compass while typing
   mobile_lowercase_first_letter: false   # Web: counter keyboard capitalization
+  keep_input_on_send: false       # GUI: retain and select the last sent command
   custom_tabs: []                 # User-defined tabs (managed via menu)
 ```
 
@@ -125,7 +213,13 @@ to visible, while navigation hiding and command normalization default to
 disabled. When the tab selector is hidden, its Menu button moves to the far
 right of the mobile status row.
 
-All other UI toggles are available via the Esc menu and saved automatically.
+All other UI toggles are available via the Esc menu and persisted when you press Save.
+
+`input_spellcheck` controls the native spellchecker for the command textarea.
+On Linux, Praetor enables WebKitGTK spellchecking with the first usable locale
+from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG` (falling back to `en_US`).
+The Linux packages include the English Hunspell dictionary; source builds need
+a Hunspell/Enchant dictionary installed for the selected locale.
 
 ### Custom Tabs
 
@@ -168,6 +262,8 @@ Case-insensitive substring matching. Highlighted text appears with colored backg
 ```yaml
 notifications:
   desktop:
+    allow_script_notifications: false # Permit Lua notify() desktop alerts and GUI toasts
+    sound: false                   # Play the OS default sound for every notification
     health_below:
       enabled: true
       threshold: 25               # Notify when health drops below this %
@@ -181,7 +277,17 @@ notifications:
         enabled: true
 ```
 
-Desktop notifications use the system's native notification mechanism (`notify-send` on Linux, `osascript` on macOS, PowerShell toast on Windows).
+Desktop notifications use the system's native notification mechanism
+(`notify-send` on Linux, `osascript` on macOS, PowerShell toast on Windows).
+`sound` is a single global switch for notification audio. When enabled, every
+desktop notification requests the OS-managed default alert sound; when
+disabled, Praetor suppresses notification sounds. System volume, notification
+preferences, and Do Not Disturb settings still take precedence.
+
+`allow_script_notifications` is off by default. Enable it to permit Lua
+scripts' `notify()` calls to create desktop alerts and in-app notification
+toasts. Health, fatigue, and text-pattern notifications remain controlled by
+their own settings.
 
 ## Logging
 
@@ -261,6 +367,20 @@ When enabled, the desktop GUI makes a single anonymous request to the GitHub
 releases API shortly after launch and shows a toast if a newer version exists.
 Nothing is downloaded or installed automatically, and failures are silent.
 Toggleable in the GUI under Settings → "Check for updates on startup".
+
+## Onboarding
+
+```yaml
+onboarding:
+  welcome_shown: false             # Internal one-time GUI welcome marker
+```
+
+On a new installation, Praetor sets this to `true` when the first successful
+GUI login displays the welcome popup. The popup links to the Praetor overview,
+guide, and scripts wiki pages; it never opens a page until the user clicks a
+link. Existing configs that predate this setting are treated as already
+welcomed so an upgrade does not trigger the popup. The GUI-only `/guide`
+command reopens the same popup without changing this marker.
 
 ## File Locations
 

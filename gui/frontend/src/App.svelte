@@ -11,6 +11,7 @@
   import ContextMenu from "./components/ContextMenu.svelte";
   import WebAuth from "./components/WebAuth.svelte";
   import type { SystemUpdate } from "./lib/transport";
+  import { normalizeDisplayMode } from "./lib/display";
 
   let ready = $state(false);
   let splashDone = $state(false);
@@ -45,7 +46,7 @@
     }
     if (update.type === "config" && update.config) {
       store.installConfig(update.config);
-      store.sidebarOpen = update.config.UI?.DisplayMode !== "off";
+      store.displayMode = normalizeDisplayMode(update.config.UI?.DisplayMode);
     } else if (update.type === "modes") {
       store.modeNames = update.modeNames ?? [];
       store.hasModes = store.modeNames.length > 0;
@@ -66,7 +67,7 @@
   function applyEvents(batch: import("./lib/types").WireEvent[]) {
     store.apply(batch);
     for (const event of batch) {
-      if (event.kind === "notify" && event.notify) {
+      if (api.inWeb() && event.kind === "notify" && event.notify) {
         api.showLocalNotification(event.notify.title, event.notify.message);
       }
     }
@@ -116,8 +117,9 @@
       if (init.credentialStore) store.credentialStore = init.credentialStore;
       store.config = init.config;
       store.modeNames = init.modeNames ?? [];
+      store.modeSpecs = init.modeSpecs ?? [];
       store.hasModes = init.hasModes;
-      store.sidebarOpen = init.config?.UI?.DisplayMode !== "off";
+      store.displayMode = normalizeDisplayMode(init.config?.UI?.DisplayMode);
       store.rebuildTabs(init.config?.UI?.CustomTabs);
       store.screen = store.accounts.length > 0 ? "account" : "login";
       webLocked = false;

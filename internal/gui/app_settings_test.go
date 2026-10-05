@@ -4,8 +4,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
 // Wails dispatches each bound setter on its own goroutine, so two settings
@@ -35,5 +38,173 @@ func TestFacadeSettings_ConcurrentSettersDoNotRace(t *testing.T) {
 
 	if _, err := config.Load(deps.ConfigPath); err != nil {
 		t.Fatalf("config unreadable after concurrent setters: %v", err)
+	}
+}
+
+func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	variables := map[string]string{"target": "scarred bandit"}
+	if err := a.SetInputVariables(variables); err != nil {
+		t.Fatalf("SetInputVariables: %v", err)
+	}
+	variables["target"] = "changed by caller"
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.Variables["target"]; got != "scarred bandit" {
+		t.Fatalf("persisted target = %q, want %q", got, "scarred bandit")
+	}
+
+	if err := a.SetInputVariables(map[string]string{"bad-name": "value"}); err == nil {
+		t.Fatal("SetInputVariables accepted an invalid name")
+	}
+	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
+		t.Fatalf("invalid update changed live variables to %q", got)
+	}
+}
+
+func TestSetSemicolonDelayValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	if err := a.SetSemicolonDelay(1250); err != nil {
+		t.Fatalf("SetSemicolonDelay: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.SemicolonDelayMS; got != 1250 {
+		t.Fatalf("persisted SemicolonDelayMS = %d, want 1250", got)
+	}
+	if got := c.SemicolonDelay(); got != 1250*time.Millisecond {
+		t.Fatalf("live SemicolonDelay() = %s, want 1.25s", got)
+	}
+
+	for _, invalid := range []int{config.MinSemicolonDelayMS - 1, config.MaxSemicolonDelayMS + 1} {
+		if err := a.SetSemicolonDelay(invalid); err == nil {
+			t.Errorf("SetSemicolonDelay(%d) accepted an out-of-range value", invalid)
+		}
+	}
+	if got := c.SemicolonDelay(); got != 1250*time.Millisecond {
+		t.Fatalf("invalid update changed live delay to %s", got)
+	}
+}
+
+func TestSetUnbusyDelayValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	if err := a.SetUnbusyDelay(250); err != nil {
+		t.Fatalf("SetUnbusyDelay: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.UnbusyDelayMS; got != 250 {
+		t.Fatalf("persisted UnbusyDelayMS = %d, want 250", got)
+	}
+	if got := c.UnbusyDelay(); got != 250*time.Millisecond {
+		t.Fatalf("live UnbusyDelay() = %s, want 250ms", got)
+	}
+
+	for _, invalid := range []int{config.MinUnbusyDelayMS - 1, config.MaxUnbusyDelayMS + 1} {
+		if err := a.SetUnbusyDelay(invalid); err == nil {
+			t.Errorf("SetUnbusyDelay(%d) accepted an out-of-range value", invalid)
+		}
+	}
+	if got := c.UnbusyDelay(); got != 250*time.Millisecond {
+		t.Fatalf("invalid update changed live delay to %s", got)
+	}
+	if err := a.SetUnbusyDelay(0); err != nil {
+		t.Fatalf("SetUnbusyDelay(0): %v", err)
+	}
+	if got := c.UnbusyDelay(); got != 0 {
+		t.Fatalf("UnbusyDelay() = %s after zero setting", got)
+	}
+}
+
+func TestSetGUILayoutValidatesAndPersistsPixelDimensions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, &captureEmitter{})
+
+	if err := a.SetGUILayout(340, 220); err != nil {
+		t.Fatalf("SetGUILayout: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.UI.GUISidebarWidth != 340 || loaded.UI.GUIMinimapHeight != 220 {
+		t.Fatalf("persisted GUI layout = %dx%d, want 340x220", loaded.UI.GUISidebarWidth, loaded.UI.GUIMinimapHeight)
+	}
+	if err := a.SetGUILayout(100, 220); err == nil {
+		t.Fatal("SetGUILayout accepted undersized sidebar")
+	}
+}
+
+func TestSetMinimapScaleRerendersAtDistinctZoom(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	emitter := &captureEmitter{}
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, emitter)
+	a.render.updateMinimap([]types.MinimapRoom{
+		{X: 0, Y: 0, Size: 100, Color: "#ff0000", Brightness: 25},
+		{X: 50, Y: 0, Size: 100, Color: "#ffffff", Brightness: 22},
+	}, nil)
+
+	if err := a.SetMinimapScale(0.8); err != nil {
+		t.Fatalf("SetMinimapScale(0.8): %v", err)
+	}
+	if err := a.SetMinimapScale(2.0); err != nil {
+		t.Fatalf("SetMinimapScale(2.0): %v", err)
+	}
+	events := emitter.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("emitted %d graphics updates, want 2", len(events))
+	}
+	first := events[0].data.([]WireEvent)[0].Image
+	second := events[1].data.([]WireEvent)[0].Image
+	if first == nil || second == nil || first.DataURI == second.DataURI {
+		t.Fatal("different minimap scale settings emitted identical renders")
+	}
+	if err := a.SetMinimapScale(3.1); err == nil {
+		t.Fatal("SetMinimapScale accepted a value above the GUI limit")
+	}
+}
+
+func TestSetDisplayModeRejectsUnknownValues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: config.Defaults(), ConfigPath: path}, &captureEmitter{})
+	if err := a.SetDisplayMode("topbar"); err != nil {
+		t.Fatalf("SetDisplayMode(topbar): %v", err)
+	}
+	if err := a.SetDisplayMode("floating"); err == nil {
+		t.Fatal("SetDisplayMode accepted an unknown value")
+	}
+	if got := a.cfg().UI.DisplayMode; got != "topbar" {
+		t.Fatalf("invalid update changed mode to %q", got)
 	}
 }
