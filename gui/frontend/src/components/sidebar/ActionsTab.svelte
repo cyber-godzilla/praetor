@@ -40,7 +40,7 @@
 {#if current}
   <div class="buttons">
     {#each current.Buttons ?? [] as b, i (i)}
-      <button class="action" onclick={() => void fire(b.Command)} title={b.Command} tabindex="-1">{b.Label}</button>
+      <button class="action" onclick={() => void fire(b.Command)} title={b.Command} tabindex="-1" disabled={!store.transportReady}>{b.Label}</button>
     {/each}
     <button class="action addbtn" onclick={() => (store.openModal = "action-add")} title="Add action" aria-label="Add action" tabindex="-1">+</button>
   </div>

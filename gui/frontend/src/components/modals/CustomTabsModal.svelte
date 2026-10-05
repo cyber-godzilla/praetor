@@ -40,10 +40,10 @@
       store.config!.UI.CustomTabs = tabs;
       store.rebuildTabs(tabs);
       store.addToast("Custom tabs", "Saved");
+      store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));
     }
-    store.openModal = null;
   }
 </script>
 

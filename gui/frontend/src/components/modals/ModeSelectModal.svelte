@@ -41,7 +41,7 @@
   {/if}
   <div class="modes">
     {#each modes as mode (mode)}
-      <button class="mode" class:current={store.mode === mode || (mode === "disable" && (store.mode === "" || store.mode === "disable"))} onclick={() => pick(mode)}>
+      <button class="mode" class:current={store.mode === mode || (mode === "disable" && (store.mode === "" || store.mode === "disable"))} onclick={() => pick(mode)} disabled={!store.transportReady}>
         <span class="head">
           <span class="name">{mode}</span>
           {#if specs.get(mode)?.usage}

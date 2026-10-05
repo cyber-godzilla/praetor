@@ -49,6 +49,12 @@ func (e *Engine) SetNotifyHandler(fn func(title, message string)) {
 	e.notifyMu.Unlock()
 }
 
+// SetNotificationSink is kept as a compatibility alias for shells that use the
+// older name. New callers should use SetNotifyHandler.
+func (e *Engine) SetNotificationSink(fn func(title, message string)) {
+	e.SetNotifyHandler(fn)
+}
+
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
 // APIs, and loads all modes. Pass nil for cfg to use defaults.
 func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine, error) {
@@ -451,20 +457,23 @@ func (e *Engine) ReloadAllModes() error {
 func (e *Engine) rebuildVM(dirs []string) error {
 	prevMode := e.currentMode
 
-	// Retire the old manager before its VM is closed below: mark it dead and
-	// cancel its timers so no old goroutine fires against the closed state.
-	e.timers.Shutdown()
-
 	newVM := NewLuaVM(dirs)
 	L := newVM.State()
-	e.timers = NewTimerManager(L, &e.mu, &e.actionGen)
-	RegisterBridge(L, e, e.status, e.timers)
+	newTimers := NewTimerManager(L, &e.mu, &e.actionGen)
+	RegisterBridge(L, e, e.status, newTimers)
 	RegisterStateAPI(L, e.state)
 
 	if err := newVM.LoadModes(); err != nil {
+		newTimers.Shutdown()
 		newVM.Close()
 		return fmt.Errorf("loading modes: %w", err)
 	}
+
+	// Only retire the working VM/timers after the replacement has loaded
+	// successfully. A syntax error in a newly configured directory therefore
+	// leaves the current automation session intact.
+	e.timers.Shutdown()
+	e.timers = newTimers
 
 	// Cancel any delayed actions from the old VM before closing it.
 	e.actionGen++

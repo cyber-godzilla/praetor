@@ -39,6 +39,11 @@ export function makeConfig(): AppConfig {
       HideIPs: false,
       InputSpellcheck: false,
       KeepInputOnSend: false,
+      MobileOutputFontSize: 14,
+      MobileShowToolbar: true,
+      MobileShowTabBar: true,
+      MobileHideNavigationOnInput: false,
+      MobileLowercaseFirstLetter: false,
       NumpadNavigation: "numlock",
       CustomTabs: [
         {
@@ -70,7 +75,7 @@ export function makeConfig(): AppConfig {
         Patterns: [],
       },
     },
-    Logging: { Session: { Enabled: false, Path: "" } },
+    Logging: { App: { Retain: false }, Session: { Enabled: false, Path: "" } },
     Updates: { Check: false },
     Onboarding: { WelcomeShown: true },
   };
@@ -80,6 +85,11 @@ export const baseInit: InitState = {
   version: VERSION,
   debug: false,
   accounts: [],
+  credentialStore: {
+    backend: "memory",
+    available: true,
+    canStore: true,
+  },
   hasModes: true,
   modeNames: modeSpecs.map((m) => m.name),
   modeSpecs,

@@ -782,6 +782,25 @@ return M
 	}
 }
 
+func TestEngineNotificationSink(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	e := newTestEngine(t, modesDir, libDir)
+	got := make(chan [2]string, 1)
+	e.SetNotificationSink(func(title, message string) {
+		got <- [2]string{title, message}
+	})
+	e.OnNotify("Alert", "A test notification")
+
+	select {
+	case notification := <-got:
+		if notification != [2]string{"Alert", "A test notification"} {
+			t.Fatalf("notification = %#v", notification)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("notification sink was not called")
+	}
+}
+
 func TestEngine_ModeSpecsExcludesLibPrefixAndSorts(t *testing.T) {
 	modesDir, libDir := setupEngineTestDirs(t)
 

@@ -27,7 +27,7 @@
 {/if}
 <div class="modes">
   {#each modes as mode (mode)}
-    <button class="mode" class:current={isActiveMode(mode, store.mode)} onclick={() => pick(mode)} tabindex="-1">
+    <button class="mode" class:current={isActiveMode(mode, store.mode)} onclick={() => pick(mode)} tabindex="-1" disabled={!store.transportReady}>
       <span class="name">{mode}</span>
       {#if isActiveMode(mode, store.mode)}<span class="badge">active</span>{/if}
     </button>

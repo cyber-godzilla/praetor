@@ -294,6 +294,13 @@ func (c *Client) SetScriptNotificationPreferences(allow, sound bool) {
 	c.notificationSound.Store(sound)
 }
 
+// SetDesktopNotificationHandler replaces native notification delivery. Passing
+// nil is appropriate for the headless web server, where NotificationEvents are
+// projected to authenticated browsers instead of the server desktop.
+func (c *Client) SetDesktopNotificationHandler(fn func(title, message string, sound bool)) {
+	c.desktopNotify = fn
+}
+
 func cloneVariables(variables map[string]string) map[string]string {
 	cloned := make(map[string]string, len(variables))
 	for name, value := range variables {

@@ -1,0 +1,13 @@
+credentials:
+  backend: encrypted_file
+  encrypted_file:
+    path: /data/state/credentials/credentials.enc
+    key_env: PRAETOR_CREDENTIALS_KEY
+
+scripts:
+  - /data/scripts
+
+logging:
+  session:
+    enabled: true
+    path: /data/logs

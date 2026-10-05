@@ -37,20 +37,19 @@ export function withinBand(gapPx: number, bandPx: number): boolean {
 //
 // - Within the band → follow (re-engage). Scrolling back near the bottom, or a
 //   small scroll within the band, keeps the tail followed.
-// - Outside the band, only DISENGAGE on a genuine upward scroll (scrollTop
-//   decreased). This is the crucial burst guard: a fast append grows the gap
-//   without moving scrollTop up, so it must not flip following off — otherwise
-//   large chunks of text leave the view stuck behind the tail.
-// - Otherwise keep the current state.
+// - Outside the band, only explicit user scrolling disengages following. DOM
+//   updates can move scrollTop when capped scrollback removes rows above the
+//   viewport, so scroll direction by itself is not evidence of user intent.
+// - Otherwise keep the current state while the next tail-follow frame catches
+//   up with appended or reflowed content.
 export function nextAutoFollow(s: {
   gapPx: number;
   bandPx: number;
-  top: number;
-  lastTop: number;
   current: boolean;
+  userMovedAway: boolean;
 }): boolean {
   if (withinBand(s.gapPx, s.bandPx)) return true;
-  if (s.top < s.lastTop) return false;
+  if (s.userMovedAway) return false;
   return s.current;
 }
 

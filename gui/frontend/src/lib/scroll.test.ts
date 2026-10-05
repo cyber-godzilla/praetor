@@ -56,29 +56,33 @@ describe("nextAutoFollow", () => {
   const band = followBandPx(14); // 490px
 
   it("follows when within the band, regardless of prior state", () => {
-    expect(nextAutoFollow({ gapPx: 0, bandPx: band, top: 100, lastTop: 900, current: false })).toBe(true);
-    expect(nextAutoFollow({ gapPx: 200, bandPx: band, top: 900, lastTop: 100, current: false })).toBe(true);
+    expect(nextAutoFollow({ gapPx: 0, bandPx: band, current: false, userMovedAway: false })).toBe(true);
+    expect(nextAutoFollow({ gapPx: 200, bandPx: band, current: false, userMovedAway: true })).toBe(true);
   });
 
-  it("detaches when the user scrolls up out of the band", () => {
-    // scrollTop decreased (700 < 1000) and we're now far from the bottom.
-    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 700, lastTop: 1000, current: true })).toBe(false);
+  it("detaches when an explicit user scroll leaves the band", () => {
+    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, current: true, userMovedAway: true })).toBe(false);
   });
 
-  it("does NOT detach on a burst: gap grew but scrollTop did not move up", () => {
-    // The programmatic scroll-to-bottom event fires after more content grew the
-    // gap past the band; scrollTop is unchanged (top === lastTop). Must keep
-    // following so large chunks don't leave the view stuck behind.
-    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 5000, lastTop: 5000, current: true })).toBe(true);
+  it("does NOT detach when an application burst grows the gap", () => {
+    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, current: true, userMovedAway: false })).toBe(true);
   });
 
-  it("does NOT detach when scrollTop increased (scrolling toward the bottom)", () => {
-    expect(nextAutoFollow({ gapPx: 3000, bandPx: band, top: 1200, lastTop: 1000, current: true })).toBe(true);
+  it("does NOT detach when capped scrollback shifts the viewport during skills output", () => {
+    // A 73-row skills response is at least 73 * 14 * 1.4 = 1430.8px tall.
+    // Removing the same number of rows from the head can make the browser lower
+    // scrollTop by that amount. It is still application-driven layout, not a
+    // user request to stop following.
+    const skillsGap = 73 * 14 * 1.4;
+    expect(nextAutoFollow({ gapPx: skillsGap, bandPx: band, current: true, userMovedAway: false })).toBe(true);
   });
 
   it("stays detached while paging down but still far from the bottom", () => {
-    // Already detached, moving down (top increased) but not yet within band.
-    expect(nextAutoFollow({ gapPx: 2000, bandPx: band, top: 1500, lastTop: 1000, current: false })).toBe(false);
+    expect(nextAutoFollow({ gapPx: 2000, bandPx: band, current: false, userMovedAway: false })).toBe(false);
+  });
+
+  it("stays detached on application layout until the user returns to the band", () => {
+    expect(nextAutoFollow({ gapPx: 2000, bandPx: band, current: false, userMovedAway: false })).toBe(false);
   });
 });
 

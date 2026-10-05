@@ -18,27 +18,40 @@ import (
 // ---------------------------------------------------------------------------
 
 // GetKudos returns the current kudos configuration (favorites + queue).
-func (a *GuiApp) GetKudos() config.KudosConfig { return a.cfg().Kudos }
+func (a *GuiApp) GetKudos() config.KudosConfig {
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+	k := a.cfg().Kudos
+	k.Favorites = append([]string(nil), k.Favorites...)
+	k.Queue = append([]config.KudosQueueEntry(nil), k.Queue...)
+	return k
+}
 
 // SetKudos replaces the kudos configuration.
 func (a *GuiApp) SetKudos(k config.KudosConfig) error {
-	return a.withConfig(func() { a.cfg().Kudos = k })
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().Kudos = k
+	return a.save()
 }
 
 // AddKudosFavorite adds a favorite if not present. Returns true if added.
 func (a *GuiApp) AddKudosFavorite(name string) (bool, error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
 	if a.cfg().Kudos.HasFavorite(name) {
 		return false, nil
 	}
 	a.cfg().Kudos.AddFavorite(name)
-	return true, config.Save(a.cfg(), a.deps.ConfigPath)
+	return true, a.save()
 }
 
 // AddKudosQueue queues a kudos for the named character.
 func (a *GuiApp) AddKudosQueue(name, message string) error {
-	return a.withConfig(func() { a.cfg().Kudos.AddQueueEntry(name, message) })
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().Kudos.AddQueueEntry(name, message)
+	return a.save()
 }
 
 // ---------------------------------------------------------------------------
@@ -67,9 +80,10 @@ func (a *GuiApp) GetPersistentData() []PersistentKeyInfo {
 	return infos
 }
 
-// ExportPersistentData writes the selected keys to a timestamped JSON file in
-// the config exports dir and returns the written path.
-func (a *GuiApp) ExportPersistentData(keys []string) (string, error) {
+// PersistentDataJSON returns the selected persisted values as indented JSON.
+// It is shared by the Wails file-export path and the web download response so
+// browser exports do not require exposing a server filesystem path.
+func (a *GuiApp) PersistentDataJSON(keys []string) ([]byte, error) {
 	snap := a.client().Engine.State().PersistentSnapshot()
 	exportData := make(map[string]interface{}, len(keys))
 	for _, key := range keys {
@@ -77,16 +91,26 @@ func (a *GuiApp) ExportPersistentData(keys []string) (string, error) {
 			exportData[key] = val
 		}
 	}
+	out, err := json.MarshalIndent(exportData, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ExportPersistentData writes the selected keys to a timestamped JSON file in
+// the config exports dir and returns the written path.
+func (a *GuiApp) ExportPersistentData(keys []string) (string, error) {
+	out, err := a.PersistentDataJSON(keys)
+	if err != nil {
+		return "", err
+	}
 	exportDir := filepath.Join(a.deps.ConfigDir, "exports")
 	if err := os.MkdirAll(exportDir, 0o755); err != nil {
 		return "", err
 	}
 	filename := fmt.Sprintf("persistent_%s.json", time.Now().Format("2006-01-02_150405"))
 	exportPath := filepath.Join(exportDir, filename)
-	out, err := json.MarshalIndent(exportData, "", "  ")
-	if err != nil {
-		return "", err
-	}
 	if err := os.WriteFile(exportPath, out, 0o644); err != nil {
 		return "", err
 	}

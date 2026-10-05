@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/engine"
+	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -24,6 +26,8 @@ type GuiApp struct {
 	emitter Emitter
 
 	mu               sync.Mutex
+	configMu         sync.RWMutex
+	savedConfig      *config.Config
 	started          bool
 	closing          bool
 	kudosPromptShown bool
@@ -90,6 +94,7 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 		deps:                deps,
 		render:              r,
 		emitter:             emitter,
+		savedConfig:         cloneConfig(deps.Config),
 		kudosQueueAtConnect: len(deps.Config.Kudos.Queue),
 		eventWake:           make(chan struct{}, 1),
 		eventStop:           make(chan struct{}),
@@ -488,58 +493,183 @@ func withColorWords(ev types.Event) types.Event {
 // InitState is the snapshot the frontend fetches on load to render the initial
 // screen (account select vs. login) and seed its settings.
 type InitState struct {
-	Version   string            `json:"version"`
-	Debug     bool              `json:"debug"`
-	Accounts  []string          `json:"accounts"`
-	HasModes  bool              `json:"hasModes"`
-	ModeNames []string          `json:"modeNames"`
-	ModeSpecs []engine.ModeSpec `json:"modeSpecs"`
-	Config    *config.Config    `json:"config"`
+	Version         string                `json:"version"`
+	Debug           bool                  `json:"debug"`
+	Accounts        []string              `json:"accounts"`
+	CredentialStore CredentialStoreStatus `json:"credentialStore"`
+	HasModes        bool                  `json:"hasModes"`
+	ModeNames       []string              `json:"modeNames"`
+	ModeSpecs       []engine.ModeSpec     `json:"modeSpecs"`
+	Config          *config.Config        `json:"config"`
 }
 
 // GetInitState returns the initial application state.
 func (a *GuiApp) GetInitState() InitState {
-	accounts, err := a.deps.Creds.ListAccounts()
-	if err != nil {
-		accounts = nil
-	}
+	accountState := a.ListAccounts()
 	modes := a.client().Engine.ModeNames()
+	a.configMu.RLock()
+	configSnapshot := cloneConfig(a.cfg())
+	a.configMu.RUnlock()
 	return InitState{
-		Version:   a.deps.Version,
-		Debug:     a.deps.Debug,
-		Accounts:  accounts,
-		HasModes:  len(modes) > 0,
-		ModeNames: modes,
-		ModeSpecs: a.client().Engine.ModeSpecs(),
-		Config:    a.cfg(),
+		Version:         a.deps.Version,
+		Debug:           a.deps.Debug,
+		Accounts:        accountState.Accounts,
+		CredentialStore: accountState.CredentialStore,
+		HasModes:        len(modes) > 0,
+		ModeNames:       modes,
+		ModeSpecs:       a.client().Engine.ModeSpecs(),
+		Config:          configSnapshot,
 	}
+}
+
+// GetConfig returns an immutable deep snapshot of the current configuration.
+func (a *GuiApp) GetConfig() *config.Config {
+	a.configMu.RLock()
+	defer a.configMu.RUnlock()
+	return cloneConfig(a.cfg())
+}
+
+func cloneConfig(source *config.Config) *config.Config {
+	if source == nil {
+		return nil
+	}
+	data, err := json.Marshal(source)
+	if err != nil {
+		return &config.Config{}
+	}
+	var cloned config.Config
+	if err := json.Unmarshal(data, &cloned); err != nil {
+		return &config.Config{}
+	}
+	return &cloned
 }
 
 // ---------------------------------------------------------------------------
 // Authentication & connection
 // ---------------------------------------------------------------------------
 
-// ConnectNew logs in with an explicit username/password, optionally stores the
-// credentials, then connects the WebSocket and starts the game loop. Returns
-// an error string that the frontend can display; the game loop runs in the
-// background on success.
-func (a *GuiApp) ConnectNew(username, password string, store bool) error {
-	if err := a.client().Login(username, password); err != nil {
-		return err
-	}
-	if store {
-		if err := a.deps.Creds.SetAccount(username, password); err != nil {
-			return fmt.Errorf("saving credentials: %w", err)
+// CredentialStoreStatus is the non-secret health/capability projection shown
+// by the login and account-selection screens.
+type CredentialStoreStatus struct {
+	Backend   string `json:"backend"`
+	Available bool   `json:"available"`
+	CanStore  bool   `json:"canStore"`
+	Message   string `json:"message,omitempty"`
+}
+
+// AccountState distinguishes an unavailable credential backend from a valid,
+// empty account list.
+type AccountState struct {
+	Accounts        []string              `json:"accounts"`
+	CredentialStore CredentialStoreStatus `json:"credentialStore"`
+}
+
+// ConnectResult reports a successful TEC connection independently from the
+// optional request to remember credentials.
+type ConnectResult struct {
+	Connected               bool          `json:"connected"`
+	CredentialSaveRequested bool          `json:"credentialSaveRequested"`
+	CredentialsSaved        bool          `json:"credentialsSaved"`
+	Warning                 string        `json:"warning,omitempty"`
+	AccountState            *AccountState `json:"accountState,omitempty"`
+}
+
+// CredentialStoreError identifies failures before a stored-account connection
+// reaches TEC, allowing web handlers to avoid reporting them as game failures.
+type CredentialStoreError struct {
+	Operation string
+	Err       error
+}
+
+func (e *CredentialStoreError) Error() string {
+	return fmt.Sprintf("credential store %s: %v", e.Operation, e.Err)
+}
+
+func (e *CredentialStoreError) Unwrap() error { return e.Err }
+
+// ListAccounts returns both stored usernames and the credential backend's
+// current health. Backend errors are represented explicitly rather than being
+// collapsed into an empty list.
+func (a *GuiApp) ListAccounts() AccountState {
+	if a.deps.Creds == nil {
+		return AccountState{
+			Accounts: []string{},
+			CredentialStore: CredentialStoreStatus{
+				Backend: "unconfigured", Message: "Secure credential storage is not configured.",
+			},
 		}
 	}
-	return a.connectAndRun()
+	descriptor := a.deps.Creds.Descriptor()
+	status := CredentialStoreStatus{
+		Backend:   descriptor.Backend,
+		Available: true,
+		CanStore:  descriptor.CanStore,
+	}
+	if !descriptor.CanStore {
+		status.Message = "Remembering accounts is disabled. You can still connect by entering your credentials."
+	}
+	accounts, err := a.deps.Creds.ListAccounts()
+	if err != nil {
+		status.Available = false
+		status.Message = credentialStoreUnavailableMessage(descriptor.Backend)
+		log.Printf("credential store list failed backend=%s: %v", descriptor.Backend, err)
+		return AccountState{Accounts: []string{}, CredentialStore: status}
+	}
+	if accounts == nil {
+		accounts = []string{}
+	}
+	return AccountState{Accounts: accounts, CredentialStore: status}
+}
+
+// ConnectNew logs in with an explicit username/password, connects the
+// WebSocket, and then optionally stores the credentials. Persistence failures
+// are returned as a non-fatal warning so a valid game session remains active.
+func (a *GuiApp) ConnectNew(username, password string, store bool) (ConnectResult, error) {
+	result := ConnectResult{CredentialSaveRequested: store}
+	if err := a.client().Login(username, password); err != nil {
+		return result, err
+	}
+	if err := a.connectAndRun(); err != nil {
+		return result, err
+	}
+	result.Connected = true
+	if !store {
+		return result, nil
+	}
+	if a.deps.Creds == nil {
+		state := a.ListAccounts()
+		result.AccountState = &state
+		result.Warning = "Connected, but this account could not be remembered because secure credential storage is not configured."
+		return result, nil
+	}
+	if err := a.deps.Creds.SetAccount(username, password); err != nil {
+		descriptor := a.deps.Creds.Descriptor()
+		log.Printf("credential store save failed backend=%s: %v", descriptor.Backend, err)
+		state := AccountState{
+			Accounts: []string{},
+			CredentialStore: CredentialStoreStatus{
+				Backend: descriptor.Backend, CanStore: descriptor.CanStore,
+				Message: credentialStoreUnavailableMessage(descriptor.Backend),
+			},
+		}
+		result.AccountState = &state
+		result.Warning = "Connected, but this account could not be remembered because secure credential storage is unavailable."
+		return result, nil
+	}
+	state := a.ListAccounts()
+	result.AccountState = &state
+	result.CredentialsSaved = true
+	return result, nil
 }
 
 // ConnectStored looks up a stored password, logs in, and connects.
 func (a *GuiApp) ConnectStored(username string) error {
+	if a.deps.Creds == nil {
+		return &CredentialStoreError{Operation: "read failed", Err: session.ErrCredentialStorageDisabled}
+	}
 	pass, err := a.deps.Creds.GetAccount(username)
 	if err != nil {
-		return fmt.Errorf("stored credentials not found: %w", err)
+		return &CredentialStoreError{Operation: "read failed", Err: err}
 	}
 	if err := a.client().Login(username, pass); err != nil {
 		return err
@@ -578,9 +708,39 @@ func (a *GuiApp) Disconnect() {
 	a.client().Disconnect()
 }
 
+// SaveAccount stores credentials for later ConnectStored use.
+func (a *GuiApp) SaveAccount(username, password string) error {
+	if a.deps.Creds == nil {
+		return &CredentialStoreError{Operation: "save failed", Err: session.ErrCredentialStorageDisabled}
+	}
+	if err := a.deps.Creds.SetAccount(username, password); err != nil {
+		return &CredentialStoreError{Operation: "save failed", Err: err}
+	}
+	return nil
+}
+
 // RemoveAccount deletes stored credentials for a username.
 func (a *GuiApp) RemoveAccount(username string) error {
-	return a.deps.Creds.RemoveAccount(username)
+	if a.deps.Creds == nil {
+		return &CredentialStoreError{Operation: "remove failed", Err: session.ErrCredentialStorageDisabled}
+	}
+	if err := a.deps.Creds.RemoveAccount(username); err != nil {
+		return &CredentialStoreError{Operation: "remove failed", Err: err}
+	}
+	return nil
+}
+
+func credentialStoreUnavailableMessage(backend string) string {
+	switch backend {
+	case session.CredentialBackendKeyring:
+		return "The system keyring is unavailable or locked. You can still connect without remembering this account."
+	case session.CredentialBackendEncryptedFile:
+		return "The encrypted credential store is unavailable. Check the server credential-storage configuration."
+	case session.CredentialBackendDisabled:
+		return "Remembering accounts is disabled. You can still connect by entering your credentials."
+	default:
+		return "Secure credential storage is unavailable. You can still connect without remembering this account."
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -686,6 +846,9 @@ func (a *GuiApp) send(input string, processInput bool) error {
 // ModeNames returns the available Lua mode names.
 func (a *GuiApp) ModeNames() []string { return a.client().Engine.ModeNames() }
 
+// CurrentMode returns the active Lua mode for native and web transports.
+func (a *GuiApp) CurrentMode() string { return a.client().Engine.CurrentMode() }
+
 // ModeSpecs returns the declared metadata for the available Lua modes, so the
 // frontend can refresh its command hint after a script reload without a
 // restart.
@@ -743,3 +906,6 @@ func (a *GuiApp) refreshGraphics() {
 	}
 	a.emit(wire)
 }
+
+// RefreshGraphics is the exported transport binding for refreshGraphics.
+func (a *GuiApp) RefreshGraphics() { a.refreshGraphics() }

@@ -9,20 +9,22 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Logger wraps slog and manages the log file lifecycle with size-based rotation.
 type Logger struct {
 	*slog.Logger
-	writer *rotatingWriter
+	writer io.WriteCloser
 }
 
 // New creates a structured logger that writes to a file in the given directory
-// with size-based rotation. When the log exceeds maxSizeMB, the current file
-// is renamed to .1 (one backup) and a fresh file is started.
+// with size-based rotation. By default, the current file is renamed to .1 (one
+// backup) when it reaches maxSizeMB. When retain is true, every segment is kept
+// as a collision-safe, timestamped archive instead.
 // The level string maps to slog levels: debug, info, warn, error.
 // Also redirects the standard log package to this logger for compatibility.
-func New(dir, filename, level string, maxSizeMB int) (*Logger, error) {
+func New(dir, filename, level string, maxSizeMB int, retain bool) (*Logger, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -31,8 +33,14 @@ func New(dir, filename, level string, maxSizeMB int) (*Logger, error) {
 		maxSizeMB = 5
 	}
 
-	path := filepath.Join(dir, filename)
-	rw, err := newRotatingWriter(path, int64(maxSizeMB)*1024*1024)
+	maxBytes := int64(maxSizeMB) * 1024 * 1024
+	var writer io.WriteCloser
+	var err error
+	if retain {
+		writer, err = newArchiveWriter(dir, filename, maxBytes)
+	} else {
+		writer, err = newRotatingWriter(filepath.Join(dir, filename), maxBytes)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +57,7 @@ func New(dir, filename, level string, maxSizeMB int) (*Logger, error) {
 		slogLevel = slog.LevelInfo
 	}
 
-	handler := slog.NewTextHandler(rw, &slog.HandlerOptions{
+	handler := slog.NewTextHandler(writer, &slog.HandlerOptions{
 		Level: slogLevel,
 	})
 
@@ -59,7 +67,7 @@ func New(dir, filename, level string, maxSizeMB int) (*Logger, error) {
 	log.SetOutput(&slogWriter{logger: logger})
 	log.SetFlags(0) // slog handles timestamps
 
-	return &Logger{Logger: logger, writer: rw}, nil
+	return &Logger{Logger: logger, writer: writer}, nil
 }
 
 // Close flushes and closes the log file.
@@ -194,6 +202,120 @@ func (rw *rotatingWriter) rotate() error {
 	}
 	rw.written = 0
 	return nil
+}
+
+// archiveWriter starts a new timestamped file when the current file exceeds
+// maxBytes. Earlier files are never renamed, overwritten, or pruned.
+type archiveWriter struct {
+	mu       sync.Mutex
+	file     *os.File
+	dir      string
+	stem     string
+	path     string
+	maxBytes int64
+	written  int64
+	now      func() time.Time
+}
+
+func newArchiveWriter(dir, filename string, maxBytes int64) (*archiveWriter, error) {
+	return newArchiveWriterWithClock(dir, filename, maxBytes, time.Now)
+}
+
+func newArchiveWriterWithClock(dir, filename string, maxBytes int64, now func() time.Time) (*archiveWriter, error) {
+	stem := strings.TrimSuffix(filename, filepath.Ext(filename))
+	if stem == "" || stem == "." || filepath.Base(stem) != stem {
+		return nil, fmt.Errorf("invalid archive log filename %q", filename)
+	}
+	aw := &archiveWriter{
+		dir:      dir,
+		stem:     stem,
+		maxBytes: maxBytes,
+		now:      now,
+	}
+	if err := aw.openNext(); err != nil {
+		return nil, err
+	}
+	return aw, nil
+}
+
+func (aw *archiveWriter) Write(p []byte) (int, error) {
+	aw.mu.Lock()
+	defer aw.mu.Unlock()
+
+	// A previous open may have failed. Retry on later writes so logging resumes
+	// if the state directory becomes writable again.
+	if aw.file == nil {
+		if err := aw.openNext(); err != nil {
+			return aw.dropToStderr(p)
+		}
+	}
+
+	// Do not create an empty segment when one unusually large slog record is
+	// larger than the configured segment size.
+	if aw.written > 0 && aw.written+int64(len(p)) > aw.maxBytes {
+		if err := aw.rotate(); err != nil {
+			fmt.Fprintf(os.Stderr, "log archive rotation failed: %v\n", err)
+		}
+		if aw.file == nil {
+			return aw.dropToStderr(p)
+		}
+	}
+
+	n, err := aw.file.Write(p)
+	aw.written += int64(n)
+	return n, err
+}
+
+func (aw *archiveWriter) dropToStderr(p []byte) (int, error) {
+	fmt.Fprint(os.Stderr, string(p))
+	return len(p), nil
+}
+
+// openNext uses O_EXCL so concurrent Praetor processes or multiple rotations
+// within the same second cannot append to or overwrite one another's history.
+func (aw *archiveWriter) openNext() error {
+	timestamp := aw.now().Format("2006-01-02_15-04-05")
+	for sequence := 0; ; sequence++ {
+		name := fmt.Sprintf("%s_%s.log", aw.stem, timestamp)
+		if sequence > 0 {
+			name = fmt.Sprintf("%s_%s_%02d.log", aw.stem, timestamp, sequence)
+		}
+		path := filepath.Join(aw.dir, name)
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			aw.file = f
+			aw.path = path
+			aw.written = 0
+			return nil
+		}
+		if os.IsExist(err) {
+			continue
+		}
+		aw.file = nil
+		return err
+	}
+}
+
+func (aw *archiveWriter) Close() error {
+	aw.mu.Lock()
+	defer aw.mu.Unlock()
+	if aw.file == nil {
+		return nil
+	}
+	err := aw.file.Close()
+	aw.file = nil
+	return err
+}
+
+func (aw *archiveWriter) rotate() error {
+	if aw.file != nil {
+		if err := aw.file.Close(); err != nil {
+			aw.file = nil
+			return err
+		}
+		aw.file = nil
+	}
+	return aw.openNext()
 }
 
 // slogWriter adapts slog.Logger to io.Writer for the standard log package.
