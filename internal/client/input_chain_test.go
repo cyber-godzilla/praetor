@@ -481,9 +481,10 @@ func TestClient_SendInput_WaitForDirectiveAdvancesOnFutureSubstring(t *testing.T
 	receiveNoCommand(t, received, 100*time.Millisecond)
 	c.processLine("From nearby, The latch clicks softly.")
 	receiveCommand(t, received, "open door")
-	if c.InputChainActive() {
-		t.Fatal("InputChainActive = true after wait-for continuation completed")
-	}
+	// The recording server can observe the write just before SendCommand returns
+	// and the chain goroutine performs its final bookkeeping. Wait for that
+	// bounded cleanup instead of making receipt of the socket write a barrier.
+	waitForInputChainInactive(t, c)
 }
 
 func TestClient_SendInput_WaitForRemainsActiveUntilMatchedOrStopped(t *testing.T) {

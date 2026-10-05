@@ -5,24 +5,20 @@ on:
     branches: [main]
     paths:
       - "cmd/praetor-web/**"
-      - "internal/web/**"
-      - "internal/webtls/**"
-      - "internal/webassets/**"
-      - "internal/gui/**"
-      - "internal/client/**"
+      - "internal/**"
       - "gui/frontend/**"
+      - "go.mod"
+      - "go.sum"
       - "Makefile"
       - ".github/workflows/web.yaml"
   pull_request:
     branches: [main]
     paths:
       - "cmd/praetor-web/**"
-      - "internal/web/**"
-      - "internal/webtls/**"
-      - "internal/webassets/**"
-      - "internal/gui/**"
-      - "internal/client/**"
+      - "internal/**"
       - "gui/frontend/**"
+      - "go.mod"
+      - "go.sum"
       - "Makefile"
       - ".github/workflows/web.yaml"
   workflow_dispatch:

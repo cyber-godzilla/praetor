@@ -253,6 +253,23 @@ func (ms *ModeState) LoadPersistent(data map[string]interface{}) {
 	ms.revision.Add(1)
 }
 
+// ReplacePersistent removes every value owned by the previous account before
+// loading the next account's data. Non-persistent and read-only state are left
+// alone; the normal disconnect/mode teardown owns those lifetimes.
+func (ms *ModeState) ReplacePersistent(data map[string]interface{}) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	for key := range ms.persistentKeys {
+		delete(ms.values, key)
+	}
+	ms.persistentKeys = make(map[string]bool, len(data))
+	for key, val := range data {
+		ms.persistentKeys[key] = true
+		ms.values[key] = ms.goToLuaDeep(val)
+	}
+	ms.revision.Add(1)
+}
+
 // goToLuaDeep converts a Go value to Lua, including nested maps → tables.
 // Must be called while holding ms.mu.
 func (ms *ModeState) goToLuaDeep(v interface{}) lua.LValue {

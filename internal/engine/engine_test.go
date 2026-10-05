@@ -328,6 +328,80 @@ return M
 	}
 }
 
+func TestEngine_SetUsernameReplacesPersistentAccountState(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "saver", `
+local M = {}
+M.on_start = function(args)
+    state.persist("account_marker")
+    state.set("account_marker", args[1])
+end
+M.reactions = {}
+return M
+`)
+	dataDir := t.TempDir()
+	if err := NewPersistentStore(dataDir, "bob").Save(map[string]interface{}{
+		"account_marker": "bob-only",
+	}); err != nil {
+		t.Fatalf("seeding Bob's persistent state: %v", err)
+	}
+
+	e, err := NewEngine([]string{modesDir, libDir}, nil, dataDir)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer e.Close()
+
+	e.SetUsername("alice")
+	e.SetMode("saver", []string{"alice-only"})
+	e.SetMode("disable", nil)
+	e.SetUsername("bob")
+
+	value, ok := e.State().GetValue("account_marker")
+	if !ok {
+		t.Fatal("Bob's persistent value was not loaded")
+	}
+	if got := value.String(); got != "bob-only" {
+		t.Fatalf("Bob inherited another account's value %q", got)
+	}
+
+	// Switching accounts must synchronously flush Alice's still-debounced state.
+	alice, err := NewPersistentStore(dataDir, "alice").Load()
+	if err != nil {
+		t.Fatalf("loading Alice's flushed state: %v", err)
+	}
+	if got := alice["account_marker"]; got != "alice-only" {
+		t.Fatalf("Alice's flushed marker = %v, want alice-only", got)
+	}
+}
+
+func TestEngine_SetUsernameClearsKeysMissingFromNextAccount(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	writeEngineMode(t, modesDir, "saver", `
+local M = {}
+M.on_start = function()
+    state.persist("alice_only")
+    state.set("alice_only", true)
+end
+M.reactions = {}
+return M
+`)
+
+	e, err := NewEngine([]string{modesDir, libDir}, nil, t.TempDir())
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	defer e.Close()
+
+	e.SetUsername("alice")
+	e.SetMode("saver", nil)
+	e.SetMode("disable", nil)
+	e.SetUsername("bob")
+	if value, ok := e.State().GetValue("alice_only"); ok {
+		t.Fatalf("Bob inherited Alice's persistent value %q", value.String())
+	}
+}
+
 func TestEngine_SetMode_DeferredRecursionLandsOnTarget(t *testing.T) {
 	modesDir, libDir := setupEngineTestDirs(t)
 	writeEngineMode(t, modesDir, "a", `

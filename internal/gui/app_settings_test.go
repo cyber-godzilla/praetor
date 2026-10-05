@@ -107,6 +107,30 @@ func TestSetSemicolonDelayValidatesPersistsAndApplies(t *testing.T) {
 	}
 }
 
+func TestSetSemicolonDelaySaveFailureDoesNotChangeLiveClient(t *testing.T) {
+	cfg := config.Defaults()
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+
+	// Using an existing directory as the file target makes the atomic rename
+	// fail on every supported platform without depending on Unix permissions.
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: t.TempDir(), Client: c}, &captureEmitter{})
+	oldConfig := cfg.Commands.SemicolonDelayMS
+	oldLive := c.SemicolonDelay()
+	if err := a.SetSemicolonDelay(1250); err == nil {
+		t.Fatal("SetSemicolonDelay succeeded with an invalid config file target")
+	}
+	if got := cfg.Commands.SemicolonDelayMS; got != oldConfig {
+		t.Fatalf("config delay after rollback = %d, want %d", got, oldConfig)
+	}
+	if got := c.SemicolonDelay(); got != oldLive {
+		t.Fatalf("live delay after failed save = %s, want %s", got, oldLive)
+	}
+}
+
 func TestSetUnbusyDelayValidatesPersistsAndApplies(t *testing.T) {
 	cfg := config.Defaults()
 	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)

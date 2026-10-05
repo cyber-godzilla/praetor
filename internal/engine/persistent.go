@@ -20,9 +20,12 @@ type PersistentStore struct {
 	dataDir       string
 	username      string
 	dirty         bool
+	closed        bool
 	debounceDelay time.Duration
 	debounceTimer *time.Timer
 	snapshotFunc  func() map[string]interface{}
+	flushes       sync.WaitGroup
+	closeDone     chan struct{}
 }
 
 // NewPersistentStore creates a new store for the given user.
@@ -31,6 +34,7 @@ func NewPersistentStore(dataDir, username string) *PersistentStore {
 		dataDir:       dataDir,
 		username:      username,
 		debounceDelay: 5 * time.Second,
+		closeDone:     make(chan struct{}),
 	}
 }
 
@@ -106,6 +110,9 @@ func (ps *PersistentStore) Save(data map[string]interface{}) error {
 func (ps *PersistentStore) MarkDirty() {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
+	if ps.closed {
+		return
+	}
 	ps.dirty = true
 
 	if ps.debounceTimer != nil {
@@ -119,13 +126,15 @@ func (ps *PersistentStore) MarkDirty() {
 // Flush writes the current persistent state to disk immediately.
 func (ps *PersistentStore) Flush() {
 	ps.mu.Lock()
-	if !ps.dirty {
+	if ps.closed || !ps.dirty {
 		ps.mu.Unlock()
 		return
 	}
 	ps.dirty = false
 	fn := ps.snapshotFunc
+	ps.flushes.Add(1)
 	ps.mu.Unlock()
+	defer ps.flushes.Done()
 
 	if fn == nil {
 		return
@@ -134,5 +143,38 @@ func (ps *PersistentStore) Flush() {
 	data := fn()
 	if err := ps.Save(data); err != nil {
 		log.Printf("[PERSIST] flush error: %v", err)
+	}
+}
+
+// Close prevents future dirty marks, stops the debounce timer, waits for any
+// flush already in flight, and synchronously saves the latest dirty snapshot.
+// It is safe to call more than once. Callers must not hold the engine mutex:
+// the snapshot function acquires it while copying Lua-backed state.
+func (ps *PersistentStore) Close() {
+	ps.mu.Lock()
+	if ps.closed {
+		done := ps.closeDone
+		ps.mu.Unlock()
+		<-done
+		return
+	}
+	ps.closed = true
+	if ps.debounceTimer != nil {
+		ps.debounceTimer.Stop()
+		ps.debounceTimer = nil
+	}
+	dirty := ps.dirty
+	ps.dirty = false
+	fn := ps.snapshotFunc
+	ps.mu.Unlock()
+
+	defer close(ps.closeDone)
+	ps.flushes.Wait()
+	if !dirty || fn == nil {
+		return
+	}
+	data := fn()
+	if err := ps.Save(data); err != nil {
+		log.Printf("[PERSIST] close flush error: %v", err)
 	}
 }

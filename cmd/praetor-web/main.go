@@ -157,7 +157,10 @@ func main() {
 	if err := httpServer.Shutdown(ctx); err != nil {
 		log.Printf("web shutdown: %v", err)
 	}
-	app.Disconnect()
+	// Hub.Close makes the emitter inert; Shutdown can now synchronously stop the
+	// game session and join every facade worker before deferred deps.Close retires
+	// the engine, Lua VM, and log writers.
+	app.Shutdown()
 }
 
 type tlsMode uint8

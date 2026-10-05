@@ -21,6 +21,7 @@ type ModeChange struct {
 
 type Engine struct {
 	mu           sync.Mutex
+	persistMu    sync.Mutex
 	notifyMu     sync.RWMutex
 	notify       func(title, message string)
 	vm           *LuaVM
@@ -103,15 +104,26 @@ func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine
 
 // SetUsername sets the authenticated username and loads persistent state from disk.
 func (e *Engine) SetUsername(username string) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	if e.dataDir == "" || username == "" {
 		return
 	}
+	e.persistMu.Lock()
+	defer e.persistMu.Unlock()
 
-	e.persistStore = NewPersistentStore(e.dataDir, username)
-	e.persistStore.SetSnapshotFunc(func() map[string]interface{} {
+	e.mu.Lock()
+	previous := e.persistStore
+	e.mu.Unlock()
+	if previous != nil {
+		previous.Close()
+	}
+
+	store := NewPersistentStore(e.dataDir, username)
+	data, err := store.Load()
+	if err != nil {
+		log.Printf("[ENGINE] loading persistent state: %v", err)
+		data = make(map[string]interface{})
+	}
+	store.SetSnapshotFunc(func() map[string]interface{} {
 		// Acquire the engine mutex before snapshotting: the debounced flush runs
 		// on a timer goroutine, and the snapshot iterates live Lua tables
 		// (LTable.ForEach) that reactions mutate under e.mu. Without this lock the
@@ -122,29 +134,26 @@ func (e *Engine) SetUsername(username string) {
 		return e.state.PersistentSnapshot()
 	})
 
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.persistStore = store
+	e.state.ReplacePersistent(data)
 	e.state.SetOnPersistDirty(func() {
-		if e.persistStore != nil {
-			e.persistStore.MarkDirty()
-		}
+		store.MarkDirty()
 	})
-
-	data, err := e.persistStore.Load()
-	if err != nil {
-		log.Printf("[ENGINE] loading persistent state: %v", err)
-		return
-	}
-	if len(data) > 0 {
-		e.state.LoadPersistent(data)
-	}
 }
 
 // PersistentStore returns the persistent store, or nil if not yet initialized.
 func (e *Engine) PersistentStore() *PersistentStore {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	return e.persistStore
 }
 
 // Close shuts down the engine and Lua VM.
 func (e *Engine) Close() {
+	e.persistMu.Lock()
+	defer e.persistMu.Unlock()
 	// Flush persistent state before taking e.mu: the snapshot function acquires
 	// e.mu itself, so flushing under the lock here would deadlock. Grab the store
 	// pointer under a brief lock, then flush without it.
@@ -152,7 +161,7 @@ func (e *Engine) Close() {
 	ps := e.persistStore
 	e.mu.Unlock()
 	if ps != nil {
-		ps.Flush()
+		ps.Close()
 	}
 
 	e.mu.Lock()

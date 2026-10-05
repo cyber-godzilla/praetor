@@ -17,6 +17,20 @@ func (a *GuiApp) withConfig(mutate func()) error {
 	return a.save()
 }
 
+// withConfigApplied keeps persistence and live application in the same
+// serialized transaction. The live subsystem is updated only after the config
+// has been saved successfully, so a failed save needs to roll back config only.
+func (a *GuiApp) withConfigApplied(mutate, apply func()) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	mutate()
+	if err := a.save(); err != nil {
+		return err
+	}
+	apply()
+	return nil
+}
+
 // save persists the current config to disk. Returns any write error.
 func (a *GuiApp) save() error {
 	if err := config.Save(a.cfg(), a.deps.ConfigPath); err != nil {
@@ -35,18 +49,18 @@ func (a *GuiApp) save() error {
 
 // SetEchoTyped enables/disables echoing of user-typed commands.
 func (a *GuiApp) SetEchoTyped(v bool) error {
-	return a.withConfig(func() {
-		a.cfg().UI.EchoTyped = v
-		a.client().SetEchoTyped(v)
-	})
+	return a.withConfigApplied(
+		func() { a.cfg().UI.EchoTyped = v },
+		func() { a.client().SetEchoTyped(v) },
+	)
 }
 
 // SetEchoScript enables/disables echoing of script-sent commands.
 func (a *GuiApp) SetEchoScript(v bool) error {
-	return a.withConfig(func() {
-		a.cfg().UI.EchoScript = v
-		a.client().SetEchoScript(v)
-	})
+	return a.withConfigApplied(
+		func() { a.cfg().UI.EchoScript = v },
+		func() { a.client().SetEchoScript(v) },
+	)
 }
 
 // SetColorWords toggles color-word rendering (applied in the event loop).
@@ -92,10 +106,10 @@ func (a *GuiApp) SetSemicolonDelay(ms int) error {
 	if ms < config.MinSemicolonDelayMS || ms > config.MaxSemicolonDelayMS {
 		return fmt.Errorf(";; delay must be between %d and %d milliseconds", config.MinSemicolonDelayMS, config.MaxSemicolonDelayMS)
 	}
-	return a.withConfig(func() {
-		a.cfg().Commands.SemicolonDelayMS = ms
-		a.client().SetSemicolonDelay(time.Duration(ms) * time.Millisecond)
-	})
+	return a.withConfigApplied(
+		func() { a.cfg().Commands.SemicolonDelayMS = ms },
+		func() { a.client().SetSemicolonDelay(time.Duration(ms) * time.Millisecond) },
+	)
 }
 
 // SetUnbusyDelay persists and applies the delay after an &&-advancing response
@@ -104,10 +118,10 @@ func (a *GuiApp) SetUnbusyDelay(ms int) error {
 	if ms < config.MinUnbusyDelayMS || ms > config.MaxUnbusyDelayMS {
 		return fmt.Errorf("&& response delay must be between %d and %d milliseconds", config.MinUnbusyDelayMS, config.MaxUnbusyDelayMS)
 	}
-	return a.withConfig(func() {
-		a.cfg().Commands.UnbusyDelayMS = ms
-		a.client().SetUnbusyDelay(time.Duration(ms) * time.Millisecond)
-	})
+	return a.withConfigApplied(
+		func() { a.cfg().Commands.UnbusyDelayMS = ms },
+		func() { a.client().SetUnbusyDelay(time.Duration(ms) * time.Millisecond) },
+	)
 }
 
 // SetUpdateCheck toggles the startup check for newer releases.
@@ -252,14 +266,13 @@ func (a *GuiApp) SetMinimapScale(scale float64) error {
 	if scale < 0.2 || scale > 3 {
 		return fmt.Errorf("minimap scale must be between 0.2 and 3")
 	}
-	if err := a.withConfig(func() {
-		a.cfg().UI.MinimapScale = scale
-		a.render.setScale(scale)
-	}); err != nil {
-		return err
-	}
-	a.refreshGraphics()
-	return nil
+	return a.withConfigApplied(
+		func() { a.cfg().UI.MinimapScale = scale },
+		func() {
+			a.render.setScale(scale)
+			a.refreshGraphics()
+		},
+	)
 }
 
 // SetOutputFontSize persists the game-output text size in pixels. Applied in
@@ -389,10 +402,10 @@ func (a *GuiApp) SetInputVariables(variables map[string]string) error {
 	for name, value := range variables {
 		cloned[name] = value
 	}
-	return a.withConfig(func() {
-		a.cfg().Commands.Variables = cloned
-		a.client().SetInputVariables(cloned)
-	})
+	return a.withConfigApplied(
+		func() { a.cfg().Commands.Variables = cloned },
+		func() { a.client().SetInputVariables(cloned) },
+	)
 }
 
 // SetIgnoreOOC replaces the OOC ignorelist and applies it live.
