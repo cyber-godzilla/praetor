@@ -128,21 +128,21 @@ const sampleState: WireEvent[] = [
 
 async function addLayoutCallouts(page: Page): Promise<void> {
   const regions = [
-    { number: 1, selector: ".statusbar", badgeX: 0.66, badgeY: 0.5 },
-    { number: 2, selector: ".tabbar", badgeX: 0.59, badgeY: 0.5 },
-    { number: 3, selector: ".output", badgeX: 0.97, badgeY: 0.96 },
-    { number: 4, selector: ".sidebar > .frame:nth-of-type(1)", badgeX: 0.94, badgeY: 0.08 },
-    { number: 5, selector: ".sidebar > .frame:nth-of-type(2)", badgeX: 0.94, badgeY: 0.08 },
-    { number: 6, selector: ".sidebar > .frame:nth-of-type(3)", badgeX: 0.94, badgeY: 0.08 },
-    { number: 7, selector: ".sidebartabs", badgeX: 0.94, badgeY: 0.06 },
-    { number: 8, selector: ".inputbar", badgeX: 0.78, badgeY: 0.5 },
-    { number: 9, selector: ".automation-bar", badgeX: 0.79, badgeY: 0.5 },
+    { number: 1, target: page.locator(".statusbar"), badgeX: 0.66, badgeY: 0.5 },
+    { number: 2, target: page.locator(".tabbar"), badgeX: 0.59, badgeY: 0.5 },
+    { number: 3, target: page.locator(".output"), badgeX: 0.97, badgeY: 0.96 },
+    { number: 4, target: page.getByRole("button", { name: "Map", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
+    { number: 5, target: page.getByRole("button", { name: "Exits", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
+    { number: 6, target: page.getByRole("button", { name: "Vitals", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
+    { number: 7, target: page.locator(".sidebartabs"), badgeX: 0.94, badgeY: 0.06 },
+    { number: 8, target: page.locator(".inputbar"), badgeX: 0.78, badgeY: 0.5 },
+    { number: 9, target: page.locator(".automation-bar"), badgeX: 0.79, badgeY: 0.5 },
   ];
 
   const callouts = [];
-  for (const region of regions) {
-    const box = await page.locator(region.selector).boundingBox();
-    if (!box) throw new Error(`layout callout target is not visible: ${region.selector}`);
+  for (const { target, ...region } of regions) {
+    const box = await target.boundingBox();
+    if (!box) throw new Error(`layout callout target ${region.number} is not visible`);
     callouts.push({ ...region, ...box });
   }
 
