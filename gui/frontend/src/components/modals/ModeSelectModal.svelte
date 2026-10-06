@@ -48,7 +48,7 @@
             <span class="usage">{specs.get(mode)?.usage}</span>
           {/if}
           {#if specs.get(mode)?.chains}
-            <span class="usage">[after_&lt;mode|do&gt;:&lt;mode|command&gt;]</span>
+            <span class="usage">[after_&lt;mode|do|ps&gt;:&lt;mode|command|praetorscript&gt;]</span>
           {/if}
         </span>
         {#if specs.get(mode)?.desc}

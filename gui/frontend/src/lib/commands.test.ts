@@ -196,7 +196,7 @@ describe("matchCommands with mode specs", () => {
 
   it("appends completion suffixes only for a chaining mode", () => {
     expect(m("/mode loot")[0].args).toBe(
-      "<item> [corpse#] [after_<mode|do>:<mode|command>]",
+      "<item> [corpse#] [after_<mode|do|ps>:<mode|command|praetorscript>]",
     );
     expect(m("/mode macro")[0].args).toBe("[nokill]");
   });
@@ -205,7 +205,7 @@ describe("matchCommands with mode specs", () => {
     const chainOnly = [{ name: "idle", usage: "", desc: "Rest", chains: true }];
     const r = matchCommands("/mode idle", { modes: chainOnly });
     expect(r[0].args).toBe(
-      "[after_<mode|do>:<mode|command>]",
+      "[after_<mode|do|ps>:<mode|command|praetorscript>]",
     );
   });
 

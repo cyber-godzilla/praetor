@@ -66,7 +66,7 @@ Notation for `usage` follows the convention in the scripts repo: `<required>`,
 Typing `/mode ` lists every loaded mode; typing part of a name narrows the list;
 once the name resolves, the hint shows that mode's own signature and
 description, appending the generic
-`after_<mode|do>:<mode|command>` suffix when `chains` is set.
+`after_<mode|do|ps>:<mode|command|praetorscript>` suffix when `chains` is set.
 Set `chains` only when the mode
 genuinely honors completion handoffs — declaring it on a mode that parses them
 and then ignores them advertises something that will not happen.
