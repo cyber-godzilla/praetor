@@ -81,7 +81,9 @@ test("reloading scripts immediately refreshes mode listings and hint breadcrumbs
   const hint = page.getByTestId("e2e-hint");
   await expect(hint).toContainText("Freshly loaded mode");
   await expect(hint).toContainText("<target>");
-  await expect(hint).toContainText("after_<mode|do>");
+  await expect(hint).toContainText(
+    "after_<mode|do|ps>:<mode|command|praetorscript>",
+  );
 
   await backend.input.fill("/mode hunt ");
   await expect(hint).not.toContainText("Hunt the given target");
