@@ -151,6 +151,34 @@ func TestClient_SendInput_DoubleAmpersandWaitsForUnbusy(t *testing.T) {
 	}
 }
 
+func TestClient_InputChainStatusAdvancesAcrossDoubleAmpersandWaits(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetUnbusyDelay(0)
+
+	if err := c.SendInput("stand&&climb wall&&look"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "stand")
+	status := c.InputChainStatus()
+	if !status.Active || status.Step != 2 || status.Total != 3 || status.State != "unbusy" {
+		t.Fatalf("status after first send = %#v, want step 2/3 waiting for unbusy", status)
+	}
+
+	c.processLine("You are no longer busy.")
+	receiveCommand(t, received, "climb wall")
+	status = c.InputChainStatus()
+	if !status.Active || status.Step != 3 || status.Total != 3 || status.State != "unbusy" {
+		t.Fatalf("status after second send = %#v, want step 3/3 waiting for unbusy", status)
+	}
+
+	c.processLine("You stop walking.")
+	receiveCommand(t, received, "look")
+	waitForInputChainInactive(t, c)
+}
+
 func TestClient_AbortInputChainsCancelsQueuedCommands(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
@@ -438,6 +466,7 @@ func TestClient_SendInput_WaitDirectiveDelaysAndCanBeStopped(t *testing.T) {
 	if elapsed := time.Since(started); elapsed < 140*time.Millisecond {
 		t.Fatalf("wait completed after %s, want at least 150ms (allowing timer margin)", elapsed)
 	}
+	waitForInputChainInactive(t, c)
 
 	if err := c.SendInput(`$(wait 0.2);;stale`); err != nil {
 		t.Fatalf("SendInput(second wait): %v", err)
@@ -869,6 +898,65 @@ gotError:
 	}
 }
 
+func TestClient_SendInput_RepeatCountSendsExactlyThenAdvances(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(0)
+	c.SetUnbusyDelay(0)
+
+	if err := c.SendInput(`$(repeat "search" count 3);;look`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "search")
+	status := c.InputChainStatus()
+	if status.State != "repeat" || status.Attempts != 1 || status.MaxAttempts != 3 {
+		t.Fatalf("initial count status = %#v", status)
+	}
+
+	c.processLine("You are no longer busy.")
+	receiveCommand(t, received, "search")
+	status = c.InputChainStatus()
+	if status.Attempts != 2 || status.MaxAttempts != 3 {
+		t.Fatalf("second count status = %#v", status)
+	}
+
+	c.processLine("You stop walking.")
+	receiveCommand(t, received, "search")
+	receiveNoCommand(t, received, 50*time.Millisecond)
+	if !c.InputChainActive() {
+		t.Fatal("count repeat completed before the final attempt became unbusy")
+	}
+
+	c.processLine("You are no longer busy.")
+	receiveCommand(t, received, "look")
+	waitForInputChainInactive(t, c)
+
+	c.processLine("You are no longer busy.")
+	receiveNoCommand(t, received, 100*time.Millisecond)
+}
+
+func TestClient_SendInput_RepeatCountCancelStopsWholeChain(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(0)
+	c.SetUnbusyDelay(0)
+
+	if err := c.SendInput(`$(repeat "search" count 3 cancel-on "You find nothing");;look`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "search")
+	c.processLine("You find nothing of interest.")
+	if c.InputChainActive() {
+		t.Fatal("InputChainActive = true after count repeat cancellation")
+	}
+	c.processLine("You are no longer busy.")
+	receiveNoCommand(t, received, 100*time.Millisecond)
+}
+
 func TestClient_InputChainStatusTracksWaitAndRepeat(t *testing.T) {
 	srv, wsURL, received := newRecordingServer(t)
 	defer srv.Close()
@@ -1009,9 +1097,13 @@ func TestClient_SendInput_RepeatRejectsLocalCommandBeforeAnythingSends(t *testin
 	c := newDiscTestClient(t)
 	connectTestSession(t, c, wsURL)
 
-	err := c.SendInput(`look;;$(repeat "/help" until "done")`)
-	if err == nil {
-		t.Fatal("SendInput returned nil for repeat with local command")
+	for _, input := range []string{
+		`look;;$(repeat "/help" until "done")`,
+		`look;;$(repeat "/help" count 2)`,
+	} {
+		if err := c.SendInput(input); err == nil {
+			t.Fatalf("SendInput(%q) returned nil for repeat with local command", input)
+		}
 	}
 	receiveNoCommand(t, received, 150*time.Millisecond)
 }

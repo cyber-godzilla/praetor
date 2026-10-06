@@ -49,6 +49,7 @@ type Command struct {
 	Match    string
 	Cancel   string
 	Max      int
+	Count    int
 }
 
 type part struct {
@@ -276,7 +277,7 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		return Command{Kind: KindNotify, Title: title, Text: value}, nil
 
 	case "repeat":
-		command, match, cancel, maxText, err := parseRepeatArguments(arg)
+		command, match, cancel, maxText, countText, err := parseRepeatArguments(arg)
 		if err != nil {
 			return Command{}, err
 		}
@@ -296,14 +297,21 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		if hasCancel && cancel == "" {
 			return Command{}, fmt.Errorf("cancel-on requires a non-empty substring")
 		}
-		if command == "" || match == "" {
-			return Command{}, fmt.Errorf("repeat command and success substring must not be empty")
+		if command == "" {
+			return Command{}, fmt.Errorf("repeat command must not be empty")
+		}
+		if countText == "" && match == "" {
+			return Command{}, fmt.Errorf("repeat success substring must not be empty")
 		}
 		max, err := expandPositiveInt(maxText, variables, "repeat max")
 		if err != nil {
 			return Command{}, err
 		}
-		return Command{Kind: KindRepeat, Text: command, Match: match, Cancel: cancel, Max: max}, nil
+		count, err := expandPositiveInt(countText, variables, "repeat count")
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Kind: KindRepeat, Text: command, Match: match, Cancel: cancel, Max: max, Count: count}, nil
 
 	case "":
 		return Command{}, fmt.Errorf("empty input directive")
@@ -437,59 +445,74 @@ func parseWaitForArguments(arg string) (match, cancel, timeout string, err error
 	return match, cancel, timeout, nil
 }
 
-func parseRepeatArguments(arg string) (command, match, cancel, max string, err error) {
+func parseRepeatArguments(arg string) (command, match, cancel, max, count string, err error) {
 	rest := strings.TrimSpace(arg)
 	if rest == "" || rest[0] != '"' {
-		return "", "", "", "", fmt.Errorf("repeat requires a quoted command")
+		return "", "", "", "", "", fmt.Errorf("repeat requires a quoted command")
 	}
 	command, rest, err = consumeQuoted(rest)
 	if err != nil {
-		return "", "", "", "", err
+		return "", "", "", "", "", err
 	}
 	rest = strings.TrimSpace(rest)
-	if !hasKeyword(rest, "until") {
-		return "", "", "", "", fmt.Errorf("repeat requires until followed by a quoted success substring")
-	}
-	rest = strings.TrimSpace(rest[len("until"):])
-	if rest == "" || rest[0] != '"' {
-		return "", "", "", "", fmt.Errorf("repeat requires a quoted success substring")
-	}
-	match, rest, err = consumeQuoted(rest)
-	if err != nil {
-		return "", "", "", "", err
+	countMode := hasKeyword(rest, "count")
+	if countMode {
+		rest = strings.TrimSpace(rest[len("count"):])
+		count, rest = consumeField(rest)
+		if count == "" {
+			return "", "", "", "", "", fmt.Errorf("repeat count requires an attempt count")
+		}
+	} else {
+		if !hasKeyword(rest, "until") {
+			return "", "", "", "", "", fmt.Errorf("repeat requires until followed by a quoted success substring, or count followed by an attempt count")
+		}
+		rest = strings.TrimSpace(rest[len("until"):])
+		if rest == "" || rest[0] != '"' {
+			return "", "", "", "", "", fmt.Errorf("repeat requires a quoted success substring")
+		}
+		match, rest, err = consumeQuoted(rest)
+		if err != nil {
+			return "", "", "", "", "", err
+		}
 	}
 	for strings.TrimSpace(rest) != "" {
 		rest = strings.TrimSpace(rest)
 		switch {
 		case hasKeyword(rest, "cancel-on"):
 			if cancel != "" {
-				return "", "", "", "", fmt.Errorf("repeat has more than one cancel-on clause")
+				return "", "", "", "", "", fmt.Errorf("repeat has more than one cancel-on clause")
 			}
 			rest = strings.TrimSpace(rest[len("cancel-on"):])
 			if rest == "" || rest[0] != '"' {
-				return "", "", "", "", fmt.Errorf("cancel-on requires a quoted substring")
+				return "", "", "", "", "", fmt.Errorf("cancel-on requires a quoted substring")
 			}
 			cancel, rest, err = consumeQuoted(rest)
 			if err != nil {
-				return "", "", "", "", err
+				return "", "", "", "", "", err
 			}
 			if cancel == "" {
-				return "", "", "", "", fmt.Errorf("cancel-on requires a non-empty substring")
+				return "", "", "", "", "", fmt.Errorf("cancel-on requires a non-empty substring")
 			}
 		case hasKeyword(rest, "max"):
+			if countMode {
+				return "", "", "", "", "", fmt.Errorf("repeat count does not accept a max clause")
+			}
 			if max != "" {
-				return "", "", "", "", fmt.Errorf("repeat has more than one max clause")
+				return "", "", "", "", "", fmt.Errorf("repeat has more than one max clause")
 			}
 			rest = strings.TrimSpace(rest[len("max"):])
 			max, rest = consumeField(rest)
 			if max == "" {
-				return "", "", "", "", fmt.Errorf("repeat max requires an attempt count")
+				return "", "", "", "", "", fmt.Errorf("repeat max requires an attempt count")
 			}
 		default:
-			return "", "", "", "", fmt.Errorf("repeat accepts only cancel-on and max clauses after until")
+			if countMode {
+				return "", "", "", "", "", fmt.Errorf("repeat count accepts only an optional cancel-on clause")
+			}
+			return "", "", "", "", "", fmt.Errorf("repeat accepts only cancel-on and max clauses after until")
 		}
 	}
-	return command, match, cancel, max, nil
+	return command, match, cancel, max, count, nil
 }
 
 func consumeField(input string) (field, rest string) {

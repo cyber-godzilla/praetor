@@ -30,6 +30,11 @@ func (stubCreds) RemoveAccount(string) error          { return nil }
 func newModeSpecApp(t *testing.T, modes map[string]string) *GuiApp {
 	t.Helper()
 	dir := t.TempDir()
+	return newModeSpecAppInDir(t, dir, modes)
+}
+
+func newModeSpecAppInDir(t *testing.T, dir string, modes map[string]string) *GuiApp {
+	t.Helper()
 	for name, body := range modes {
 		path := filepath.Join(dir, name+".lua")
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
@@ -45,6 +50,64 @@ func newModeSpecApp(t *testing.T, modes map[string]string) *GuiApp {
 
 	deps := &Deps{Config: config.Defaults(), Client: c, Creds: stubCreds{}, Version: "0.2.0"}
 	return NewGuiApp(deps, &captureEmitter{})
+}
+
+func TestReloadScriptsRescansChangedAddedAndRemovedModeSpecs(t *testing.T) {
+	dir := t.TempDir()
+	a := newModeSpecAppInDir(t, dir, map[string]string{
+		"alpha": `
+local M = {}
+M.usage = '<old>'
+M.desc = 'old description'
+M.reactions = {}
+return M
+`,
+		"removed": `
+local M = {}
+M.desc = 'remove me'
+M.reactions = {}
+return M
+`,
+	})
+
+	if err := os.WriteFile(filepath.Join(dir, "alpha.lua"), []byte(`
+local M = {}
+M.usage = '<new>'
+M.desc = 'new description'
+M.chains = true
+M.reactions = {}
+return M
+`), 0o644); err != nil {
+		t.Fatalf("rewrite alpha: %v", err)
+	}
+	if err := os.Remove(filepath.Join(dir, "removed.lua")); err != nil {
+		t.Fatalf("remove old mode: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "beta.lua"), []byte(`
+local M = {}
+M.usage = '[value]'
+M.desc = 'new mode'
+M.reactions = {}
+return M
+`), 0o644); err != nil {
+		t.Fatalf("write beta: %v", err)
+	}
+
+	if err := a.ReloadScripts(); err != nil {
+		t.Fatalf("ReloadScripts: %v", err)
+	}
+	specs := a.ModeSpecs()
+	if len(specs) != 2 {
+		t.Fatalf("ModeSpecs after reload = %+v, want alpha and beta", specs)
+	}
+	if got := specs[0]; got.Name != "alpha" || got.Usage != "<new>" ||
+		got.Desc != "new description" || !got.Chains {
+		t.Errorf("updated alpha spec = %+v", got)
+	}
+	if got := specs[1]; got.Name != "beta" || got.Usage != "[value]" ||
+		got.Desc != "new mode" || got.Chains {
+		t.Errorf("added beta spec = %+v", got)
+	}
 }
 
 func TestGetInitState_CarriesModeSpecs(t *testing.T) {

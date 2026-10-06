@@ -47,6 +47,7 @@ type inputReaction struct {
 	done     chan struct{}
 	attempts int
 	max      int
+	count    int
 }
 
 // inputChain owns one typed line with commands or $() controls still pending.
@@ -190,6 +191,7 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 	c.SetSemicolonDelay(time.Duration(cfg.Commands.SemicolonDelayMS) * time.Millisecond)
 	c.SetUnbusyDelay(time.Duration(cfg.Commands.UnbusyDelayMS) * time.Millisecond)
 	eng.SetNotifyHandler(c.sendNotification)
+	eng.SetPraetorScriptHandler(c.SendInput)
 	return c, nil
 }
 
@@ -676,7 +678,7 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		c.scheduleInputWait(chain, current.Duration, remaining)
 		return nil
 	case commandinput.KindWaitFor:
-		if c.registerInputReaction(chain, current.Match, current.Cancel, "", current.Timeout, 0, remaining) == nil {
+		if c.registerInputReaction(chain, current.Match, current.Cancel, "", current.Timeout, 0, 0, remaining) == nil {
 			c.finishInputChain(chain)
 		}
 		return nil
@@ -686,7 +688,7 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		c.scheduleInputCommands(chain, remaining)
 		return nil
 	case commandinput.KindRepeat:
-		reaction := c.registerInputReaction(chain, current.Match, current.Cancel, current.Text, 0, current.Max, remaining)
+		reaction := c.registerInputReaction(chain, current.Match, current.Cancel, current.Text, 0, current.Max, current.Count, remaining)
 		if reaction == nil {
 			c.finishInputChain(chain)
 			return nil
@@ -706,8 +708,13 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 	var waiter *inputContinuation
 	var reaction *inputReaction
 	if len(remaining) > 0 && remaining[0].Kind == commandinput.KindWaitFor {
-		reaction = c.registerInputReaction(chain, remaining[0].Match, remaining[0].Cancel, "", remaining[0].Timeout, 0, remaining[1:])
+		reaction = c.registerInputReaction(chain, remaining[0].Match, remaining[0].Cancel, "", remaining[0].Timeout, 0, 0, remaining[1:])
 	} else if len(remaining) > 0 && remaining[0].Wait == commandinput.WaitUnbusy {
+		// The continuation is armed before this command is sent so a fast
+		// response cannot be missed. Publish that pending step at the same time;
+		// otherwise the chain remains visibly stuck at its initial 0/N
+		// "starting" snapshot until the first unbusy response arrives.
+		c.setInputChainStatus(chain, chain.total-len(remaining)+1, "unbusy", "", 0, 0, 0)
 		waiter = c.enqueueInputWaiter(chain, remaining)
 	}
 	if reaction == nil && waiter == nil {
@@ -746,7 +753,7 @@ func (c *Client) scheduleInputWait(chain *inputChain, duration time.Duration, co
 	}()
 }
 
-func (c *Client) registerInputReaction(chain *inputChain, match, cancel, repeat string, timeout time.Duration, max int, commands []commandinput.Command) *inputReaction {
+func (c *Client) registerInputReaction(chain *inputChain, match, cancel, repeat string, timeout time.Duration, max, count int, commands []commandinput.Command) *inputReaction {
 	c.inputChainMu.Lock()
 	if _, ok := c.inputChains[chain]; !ok || c.session() != chain.sess {
 		c.inputChainMu.Unlock()
@@ -761,11 +768,16 @@ func (c *Client) registerInputReaction(chain *inputChain, match, cancel, repeat 
 		timeout:  timeout,
 		done:     make(chan struct{}),
 		max:      max,
+		count:    count,
 	}
 	step := chain.total - len(commands)
 	if repeat != "" {
 		reaction.attempts = 1
-		setInputChainStatusLocked(chain, step, "repeat", repeat, timeout, reaction.attempts, max)
+		attemptLimit := max
+		if count > 0 {
+			attemptLimit = count
+		}
+		setInputChainStatusLocked(chain, step, "repeat", repeat, timeout, reaction.attempts, attemptLimit)
 	} else {
 		setInputChainStatusLocked(chain, step, "wait-for", match, timeout, 0, 0)
 	}
@@ -998,7 +1010,7 @@ func (c *Client) advanceInputOnText(text string) {
 			c.cancelInputChainLocked(reaction.chain)
 			continue
 		}
-		if strings.Contains(text, reaction.match) {
+		if reaction.match != "" && strings.Contains(text, reaction.match) {
 			c.removeInputReactionLocked(reaction)
 			completed = append(completed, reaction)
 			continue
@@ -1069,6 +1081,14 @@ func (c *Client) retryInputReaction(reaction *inputReaction) {
 		c.inputChainMu.Unlock()
 		return
 	}
+	if reaction.count > 0 && reaction.attempts >= reaction.count {
+		commands := reaction.commands
+		chain := reaction.chain
+		c.removeInputReactionLocked(reaction)
+		c.inputChainMu.Unlock()
+		c.scheduleInputCommands(chain, commands)
+		return
+	}
 	if reaction.max > 0 && reaction.attempts >= reaction.max {
 		attempts := reaction.attempts
 		command := reaction.repeat
@@ -1078,7 +1098,11 @@ func (c *Client) retryInputReaction(reaction *inputReaction) {
 		return
 	}
 	reaction.attempts++
-	setInputChainStatusLocked(reaction.chain, reaction.chain.step, "repeat", reaction.repeat, 0, reaction.attempts, reaction.max)
+	attemptLimit := reaction.max
+	if reaction.count > 0 {
+		attemptLimit = reaction.count
+	}
+	setInputChainStatusLocked(reaction.chain, reaction.chain.step, "repeat", reaction.repeat, 0, reaction.attempts, attemptLimit)
 	// Re-arm before sending for the same fast-response reason as the first try.
 	c.inputWaiters = append(c.inputWaiters, &inputContinuation{chain: reaction.chain, reaction: reaction})
 	c.inputChainMu.Unlock()

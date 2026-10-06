@@ -6,6 +6,9 @@
 /praetor-web-linux-amd64
 /internal/webassets/dist/*
 !/internal/webassets/dist/.keep
+/gui/frontend/artifacts/
+__pycache__/
+*.py[cod]
 # Chocolatey pack artifacts staged at release time.
 /packaging/choco/tools/*.exe
 /packaging/choco/praetor.rendered.nuspec

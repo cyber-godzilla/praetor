@@ -52,6 +52,7 @@
           <tr><td class="k">$(wait-for "text" timeout 30)</td><td>Pause until matching text; optional <code>cancel-on "text"</code> and timeout cancel the chain</td></tr>
           <tr><td class="k">$(notify "title" "message")</td><td>Show a desktop notification, then continue; omit the title to use Praetor</td></tr>
           <tr><td class="k">$(repeat "command" until "success" max 10)</td><td>Retry after each unbusy response; optional <code>cancel-on "text"</code> or maximum attempts stop the whole chain</td></tr>
+          <tr><td class="k">$(repeat "command" count 5)</td><td>Send exactly five times, paced by unbusy responses; optional <code>cancel-on "text"</code> stops the whole chain</td></tr>
           <tr><td class="k">{"\\${"} &nbsp; {"\\$("} &nbsp; {"\\;;"} &nbsp; {"\\&&"}</td><td>Send the syntax literally; use <code>\\"</code> inside quoted strings</td></tr>
           <tr><td class="k">Variable scope</td><td>Typed input, Action Sets, and /send; not Lua or /play</td></tr>
           <tr><td class="k">Chain scope</td><td>Single-line input and Action Sets only</td></tr>

@@ -782,6 +782,21 @@ server:
 	}
 }
 
+func TestValidateCommandQueueDelaysUseDefaults(t *testing.T) {
+	cfg := Defaults()
+	cfg.Commands.DefaultDelay = Duration{}
+	cfg.Commands.MinInterval = Duration{}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate(): %v", err)
+	}
+	if got := cfg.Commands.DefaultDelay.Duration; got != defaultCommandDelay {
+		t.Errorf("DefaultDelay = %v, want %v", got, defaultCommandDelay)
+	}
+	if got := cfg.Commands.MinInterval.Duration; got != defaultCommandMinInterval {
+		t.Errorf("MinInterval = %v, want %v", got, defaultCommandMinInterval)
+	}
+}
+
 func TestValidateSemicolonDelay(t *testing.T) {
 	for _, invalid := range []int{0, MinSemicolonDelayMS - 1, MaxSemicolonDelayMS + 1} {
 		cfg := Defaults()

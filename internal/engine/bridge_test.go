@@ -50,15 +50,20 @@ type NotificationRequest struct {
 
 // BridgeSink implements BridgeCallbacks and captures all calls for assertions.
 type BridgeSink struct {
-	Commands      []SentCommand
-	ModeChanges   []ModeChangeRequest
-	Notifications []NotificationRequest
-	Logs          []string
-	Metrics       map[string]int
+	Commands       []SentCommand
+	PraetorScripts []string
+	ModeChanges    []ModeChangeRequest
+	Notifications  []NotificationRequest
+	Logs           []string
+	Metrics        map[string]int
 }
 
 func (s *BridgeSink) OnSend(command string, delayMs int) {
 	s.Commands = append(s.Commands, SentCommand{Command: command, DelayMs: delayMs})
+}
+
+func (s *BridgeSink) OnPraetorScript(script string) {
+	s.PraetorScripts = append(s.PraetorScripts, script)
 }
 
 func (s *BridgeSink) OnSetMode(mode string, args []string) {
@@ -156,6 +161,21 @@ func TestBridge_SendWithDelay(t *testing.T) {
 	}
 	if sink.Commands[0].DelayMs != 500 {
 		t.Errorf("DelayMs = %d, want 500", sink.Commands[0].DelayMs)
+	}
+}
+
+func TestBridge_PraetorScript(t *testing.T) {
+	L, sink, _ := newTestBridge(t)
+	defer L.Close()
+
+	if err := L.DoString(`praetor_script("stand&&climb wall;;look")`); err != nil {
+		t.Fatalf("DoString error: %v", err)
+	}
+	if len(sink.PraetorScripts) != 1 {
+		t.Fatalf("PraetorScripts len = %d, want 1", len(sink.PraetorScripts))
+	}
+	if got := sink.PraetorScripts[0]; got != "stand&&climb wall;;look" {
+		t.Errorf("PraetorScripts[0] = %q", got)
 	}
 }
 

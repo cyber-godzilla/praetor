@@ -19,10 +19,10 @@ export interface CommandSpec {
   desc: string; // one line
 }
 
-// The token a chaining mode accepts in any argument position. Rendered by the
-// hint rather than stored in each mode's usage string, so the convention lives
-// in exactly one place. Modes opt in with `chains`.
-const AFTER_TOKEN = "[after:<mode>]";
+// Completion suffixes are rendered by the hint rather than repeated in each
+// mode's usage string. The suffix begins the handoff payload, so it belongs
+// after the mode's own arguments. Modes opt in with `chains`.
+const AFTER_TOKEN = "[after_<mode|do>:<mode|command>]";
 
 // modeRow renders one mode as a hint row. `token` is the command the user
 // actually typed (/mode or /sm), so the row reads back as the line being built.

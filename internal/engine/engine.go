@@ -20,23 +20,25 @@ type ModeChange struct {
 }
 
 type Engine struct {
-	mu           sync.Mutex
-	persistMu    sync.Mutex
-	notifyMu     sync.RWMutex
-	notify       func(title, message string)
-	vm           *LuaVM
-	state        *ModeState
-	queue        *CommandQueue
-	metrics      *Metrics
-	matcher      *Matcher
-	status       *StatusValues
-	timers       *TimerManager
-	currentMode  string
-	modeObj      *LuaMode
-	modeChangeCh chan ModeChange // non-blocking notifications of mode switches
-	dataDir      string
-	persistStore *PersistentStore
-	actionGen    uint64 // incremented on mode switch/reload to cancel stale delayed actions
+	mu              sync.Mutex
+	persistMu       sync.Mutex
+	notifyMu        sync.RWMutex
+	notify          func(title, message string)
+	praetorScriptMu sync.RWMutex
+	praetorScript   func(string) error
+	vm              *LuaVM
+	state           *ModeState
+	queue           *CommandQueue
+	metrics         *Metrics
+	matcher         *Matcher
+	status          *StatusValues
+	timers          *TimerManager
+	currentMode     string
+	modeObj         *LuaMode
+	modeChangeCh    chan ModeChange // non-blocking notifications of mode switches
+	dataDir         string
+	persistStore    *PersistentStore
+	actionGen       uint64 // incremented on mode switch/reload to cancel stale delayed actions
 
 	inSwitch bool           // true while setModeLocked's on_start/on_stop are running
 	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
@@ -54,6 +56,15 @@ func (e *Engine) SetNotifyHandler(fn func(title, message string)) {
 // older name. New callers should use SetNotifyHandler.
 func (e *Engine) SetNotificationSink(fn func(title, message string)) {
 	e.SetNotifyHandler(fn)
+}
+
+// SetPraetorScriptHandler sets the application callback used by Lua's
+// praetor_script(). It may be replaced at runtime; nil restores log-only
+// behavior.
+func (e *Engine) SetPraetorScriptHandler(fn func(string) error) {
+	e.praetorScriptMu.Lock()
+	e.praetorScript = fn
+	e.praetorScriptMu.Unlock()
 }
 
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
@@ -552,6 +563,24 @@ func (e *Engine) HasMode(name string) bool {
 // OnSend queues a command.
 func (e *Engine) OnSend(command string, delayMs int) {
 	e.queue.Enqueue(command, delayMs)
+}
+
+// OnPraetorScript schedules typed-input processing after the current Lua
+// callback releases the engine lock. Running it inline could deadlock if the
+// expression contains a local command such as /mode.
+func (e *Engine) OnPraetorScript(script string) {
+	e.praetorScriptMu.RLock()
+	handler := e.praetorScript
+	e.praetorScriptMu.RUnlock()
+	if handler == nil {
+		log.Printf("[ENGINE] praetor_script unavailable: %q", script)
+		return
+	}
+	go func() {
+		if err := handler(script); err != nil {
+			log.Printf("[ENGINE] praetor_script error: %v", err)
+		}
+	}()
 }
 
 // OnSetMode switches to a new mode. Called from Lua while e.mu is held (during

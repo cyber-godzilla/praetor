@@ -155,6 +155,7 @@ func (h HelpScreen) View() string {
 		{`$(wait-for "text" timeout 30)`, "Wait for text; optional cancel-on \"text\""},
 		{`$(notify "title" "message")`, "Notify; omit title to use Praetor"},
 		{`$(repeat "cmd" until "success" max 10)`, "Retry on unbusy; optional cancel-on \"text\""},
+		{`$(repeat "cmd" count 5)`, "Send exactly 5 times; optional cancel-on \"text\""},
 		{`\${  \$(  \;;  \&&`, "Send the syntax literally"},
 	}
 	for _, e := range inputEntries {

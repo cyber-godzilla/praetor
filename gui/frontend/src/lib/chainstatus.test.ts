@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chainTimeLabel } from "./chainstatus";
+import { chainStateLabel, chainTimeLabel } from "./chainstatus";
 import type { InputChainStatus } from "./types";
 
 function status(state: string, fields: Partial<InputChainStatus>): InputChainStatus {
@@ -23,5 +23,25 @@ describe("chainTimeLabel", () => {
   it("does not invent a time for untimed states", () => {
     expect(chainTimeLabel(status("unbusy", {}))).toBe("");
     expect(chainTimeLabel(status("repeat", {}))).toBe("");
+  });
+});
+
+describe("chainStateLabel", () => {
+  it.each([
+    ["pacing", {}, "pacing"],
+    ["unbusy", {}, "waiting for unbusy"],
+    ["wait", {}, "waiting"],
+    ["wait-for", { detail: "ready" }, "waiting for “ready”"],
+    ["wait-for", {}, "waiting for “text”"],
+    ["repeat", { detail: "climb wall", attempts: 2, maxAttempts: 5 }, "repeating “climb wall” (2/5)"],
+    ["repeat", {}, "repeating “command” (1)"],
+    ["notify", { detail: "Training" }, "notifying “Training”"],
+    ["notify", {}, "notifying “Praetor”"],
+    ["send", { detail: "look" }, "sending “look”"],
+    ["send", {}, "sending “command”"],
+    ["custom", {}, "custom"],
+    ["", {}, "starting"],
+  ] as const)("renders %s status", (state, fields, want) => {
+    expect(chainStateLabel(status(state, fields))).toBe(want);
   });
 });

@@ -56,7 +56,7 @@ describe a mode the player has not started yet.
 |---|---|---|
 | `usage` | string | Argument signature, without the mode name. Omit when the mode takes no arguments. |
 | `desc` | string | One line, sentence case, no trailing period. |
-| `chains` | boolean | The mode honors an `after:<mode>` argument. |
+| `chains` | boolean | The mode honors completion handoff suffixes. |
 | `hidden` | boolean | Keep the mode out of the command hint. |
 
 Notation for `usage` follows the convention in the scripts repo: `<required>`,
@@ -65,9 +65,11 @@ Notation for `usage` follows the convention in the scripts repo: `<required>`,
 
 Typing `/mode ` lists every loaded mode; typing part of a name narrows the list;
 once the name resolves, the hint shows that mode's own signature and
-description, appending `[after:<mode>]` when `chains` is set. Set `chains` only
-when the mode genuinely honors the token — declaring it on a mode that parses
-`after:` and then ignores it advertises something that will not happen.
+description, appending the generic
+`after_<mode|do>:<mode|command>` suffix when `chains` is set.
+Set `chains` only when the mode
+genuinely honors completion handoffs — declaring it on a mode that parses them
+and then ignores them advertises something that will not happen.
 
 `hidden` suppresses a mode in the hint only, for helpers that are real modes but
 noise while typing — an internal route leg, or a mode that exists to be chained
@@ -112,9 +114,10 @@ Matching is case-sensitive. The first reaction with a matching pattern wins — 
 ```lua
 send(command)              -- Queue a command to send to the game server
 send(command, delay_ms)    -- Queue with a delay in milliseconds
+praetor_script(expression) -- Run typed-input PraetorScript (;;, &&, variables, controls)
 ```
 
-Commands are sent through a queue with configurable delays and minimum intervals. High-priority commands (configured in the menu) jump to the front of the queue.
+Commands are sent through a queue with configurable delays and minimum intervals. High-priority commands (configured in the menu) jump to the front of the queue. `praetor_script()` schedules its expression outside the current Lua callback and runs it through the same parser as typed single-line input.
 
 ### Mode Control
 

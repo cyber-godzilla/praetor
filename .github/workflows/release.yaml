@@ -48,10 +48,157 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            summary_file=".github/release-summaries/$GITHUB_REF_NAME.md"
+            if [ ! -s "$summary_file" ]; then
+              echo "::error::Missing release summary: $summary_file"
+              exit 1
+            fi
+            summary="$(tr '\n' ' ' < "$summary_file" | xargs)"
+            if [ -z "$summary" ] || [[ "$summary" == *"-->"* ]]; then
+              echo "::error::Release summary is empty or contains an HTML-comment terminator"
+              exit 1
+            fi
             gh release create "$GITHUB_REF_NAME" \
               --title "$GITHUB_REF_NAME" \
+              --notes "<!-- wiki-release-summary: $summary -->" \
               --generate-notes
           fi
+
+  # Opens a review PR in the TEC Wiki instead of writing to its main branch.
+  # Requires the fine-grained TEC_WIKI_PR_TOKEN documented in
+  # .github/RELEASE_AUTOMATION.md.
+  update-wiki-release-history:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Require the cross-repository token
+        env:
+          TEC_WIKI_PR_TOKEN: ${{ secrets.TEC_WIKI_PR_TOKEN }}
+        run: |
+          if [ -z "$TEC_WIKI_PR_TOKEN" ]; then
+            echo "::error::TEC_WIKI_PR_TOKEN is not configured; see .github/RELEASE_AUTOMATION.md"
+            exit 1
+          fi
+
+      - name: Read published release metadata
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Unsupported release tag: $GITHUB_REF_NAME"
+            exit 1
+          fi
+          for attempt in 1 2 3 4 5; do
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$GITHUB_REF_NAME" \
+              > "$RUNNER_TEMP/praetor-release.json"; then
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "::error::Published release metadata was not available after five attempts"
+              exit 1
+            fi
+            sleep $((attempt * 2))
+          done
+          previous_tag="$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)"
+          if [ -n "$previous_tag" ]; then
+            git log --format='%s' "$previous_tag..$GITHUB_REF_NAME" \
+              > "$RUNNER_TEMP/praetor-release-commits.txt"
+          else
+            git log --format='%s' "$GITHUB_REF_NAME" \
+              > "$RUNNER_TEMP/praetor-release-commits.txt"
+          fi
+
+      - name: Check out the TEC Wiki
+        uses: actions/checkout@v6
+        with:
+          repository: Eternal-City-Community/tec-wiki
+          ref: main
+          fetch-depth: 0
+          path: tec-wiki
+          token: ${{ secrets.TEC_WIKI_PR_TOKEN }}
+
+      - name: Prepare the review branch
+        id: branch
+        working-directory: tec-wiki
+        run: |
+          set -euo pipefail
+          branch="automation/praetor-$GITHUB_REF_NAME-release-history"
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null 2>&1; then
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+            git switch --create "$branch" --track "origin/$branch"
+          else
+            git switch --create "$branch" origin/main
+          fi
+          echo "name=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Update the release-history table
+        run: |
+          python3 .github/scripts/update_wiki_release_history.py \
+            --page tec-wiki/docs/praetor.md \
+            --release-json "$RUNNER_TEMP/praetor-release.json" \
+            --commit-subjects "$RUNNER_TEMP/praetor-release-commits.txt"
+
+      - name: Commit and push the review branch
+        id: publish
+        working-directory: tec-wiki
+        run: |
+          set -euo pipefail
+          git config user.name "CyberGodzilla"
+          git config user.email "cg@cybergodzilla.com"
+          if ! git diff --quiet -- docs/praetor.md; then
+            git add docs/praetor.md
+            git commit -m "docs: add Praetor $GITHUB_REF_NAME to release history"
+            git push --set-upstream origin "${{ steps.branch.outputs.name }}"
+          fi
+          git fetch origin main
+          if [ "$(git rev-list --count origin/main..HEAD)" -gt 0 ]; then
+            echo "ahead=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ahead=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open the TEC Wiki pull request
+        if: steps.publish.outputs.ahead == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.TEC_WIKI_PR_TOKEN }}
+          BRANCH: ${{ steps.branch.outputs.name }}
+        working-directory: tec-wiki
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list \
+            --repo Eternal-City-Community/tec-wiki \
+            --head "$BRANCH" \
+            --base main \
+            --state open \
+            --json url \
+            --jq '.[0].url // empty')"
+          if [ -n "$existing" ]; then
+            echo "Release-history PR already exists: $existing"
+            exit 0
+          fi
+          release_url="$(jq -r .html_url "$RUNNER_TEMP/praetor-release.json")"
+          cat > "$RUNNER_TEMP/tec-wiki-pr-body.md" <<EOF
+          Automated release-history update for [$GITHUB_REF_NAME]($release_url).
+
+          The release date and summary were derived from the published Praetor
+          release and its associated commit history. This PR intentionally
+          updates only the marker-bounded release table on \`/praetor\`.
+          EOF
+          gh pr create \
+            --repo Eternal-City-Community/tec-wiki \
+            --base main \
+            --head "$BRANCH" \
+            --title "Add Praetor $GITHUB_REF_NAME to release history" \
+            --body-file "$RUNNER_TEMP/tec-wiki-pr-body.md"
 
   # ── Linux: deb + rpm (GUI + TUI + .desktop + icon), amd64 + arm64 ─────────
   # Native per-arch runners (Wails can't cross-compile). arm64 uses GitHub's

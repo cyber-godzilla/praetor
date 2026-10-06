@@ -294,6 +294,30 @@ func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
 	}
 }
 
+func TestSendInput_StatusReportsArmedDoubleAmpersandContinuation(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	if err := a.SendInput("stand&&look"); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	select {
+	case got := <-recv:
+		if got != "stand" {
+			t.Fatalf("server received %q, want %q", got, "stand")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("server never received stand")
+	}
+
+	status := a.InputChainStatus()
+	if !status.Active || status.Step != 2 || status.Total != 2 || status.State != "unbusy" {
+		t.Fatalf("InputChainStatus = %#v, want step 2/2 waiting for unbusy", status)
+	}
+	if got := a.AbortInputChains(); got != 1 {
+		t.Fatalf("AbortInputChains() = %d, want 1", got)
+	}
+}
+
 func TestSendInput_ActionModeCommandValidatesAndPassesExpandedArgs(t *testing.T) {
 	a, recv := newSendRoutingApp(t)
 	a.client().SetInputVariables(map[string]string{

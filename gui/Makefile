@@ -11,7 +11,7 @@ WAILS_TAGS ?= webkit2_41
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS    := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: dev build installer deps check clean e2e e2e-deps
+.PHONY: dev build installer deps check clean e2e e2e-deps screenshots
 
 ## dev: run the live-reloading Wails dev server
 dev:
@@ -44,6 +44,10 @@ e2e:
 ## e2e-deps: install the Playwright Chromium build
 e2e-deps:
 	cd frontend && npx playwright install chromium
+
+## screenshots: render deterministic, disconnected GUI documentation images
+screenshots:
+	cd frontend && npm run screenshots
 
 ## clean: remove build output
 clean:

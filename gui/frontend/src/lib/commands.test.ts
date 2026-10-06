@@ -194,15 +194,19 @@ describe("matchCommands with mode specs", () => {
     expect(r[0].desc).toBe("Attack rotation");
   });
 
-  it("appends the after: token only for a chaining mode", () => {
-    expect(m("/mode loot")[0].args).toBe("<item> [corpse#] [after:<mode>]");
+  it("appends completion suffixes only for a chaining mode", () => {
+    expect(m("/mode loot")[0].args).toBe(
+      "<item> [corpse#] [after_<mode|do>:<mode|command>]",
+    );
     expect(m("/mode macro")[0].args).toBe("[nokill]");
   });
 
-  it("shows after: alone when a chaining mode takes no other arguments", () => {
+  it("shows completion suffixes alone when a chaining mode takes no other arguments", () => {
     const chainOnly = [{ name: "idle", usage: "", desc: "Rest", chains: true }];
     const r = matchCommands("/mode idle", { modes: chainOnly });
-    expect(r[0].args).toBe("[after:<mode>]");
+    expect(r[0].args).toBe(
+      "[after_<mode|do>:<mode|command>]",
+    );
   });
 
   it("keeps the resolved mode up while its arguments are typed", () => {
@@ -263,7 +267,7 @@ describe("matchCommands with mode specs", () => {
     expect(names(hiddenRow)).toEqual(["/mode"]);
 
     // ...including once its arguments are being typed.
-    expect(names(matchCommands("/mode leg_one after:disable", { modes: withHidden })))
+    expect(names(matchCommands("/mode leg_one after_mode:disable", { modes: withHidden })))
       .toEqual(["/mode"]);
   });
 

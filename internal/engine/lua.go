@@ -84,7 +84,8 @@ type ModeSpec struct {
 	Usage string `json:"usage"`
 	// Desc is a one-line description of what the mode does.
 	Desc string `json:"desc"`
-	// Chains reports that the mode honors an "after:<mode>" argument. It is
+	// Chains reports that the mode honors an after_mode/after_do completion
+	// handoff. It is
 	// reported, never acted on — appending the token to a displayed signature
 	// is the shell's business, and the chaining itself lives in Lua.
 	Chains bool `json:"chains"`

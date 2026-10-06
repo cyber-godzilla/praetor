@@ -96,6 +96,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.25.13"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -111,6 +114,13 @@ jobs:
       - name: Smoke tests
         working-directory: gui/frontend
         run: npm run e2e -- --fail-on-flaky-tests
+
+      - name: Upload UI documentation screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: praetor-ui-screenshots
+          path: gui/frontend/artifacts/ui-screenshots/*.png
+          if-no-files-found: error
 
       - name: Upload Playwright report
         if: failure()

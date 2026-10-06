@@ -10,7 +10,11 @@
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
-    "e2e": "tsc --noEmit -p e2e && playwright test"
+    "screenshots:graphics": "go run ../testdata/render-doc-graphics --output artifacts/ui-screenshots/graphics",
+    "screenshots:calculator": "go run ../testdata/render-doc-calculator --output artifacts/ui-screenshots/rbcalc.json",
+    "screenshots:fixtures": "npm run screenshots:graphics && npm run screenshots:calculator",
+    "e2e": "npm run screenshots:fixtures && tsc --noEmit -p e2e && playwright test",
+    "screenshots": "npm run screenshots:fixtures && tsc --noEmit -p e2e && playwright test e2e/docs-screenshots.spec.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

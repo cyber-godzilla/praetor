@@ -113,12 +113,14 @@ type CommandsConfig struct {
 }
 
 const (
-	DefaultSemicolonDelayMS = 900
-	MinSemicolonDelayMS     = 100
-	MaxSemicolonDelayMS     = 10000
-	DefaultUnbusyDelayMS    = 100
-	MinUnbusyDelayMS        = 0
-	MaxUnbusyDelayMS        = 10000
+	defaultCommandDelay       = 1 * time.Second
+	defaultCommandMinInterval = 500 * time.Millisecond
+	DefaultSemicolonDelayMS   = 900
+	MinSemicolonDelayMS       = 100
+	MaxSemicolonDelayMS       = 10000
+	DefaultUnbusyDelayMS      = 100
+	MinUnbusyDelayMS          = 0
+	MaxUnbusyDelayMS          = 10000
 )
 
 type HighlightConfig struct {
@@ -331,8 +333,8 @@ func Defaults() *Config {
 			LoginURL: "https://login.eternalcitygame.com/login.php",
 		},
 		Commands: CommandsConfig{
-			DefaultDelay:     Duration{1000 * time.Millisecond},
-			MinInterval:      Duration{500 * time.Millisecond},
+			DefaultDelay:     Duration{defaultCommandDelay},
+			MinInterval:      Duration{defaultCommandMinInterval},
 			MaxQueueSize:     20,
 			SemicolonDelayMS: DefaultSemicolonDelayMS,
 			UnbusyDelayMS:    DefaultUnbusyDelayMS,
@@ -599,10 +601,10 @@ func (c *Config) Validate() error {
 
 	// Commands
 	if c.Commands.DefaultDelay.Duration < 100*time.Millisecond {
-		c.Commands.DefaultDelay = Duration{900 * time.Millisecond}
+		c.Commands.DefaultDelay = Duration{defaultCommandDelay}
 	}
 	if c.Commands.MinInterval.Duration < 50*time.Millisecond {
-		c.Commands.MinInterval = Duration{400 * time.Millisecond}
+		c.Commands.MinInterval = Duration{defaultCommandMinInterval}
 	}
 	if c.Commands.MaxQueueSize < 1 {
 		c.Commands.MaxQueueSize = 20

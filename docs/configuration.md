@@ -81,8 +81,8 @@ Manageable via Esc → Script Directories.
 
 ```yaml
 commands:
-  default_delay: 900ms            # Delay between queued commands
-  min_interval: 400ms             # Minimum time between any two sends
+  default_delay: 1s               # Delay between queued commands
+  min_interval: 500ms             # Minimum time between any two sends
   max_queue_size: 20              # Maximum commands in queue
   semicolon_delay_ms: 900         # Delay between ;; commands (100-10000)
   unbusy_delay_ms: 100            # Delay after && unbusy response (0-10000)
@@ -131,6 +131,8 @@ $(notify "Training" "Complete")                  # custom title and message
 $(repeat "climb wall" until "You reach the top")
 $(repeat "climb wall" until "You reach the top" cancel-on "You fall")
 $(repeat "climb wall" until "You reach the top" max 10)
+$(repeat "search" count 5)
+$(repeat "search" count ${tries:5} cancel-on "You find nothing")
 ```
 
 Each directive occupies one chain step, so compose it with the existing
@@ -147,12 +149,20 @@ it. A timeout must be positive. Without either clause, the wait remains active
 until it matches or the user presses Stop.
 
 `repeat` requires a game command (not a local `/` command), sends it
-immediately, then sends it again after each recognized unbusy response and the
-configured unbusy delay. Its success text
-advances the surrounding chain; its optional cancellation text stops the whole
-chain without advancing. `max N` counts the initial send as attempt 1 and
-cancels the chain rather than sending attempt N+1. Without `max`, retries remain
-unbounded. Matching is case-sensitive substring matching. Text
+immediately, then reacts after each recognized unbusy response and the
+configured unbusy delay. The `until "text"` form sends the command again until
+its case-sensitive success substring appears; that success advances the
+surrounding chain. `max N` counts the initial send as attempt 1 and cancels the
+chain rather than sending attempt N+1. Without `max`, retries remain unbounded.
+
+The `count N` form sends the command exactly N times. The initial send is count
+1, and each remaining send follows an unbusy response and the configured
+unbusy delay. After the final send, one final unbusy response and delay advances
+the surrounding chain. Count may use a variable or fallback, such as
+`count ${tries:5}`. It is intentionally distinct from `until ... max N`: reaching
+an exact count completes normally, while reaching `max` without success cancels
+the chain as an error. Either repeat form may use `cancel-on "text"`, which
+stops the whole chain without advancing. Matching is case-sensitive substring matching. Text
 arguments may contain separators because quoted strings are parsed before the
 outer chain. Escape a quote or backslash inside them as `\"` or `\\`. Use
 `\$(` to send a literal `$(`. Variables work in directive arguments and, like

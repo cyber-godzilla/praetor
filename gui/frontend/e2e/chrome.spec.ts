@@ -22,6 +22,7 @@ test("Esc opens and closes the menu; Help opens from it", async ({ page }) => {
   await expect(dialog).toContainText("Key bindings");
   await expect(dialog).toContainText("command && command");
   await expect(dialog).toContainText('$(repeat "command" until "success" max 10)');
+  await expect(dialog).toContainText('$(repeat "command" count 5)');
   await expect(dialog).toContainText('cancel-on "text"');
   await expect(dialog.getByText("Send the syntax literally").locator("..").locator(".k"))
     .toHaveText(/\\\$\{\s+\\\$\(\s+\\;;\s+\\&&/);
@@ -53,6 +54,37 @@ test("the sidebar Modes tab lists the loaded modes", async ({ page }) => {
   await expect(modes.getByRole("button", { name: "disable" })).toBeVisible();
   await expect(modes.getByRole("button", { name: "hunt", exact: true })).toBeVisible();
   await expect(modes.getByRole("button", { name: "hunt_wolves" })).toBeVisible();
+});
+
+test("reloading scripts immediately refreshes mode listings and hint breadcrumbs", async ({ page, backend }) => {
+  const refreshed = [
+    { name: "disable", usage: "", desc: "Turn automation off", chains: false },
+    { name: "new_mode", usage: "<target>", desc: "Freshly loaded mode", chains: true },
+  ];
+  await backend.setReader("ModeNames", refreshed.map((m) => m.name));
+  await backend.setReader("ModeSpecs", refreshed);
+
+  await page.keyboard.press("Escape");
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Reload Scripts", exact: true }).click();
+  await expect.poll(() => backend.calls("ReloadScripts")).toHaveLength(1);
+  await expect.poll(() => backend.calls("ModeNames")).toHaveLength(1);
+  await expect.poll(() => backend.calls("ModeSpecs")).toHaveLength(1);
+  await page.keyboard.press("Escape");
+
+  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Modes" }).click();
+  const modes = page.locator(".sidebartabs .modes");
+  await expect(modes.getByRole("button", { name: "new_mode" })).toBeVisible();
+  await expect(modes.getByRole("button", { name: "hunt", exact: true })).toHaveCount(0);
+
+  await backend.input.fill("/mode new_mode ");
+  const hint = page.getByTestId("e2e-hint");
+  await expect(hint).toContainText("Freshly loaded mode");
+  await expect(hint).toContainText("<target>");
+  await expect(hint).toContainText("after_<mode|do>");
+
+  await backend.input.fill("/mode hunt ");
+  await expect(hint).not.toContainText("Hunt the given target");
 });
 
 test.describe("TUI-only configured topbar", () => {

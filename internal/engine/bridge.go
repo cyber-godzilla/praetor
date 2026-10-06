@@ -13,6 +13,7 @@ const minIntervalMS = 10
 // BridgeCallbacks defines the interface for Go functions that Lua can invoke.
 type BridgeCallbacks interface {
 	OnSend(command string, delayMs int)
+	OnPraetorScript(script string)
 	OnSetMode(mode string, args []string)
 	OnNotify(title, message string)
 	OnLog(message string)
@@ -67,6 +68,15 @@ func RegisterBridge(L *lua.LState, cb BridgeCallbacks, status *StatusValues, tim
 		command := L.CheckString(1)
 		delayMs := L.OptInt(2, 0)
 		cb.OnSend(command, delayMs)
+		return 0
+	}))
+
+	// praetor_script(expression) runs one expression through the same parser as
+	// typed single-line input, including ;; / && chains, variables, and $()
+	// controls. The application callback schedules it outside the Lua engine
+	// lock so local commands such as /mode cannot deadlock.
+	L.SetGlobal("praetor_script", L.NewFunction(func(L *lua.LState) int {
+		cb.OnPraetorScript(L.CheckString(1))
 		return 0
 	}))
 

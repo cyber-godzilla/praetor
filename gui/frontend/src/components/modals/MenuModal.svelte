@@ -68,7 +68,13 @@
     // Stay in the menu after reloading so the user can keep working.
     try {
       await api.reloadScripts();
-      store.modeNames = await api.modeNames();
+      // Reload both lists. modeSpecs powers the input hint/breadcrumbs, while
+      // modeNames powers pickers and the sidebar; refreshing only one leaves
+      // changed, added, and removed script hints stale until restart.
+      [store.modeNames, store.modeSpecs] = await Promise.all([
+        api.modeNames(),
+        api.modeSpecs(),
+      ]);
       store.addToast("Scripts reloaded", "");
     } catch (e) {
       store.addToast("Reload failed", String(e));

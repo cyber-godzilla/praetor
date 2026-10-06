@@ -145,7 +145,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 - Pattern matching in Go (substring + wildcard→regex), Lua only called on match
 - Action functions receive the matched text as first argument: `action = function(text)`
 - Mode names are resolved case-insensitively for `/mode`, `/sm`, and `set_mode` (the canonical stored name is used for `currentMode`, metrics, and events).
-- **Mode metadata:** a mode may declare `usage`, `desc`, `chains`, and `hidden` on its table; `loadModeFile` reads them at load time into `LuaMode`, and `Engine.ModeSpecs()` exposes them (same `lib_` exclusion and sort as `ModeNames()`). The GUI resolves `/mode`'s hint against them — typing `/mode ` lists the corpus, a partial name narrows it, a resolved name shows that mode's own signature. `chains` is reported, never acted on: appending `[after:<mode>]` is the hint's business and the chaining itself lives in Lua (`lib_after`). `hidden` drops a mode from the hint only — it stays loaded, the picker still lists it, and `/mode <name>` still runs it; a hidden mode is indistinguishable from a nonexistent one in the hint, so its silence cannot leak that it exists. Clearing `usage`/`desc` does not hide a mode. Wrong-typed fields are treated as undeclared rather than failing the load. See [docs/lua-api.md](docs/lua-api.md#mode-metadata).
+- **Mode metadata:** a mode may declare `usage`, `desc`, `chains`, and `hidden` on its table; `loadModeFile` reads them at load time into `LuaMode`, and `Engine.ModeSpecs()` exposes them (same `lib_` exclusion and sort as `ModeNames()`). The GUI resolves `/mode`'s hint against them — typing `/mode ` lists the corpus, a partial name narrows it, a resolved name shows that mode's own signature. `chains` is reported, never acted on: appending the generic `after_<mode|do>:<mode|command>` suffix is the hint's business and the handoff itself lives in Lua (`lib_after`). `hidden` drops a mode from the hint only — it stays loaded, the picker still lists it, and `/mode <name>` still runs it; a hidden mode is indistinguishable from a nonexistent one in the hint, so its silence cannot leak that it exists. Clearing `usage`/`desc` does not hide a mode. Wrong-typed fields are treated as undeclared rather than failing the load. See [docs/lua-api.md](docs/lua-api.md#mode-metadata).
 - **Mode switch order:** the outgoing mode's pending queue is cleared *before* its `on_stop` runs, so `on_stop`'s own `send()`s (sheathe/stand cleanup) survive into the new mode instead of being wiped. Timers/state clear after `on_stop`.
 
 ### Command Queue & Drainer
@@ -159,6 +159,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 
 ```lua
 send(command [, delay_ms])           -- queue game command
+praetor_script(expression)           -- run typed-input PraetorScript
 set_mode(name [, {args}])           -- switch mode
 notify(title, message)               -- desktop notification (when allowed in Notifications)
 log(message)
@@ -329,8 +330,8 @@ server:
 scripts:
   - ~/.config/praetor/scripts
 commands:
-  default_delay: 900ms
-  min_interval: 400ms
+  default_delay: 1s
+  min_interval: 500ms
   max_queue_size: 20
   semicolon_delay_ms: 900 # delay between ;; commands; GUI range 100-10000
   unbusy_delay_ms: 100    # delay after && response; GUI range 0-10000
@@ -389,7 +390,8 @@ separators that wait for one of the shared unbusy text fragments, and `$()`
 control steps: `wait` (seconds),
 `wait-for` (future case-sensitive substring, optional `cancel-on` and
 `timeout`), `notify` (optional custom title), and `repeat "command"
-until "success" [cancel-on "failure"] [max attempts]`. Expansion is non-recursive, the whole
+until "success" [cancel-on "failure"] [max attempts]` or `repeat "command"
+count attempts [cancel-on "failure"]`. Expansion is non-recursive, the whole
 line is validated before anything is sent, and parsing occurs before
 substitution so variable values cannot inject commands or control syntax.
 `\${`, `\$(`, `\;;`, and `\&&` send the corresponding syntax literally.
@@ -397,7 +399,8 @@ Action-set buttons use the same processing and read current variables on every
 invocation. `;;` commands use `commands.semicolon_delay_ms` (900 ms by default);
 each unbusy event
 advances one pending `&&` chain FIFO after `commands.unbusy_delay_ms` (100 ms by
-default). Repeats share that FIFO and delay, and all `$()` waits/reactions are
+default). Repeats share that FIFO and delay; counted repeats complete after the
+requested number of sends and the final unbusy response. All `$()` waits/reactions are
 cancellable through the same chain Stop control. In the GUI's dedicated row
 below the input, a fixed slot on the left shows an idle PraetorScript
 placeholder or the oldest active chain's step, current wait/retry state,

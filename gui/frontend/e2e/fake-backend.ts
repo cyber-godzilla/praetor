@@ -11,6 +11,8 @@ interface FakeHooks {
   emit(event: string, data: unknown): void;
   calls(method?: string): FakeCall[];
   listeners(event: string): number;
+  setReader(method: string, value: unknown): void;
+  setInputChainStatus(status: InputChainStatus): void;
 }
 
 declare global {
@@ -22,10 +24,13 @@ declare global {
 export interface FakeBackend {
   boot(): Promise<void>;
   connect(): Promise<void>;
+  enterGame(): Promise<void>;
   events(batch: WireEvent[]): Promise<void>;
   text(items: (string | TextPayload)[]): Promise<void>;
   calls(method?: string): Promise<FakeCall[]>;
   args(method: string): Promise<unknown[][]>;
+  setReader(method: string, value: unknown): Promise<void>;
+  setInputChainStatus(status: InputChainStatus): Promise<void>;
   input: Locator;
   output: Locator;
 }
@@ -112,6 +117,10 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
           }
           if (name === "CalcRankBonus") {
             const [mode, basics, subskill] = args as number[];
+            const fixtureKey = `${name}:${mode}:${basics}:${subskill}`;
+            if (Object.hasOwn(readers, fixtureKey)) {
+              return Promise.resolve(readers[fixtureKey]);
+            }
             return Promise.resolve({
               mode,
               basics,
@@ -126,6 +135,10 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
             });
           }
           if (name === "CalcTrainingCosts") {
+            const fixtureKey = `${name}:${args.join(":")}`;
+            if (Object.hasOwn(readers, fixtureKey)) {
+              return Promise.resolve(readers[fixtureKey]);
+            }
             return Promise.resolve(Array.from({ length: 20 }, (_, i) => ({
               slot: i + 1,
               basic: (i + 1) * 10,
@@ -173,6 +186,11 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       emit,
       calls: (m?: string) => (m ? calls.filter((c) => c.method === m) : calls.slice()),
       listeners: (event) => listeners.get(event)?.size ?? 0,
+      setReader: (method, value) => { readers[method] = value; },
+      setInputChainStatus: (status) => {
+        inputChainStatus = status;
+        inputChainActive = status.active;
+      },
     };
     // test.ts fails a test on this console line, same as an unhandled GuiApp
     // call — a swallowed rejection in the app would otherwise pass silently.
@@ -201,9 +219,12 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       // Login (no accounts) or account select (accounts) — either is "booted".
       await expect(page.getByText("PRAETOR").first()).toBeVisible();
     },
-    async connect() {
+    async enterGame() {
       await events([{ kind: "conn", conn: { state: "connected" } }]);
       await expect(input).toBeVisible();
+    },
+    async connect() {
+      await backend.enterGame();
     },
     events,
     async text(items) {
@@ -219,6 +240,18 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
     },
     async args(method) {
       return (await backend.calls(method)).map((c) => c.args);
+    },
+    async setReader(method, value) {
+      await page.evaluate(
+        ([readerMethod, readerValue]) => window.__praetorFake!.setReader(readerMethod, readerValue),
+        [method, value] as const,
+      );
+    },
+    async setInputChainStatus(status) {
+      await page.evaluate(
+        (nextStatus) => window.__praetorFake!.setInputChainStatus(nextStatus),
+        status,
+      );
     },
   };
   return backend;

@@ -25,5 +25,8 @@ jobs:
       - name: Test
         run: go test ./... -count=1 -timeout=60s
 
+      - name: Test release automation
+        run: python3 -m unittest discover -s .github/scripts -p '*_test.py'
+
       - name: Build
         run: go build ./cmd/praetor/
