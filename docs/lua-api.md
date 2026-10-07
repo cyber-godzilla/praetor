@@ -103,6 +103,7 @@ return S
 The `match` field supports:
 - **Literal substrings**: `'You attack'` matches any text containing that string
 - **Wildcards**: `'Your * absorbs'` where `*` matches any characters, `?` matches a single character
+- **Line anchors**: `'^You attack'` matches only at the start of a line, `'falls.$'` only at the end, and `'^exact text$'` the whole line; anchors combine with wildcards
 - **Multiple patterns**: `{'pattern1', 'pattern2'}` matches if any pattern matches
 
 Matching is case-sensitive. The first reaction with a matching pattern wins — subsequent reactions are not checked.

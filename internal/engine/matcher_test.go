@@ -84,6 +84,43 @@ func TestMatcher_WildcardQuestion(t *testing.T) {
 	}
 }
 
+func TestMatcher_Anchors(t *testing.T) {
+	m := NewMatcher()
+
+	tests := []struct {
+		name    string
+		pattern string
+		text    string
+		want    bool
+	}{
+		{name: "literal start match", pattern: "^You attack", text: "You attack the bandit", want: true},
+		{name: "literal start rejects embedded", pattern: "^You attack", text: "A bandit says: You attack poorly", want: false},
+		{name: "literal end match", pattern: "leaves.$", text: "The bandit leaves.", want: true},
+		{name: "literal end rejects trailing text", pattern: "leaves.$", text: "The bandit leaves. Suddenly", want: false},
+		{name: "literal exact match", pattern: "^You are ready.$", text: "You are ready.", want: true},
+		{name: "literal exact rejects prefix", pattern: "^You are ready.$", text: "Now You are ready.", want: false},
+		{name: "literal exact rejects suffix", pattern: "^You are ready.$", text: "You are ready. Go", want: false},
+		{name: "wildcard start match", pattern: "^You can't *", text: "You can't attack the corpse", want: true},
+		{name: "wildcard start rejects quoted text", pattern: "^You can't *", text: `A marauder laughs, "You can't penetrate my defenses."`, want: false},
+		{name: "wildcard end match", pattern: "You * the corpse$", text: "You slash the corpse", want: true},
+		{name: "wildcard end rejects suffix", pattern: "You * the corpse$", text: "You slash the corpse again", want: false},
+		{name: "wildcard exact match", pattern: "^You * the corpse$", text: "You slash the corpse", want: true},
+		{name: "wildcard exact rejects prefix", pattern: "^You * the corpse$", text: "Then You slash the corpse", want: false},
+		{name: "internal caret remains literal", pattern: "rank ^ bonus", text: "Your rank ^ bonus rises", want: true},
+		{name: "internal dollar remains literal", pattern: "cost $5 today", text: "The cost $5 today", want: true},
+		{name: "empty exact pattern", pattern: "^$", text: "", want: true},
+		{name: "empty exact rejects text", pattern: "^$", text: "anything", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := m.Match(m.Compile(tt.pattern), tt.text); got != tt.want {
+				t.Errorf("Match(Compile(%q), %q) = %v, want %v", tt.pattern, tt.text, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMatcher_RegexCharsEscaped(t *testing.T) {
 	m := NewMatcher()
 
@@ -159,7 +196,7 @@ func TestMatcher_CacheReuse(t *testing.T) {
 	cp2 := m.Compile("You take")
 
 	// Both should produce the same result
-	if cp1.literal != cp2.literal {
+	if cp1 != cp2 {
 		t.Error("expected cached pattern to be identical")
 	}
 }
