@@ -9,7 +9,6 @@
     MOBILE_LAYOUT_QUERY,
     outerPageHasVerticalDrift,
   } from "../lib/mobile";
-  import { resolveModeName } from "../lib/modes";
   import { searchBackward, dropLastChar } from "../lib/histsearch";
   import { parseNotesCommand, formatNotesList } from "../lib/notescmd";
   import { insertsNewline, caretOnFirstLine, caretOnLastLine } from "../lib/multiline";
@@ -498,25 +497,6 @@
       }
       return;
     }
-    if (lower.startsWith("/mode ") || lower.startsWith("/sm ")) {
-      const parts = trimmed.split(/\s+/);
-      const raw = parts[1];
-      const args = parts.slice(2);
-      const mode = raw ? resolveModeName(raw, store.modeNames) : raw;
-      if (raw && mode === null) {
-        store.addToast("Unknown mode", `"${raw}" — type /list to see available modes`);
-        pushHistory(line);
-        return;
-      }
-      try {
-        await api.setMode(mode ?? "", args);
-      } catch (e) {
-        store.addToast("Mode error", String(e));
-      }
-      pushHistory(line);
-      return;
-    }
-
     // Everything else routes through the typed-input processor. ${name} and
     // ${name:fallback} variables apply to single- and multi-line input, action
     // buttons, and /send files. ;; / && chains and $() control steps apply only to

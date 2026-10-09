@@ -24,6 +24,19 @@ test("Enter sends the typed command and clears the input", async ({ page, backen
   await expect(backend.input).toHaveValue("");
 });
 
+test("typed mode arguments reach the shared command parser unchanged", async ({ page, backend }) => {
+  await backend.input.fill("/mode unlock_all sack");
+  await page.keyboard.press("Enter");
+  await backend.input.fill('/mode unlock_all from:"2 sack"');
+  await page.keyboard.press("Enter");
+
+  await expect.poll(() => backend.args("SendInput")).toEqual([
+    ["/mode unlock_all sack"],
+    ['/mode unlock_all from:"2 sack"'],
+  ]);
+  expect(await backend.args("SetMode")).toEqual([]);
+});
+
 test("the Automation Bar gives PraetorScript the full space left of its controls", async ({ page, backend }) => {
   const controls = page.getByTestId("input-controls");
   const placeholder = page.getByTestId("chain-status-placeholder");
