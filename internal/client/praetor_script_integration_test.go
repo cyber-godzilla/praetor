@@ -127,7 +127,7 @@ func TestLuaPraetorScriptCanRunLocalModeCommandWithoutDeadlock(t *testing.T) {
 		"source": `
 local M = {}
 M.on_start = function(args)
-    praetor_script([[/mode target alpha beta]])
+    praetor_script([[/mode target alpha "2 sack"]])
 end
 M.reactions = {}
 return M
@@ -146,7 +146,7 @@ return M
 	connectTestSession(t, c, wsURL)
 
 	c.Engine.SetMode("source", nil)
-	receiveCommand(t, received, "args alpha|beta")
+	receiveCommand(t, received, "args alpha|2 sack")
 	if got := c.Engine.CurrentMode(); got != "target" {
 		t.Fatalf("CurrentMode = %q, want target", got)
 	}

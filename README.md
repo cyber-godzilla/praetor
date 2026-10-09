@@ -237,6 +237,11 @@ Nothing opens automatically; choose a link in the popup to open it.
 | `/notes` | Freeform notepad — add / open / delete / list (GUI) |
 | `/help` | Show the help screen |
 
+Local command arguments can be grouped with double quotes. Quotes may wrap a
+whole argument or only a named option's value, so both `"2 sack"` and
+`from:"2 sack"` are passed as one argument. Inside quotes, use `\"` for a
+literal quote and `\\` for a literal backslash.
+
 ### Menu (Esc)
 
 The pause menu provides access to all settings:

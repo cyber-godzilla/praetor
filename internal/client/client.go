@@ -594,7 +594,10 @@ func (c *Client) validateLocalCommand(input string) error {
 	if !strings.HasPrefix(input, "/") {
 		return nil
 	}
-	parts := strings.Fields(input)
+	parts, err := commandinput.SplitWords(input)
+	if err != nil {
+		return err
+	}
 	if len(parts) == 0 {
 		return nil
 	}
@@ -1548,7 +1551,11 @@ func (c *Client) sendNotification(title, message string) {
 
 // handleLocalCommand parses and executes slash commands.
 func (c *Client) handleLocalCommand(input string) {
-	parts := strings.Fields(input)
+	parts, err := commandinput.SplitWords(input)
+	if err != nil {
+		log.Printf("[CLIENT] invalid command arguments: %v", err)
+		return
+	}
 	if len(parts) == 0 {
 		return
 	}

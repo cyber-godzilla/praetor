@@ -1265,6 +1265,15 @@ func (a *App) ShowModeError(name string, modes []string) {
 	a.tabs[0].Pane.Append(hr)
 }
 
+// ShowCommandError displays a local command parsing error as a system message.
+func (a *App) ShowCommandError(message string) {
+	a.tabs[0].Pane.Append([]types.StyledSegment{{
+		Text:  message,
+		Bold:  true,
+		Color: "#ff5555",
+	}})
+}
+
 // ShowModeList displays available modes as a system message in the output.
 func (a *App) ShowModeList(modes []string) {
 	var segments []types.StyledSegment

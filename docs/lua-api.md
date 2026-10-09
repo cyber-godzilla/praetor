@@ -45,6 +45,11 @@ M.reactions = {
 return M
 ```
 
+Mode arguments use double quotes for word grouping. Quotes can wrap a whole
+argument or only the value portion of an option: `/mode unlock_all
+from:"2 sack"` passes `from:2 sack` as one entry in `args`. Within quoted
+text, `\"` represents a literal quote and `\\` represents a literal backslash.
+
 ### Mode Metadata
 
 Four optional fields let a mode describe itself to the client. They are read

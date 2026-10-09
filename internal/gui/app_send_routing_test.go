@@ -325,17 +325,15 @@ func TestSendInput_ActionModeCommandValidatesAndPassesExpandedArgs(t *testing.T)
 		"target": "scarred bandit",
 	})
 
-	if err := a.SendInput("/mode ${mode} ${target}"); err != nil {
+	if err := a.SendInput(`/mode ${mode} from:"${target}"`); err != nil {
 		t.Fatalf("SendInput(valid /mode): %v", err)
 	}
 	if got := a.client().Engine.CurrentMode(); got != "aggro" {
 		t.Fatalf("CurrentMode() = %q, want canonical %q", got, "aggro")
 	}
 	queued, _, ok := a.client().Engine.Queue().DequeueGen()
-	if !ok || queued.Command != "arg scarred" {
-		// Slash-command args follow shell-style whitespace splitting, so the mode
-		// receives "scarred" and "bandit" as separate arguments.
-		t.Fatalf("queued mode output = %+v, %v; want first arg %q", queued, ok, "arg scarred")
+	if !ok || queued.Command != "arg from:scarred bandit" {
+		t.Fatalf("queued mode output = %+v, %v; want first arg %q", queued, ok, "arg from:scarred bandit")
 	}
 	select {
 	case got := <-recv:

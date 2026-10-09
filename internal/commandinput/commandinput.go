@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
@@ -14,6 +16,70 @@ import (
 // MaxCommands limits one typed line so an accidental paste cannot enqueue an
 // unbounded burst of commands.
 const MaxCommands = 100
+
+// SplitWords separates command arguments on whitespace while honoring
+// double-quoted word groups. Quotes may wrap a whole argument or only part of
+// one, so from:"2 sack" becomes the single argument "from:2 sack". Inside
+// quotes, \" and \\ use the same escaping rules as PraetorScript directives;
+// other backslashes are preserved.
+func SplitWords(input string) ([]string, error) {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	inQuote := false
+
+	for i := 0; i < len(input); {
+		if inQuote {
+			switch input[i] {
+			case '"':
+				inQuote = false
+				inWord = true
+				i++
+				continue
+			case '\\':
+				if i+1 < len(input) && (input[i+1] == '"' || input[i+1] == '\\') {
+					word.WriteByte(input[i+1])
+					i += 2
+					continue
+				}
+			}
+			word.WriteByte(input[i])
+			inWord = true
+			i++
+			continue
+		}
+
+		switch input[i] {
+		case '"':
+			inQuote = true
+			inWord = true
+			i++
+			continue
+		}
+
+		r, size := utf8.DecodeRuneInString(input[i:])
+		if unicode.IsSpace(r) {
+			if inWord {
+				words = append(words, word.String())
+				word.Reset()
+				inWord = false
+			}
+			i += size
+			continue
+		}
+		word.WriteString(input[i : i+size])
+		inWord = true
+		i += size
+	}
+
+	if inQuote {
+		return nil, fmt.Errorf("unterminated quoted string")
+	}
+	if inWord {
+		words = append(words, word.String())
+	}
+	return words, nil
+}
 
 // WaitMode controls what must happen before a command after the first one is
 // dispatched.

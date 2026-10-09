@@ -17,6 +17,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/cyber-godzilla/praetor/internal/client"
+	"github.com/cyber-godzilla/praetor/internal/commandinput"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/kitty"
@@ -213,7 +214,11 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Handle /mode and /sm locally so we can validate before switching.
 		if strings.HasPrefix(inputCmd, "/mode ") || strings.HasPrefix(inputCmd, "/sm ") {
-			parts := strings.Fields(msg.Value)
+			parts, err := commandinput.SplitWords(msg.Value)
+			if err != nil {
+				w.app.ShowCommandError(err.Error())
+				return w, nil
+			}
 			if len(parts) >= 2 {
 				mode := parts[1]
 				var args []string

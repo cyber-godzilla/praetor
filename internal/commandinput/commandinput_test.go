@@ -7,6 +7,45 @@ import (
 	"time"
 )
 
+func TestSplitWords(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want []string
+	}{
+		{name: "plain fields", in: "  /mode  unlock_all\tfrom:wagon ", want: []string{"/mode", "unlock_all", "from:wagon"}},
+		{name: "quoted word", in: `/mode unlock_all "2 sack"`, want: []string{"/mode", "unlock_all", "2 sack"}},
+		{name: "quoted option value", in: `/mode unlock_all from:"2 sack" reject:"worn large sack"`, want: []string{"/mode", "unlock_all", "from:2 sack", "reject:worn large sack"}},
+		{name: "adjacent fragments", in: `one" two "three`, want: []string{"one two three"}},
+		{name: "empty quoted word", in: `one "" three`, want: []string{"one", "", "three"}},
+		{name: "quoted escapes", in: `say:"go \"now\"" path:"C:\\scripts"`, want: []string{`say:go "now"`, `path:C:\scripts`}},
+		{name: "other quoted backslash preserved", in: `value:"a\tb"`, want: []string{`value:a\tb`}},
+		{name: "unicode whitespace", in: "one\u2003two", want: []string{"one", "two"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := SplitWords(tt.in)
+			if err != nil {
+				t.Fatalf("SplitWords: %v", err)
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("words = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSplitWordsRejectsUnterminatedQuote(t *testing.T) {
+	got, err := SplitWords(`/mode unlock_all from:"2 sack`)
+	if err == nil {
+		t.Fatalf("SplitWords returned %#v, nil; want error", got)
+	}
+	if got != nil {
+		t.Fatalf("words = %#v, want nil on validation failure", got)
+	}
+}
+
 func TestExpand(t *testing.T) {
 	tests := []struct {
 		name string
