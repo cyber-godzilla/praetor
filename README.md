@@ -67,9 +67,28 @@ Linux packages install all three binaries: `praetor` (GUI), `praetor-tui` (termi
 ### Homebrew (macOS)
 
 ```bash
+brew tap cyber-godzilla/tap
+brew trust --cask cyber-godzilla/tap/praetor
 brew install --cask cyber-godzilla/tap/praetor      # desktop GUI (→ /Applications)
 brew install cyber-godzilla/tap/praetor-tui         # terminal client
 ```
+
+Homebrew 6 requires trust for packages from third-party taps. The
+`brew trust --cask` command above trusts only the Praetor desktop cask, not every
+package in the tap.
+
+The desktop app is intentionally unsigned and unnotarized. After installation,
+try to open **Praetor** once, then open **System Settings → Privacy & Security**,
+scroll to **Security**, and click **Open Anyway** for Praetor. Authenticate and
+confirm **Open** when prompted. You can also Control-click **Praetor** in
+Applications, choose **Open**, and confirm the exception. macOS remembers this
+choice for the app.
+
+There are no plans to sign or notarize Praetor. Apple's Developer ID enrollment
+would expose CyberGodzilla's real identity and, through the required business
+identity records, home address to the community. The one-time macOS security
+exception preserves the maintainer's privacy while leaving the source and
+release artifacts available for public inspection.
 
 Upgrading from the old terminal `praetor` formula? `brew upgrade` migrates it to the GUI cask automatically (the tap ships a formula→cask migration). If for any reason it doesn't, do it manually:
 
