@@ -91,7 +91,9 @@ commands:
     target: scarred bandit
 ```
 
-High priority commands can be configured via Esc → Priority Commands. When a high-priority command is queued, it's inserted at the front (after other high-priority items) instead of the back.
+High priority commands can be configured via Esc → Automation → High-Priority
+Commands. When a high-priority command is queued, it's inserted at the front
+(after other high-priority items) instead of the back.
 
 ### PraetorScript
 
@@ -115,7 +117,7 @@ Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
 roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
 for an unbusy response plus the configured 100 ms default before sending
 `climb wall`, then waits the configured `;;` delay (900 ms by default) before
-sending `look`. Change either delay under Esc → Display & Behavior → Settings.
+sending `look`. Change either delay under Esc → Behavior → Settings.
 Each unbusy response advances one pending chain in submission order.
 Recognized responses mirror `praetor-scripts`: no longer busy, no longer
 stunned, wield/grab/already-wielding confirmations, successful training, and

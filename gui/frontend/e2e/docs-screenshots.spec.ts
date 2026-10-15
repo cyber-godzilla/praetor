@@ -264,7 +264,7 @@ test("render documentation screenshots from deterministic sample data", async ({
   // frame, so the wiki cannot silently drift to hand-built mockups.
   await page.setViewportSize({ width: 1200, height: 900 });
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toContainText("Display & Behavior");
+  await expect(page.getByRole("dialog")).toContainText("Text Parsing and Display");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-menu.png"),
     animations: "disabled",

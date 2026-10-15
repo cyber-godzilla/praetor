@@ -74,7 +74,7 @@ Text matching any include rule will appear in both the All tab and your custom t
 Priority commands skip to the front of the command queue, executing before other queued commands. Useful for defensive or emergency actions.
 
 1. Press **Esc** to open the menu
-2. Select **Priority Commands** (under Scripts)
+2. Select **High-Priority Commands** under **Automation**
 3. Press **A** to add a command
 4. Type the exact command string (e.g., `flee`)
 5. Press **Enter** to confirm
