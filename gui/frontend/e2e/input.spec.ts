@@ -1,5 +1,6 @@
 import { test, expect } from "./test";
 import type { Locator } from "@playwright/test";
+import { baseInit, makeConfig } from "./fixtures";
 
 async function bounds(locator: Locator) {
   const result = await locator.boundingBox();
@@ -35,6 +36,33 @@ test("typed mode arguments reach the shared command parser unchanged", async ({ 
     ['/mode unlock_all from:"2 sack"'],
   ]);
   expect(await backend.args("SetMode")).toEqual([]);
+});
+
+test.describe("retain input after send", () => {
+  const retainConfig = makeConfig();
+  retainConfig.UI.KeepInputOnSend = true;
+  test.use({ init: { ...baseInit, config: retainConfig } });
+
+  test("retains game commands but clears /sm and /mode commands", async ({ page, backend }) => {
+    await backend.input.fill("look");
+    await page.keyboard.press("Enter");
+    await expect(backend.input).toHaveValue("look");
+
+    await backend.input.fill("/sm hunt");
+    await page.keyboard.press("Enter");
+    await expect(backend.input).toHaveValue("");
+    await expect(page.getByTestId("e2e-hint")).toHaveCount(0);
+
+    await backend.input.fill("/mode hunt_wolves");
+    await page.keyboard.press("Enter");
+    await expect(backend.input).toHaveValue("");
+
+    await expect.poll(() => backend.args("SendInput")).toEqual([
+      ["look"],
+      ["/sm hunt"],
+      ["/mode hunt_wolves"],
+    ]);
+  });
 });
 
 test("the Automation Bar gives PraetorScript the full space left of its controls", async ({ page, backend }) => {

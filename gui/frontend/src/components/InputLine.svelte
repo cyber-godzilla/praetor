@@ -405,7 +405,14 @@
       if (history.length > 200) history.shift();
     }
     histIdx = -1;
-    if (store.config?.UI?.KeepInputOnSend && line !== "") {
+    // Mode switches are control actions rather than useful repeatable game
+    // input. Always clear them after submission so a retained `/sm` or `/mode`
+    // does not leave its completion hint covering the newest output line.
+    const withoutTrailingNewlines = line.replace(/[\r\n]+$/, "");
+    const isSingleLineModeSwitch =
+      !/[\r\n]/.test(withoutTrailingNewlines) &&
+      /^\s*\/(?:mode|sm)(?:\s|$)/i.test(withoutTrailingNewlines);
+    if (store.config?.UI?.KeepInputOnSend && line !== "" && !isSingleLineModeSwitch) {
       // Keep the sent line and select it all: Enter re-sends it verbatim,
       // while any typing or Backspace replaces the whole thing. Assigning
       // `line` (not leaving `value` be) makes the kept text exactly what was
