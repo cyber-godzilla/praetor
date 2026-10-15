@@ -204,6 +204,24 @@ test("the sidebar Variables tab saves command variables", async ({ page, backend
   ]);
 });
 
+test("saved variable events live-update an open Variables tab", async ({ page, backend }) => {
+  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Variables" }).click();
+  await expect(page.getByText("No variables configured.")).toBeVisible();
+
+  await backend.events([{
+    kind: "variable",
+    variable: { name: "target", value: "scarred bandit" },
+  }]);
+  await expect(page.getByRole("textbox", { name: "Variable name" })).toHaveValue("target");
+  await expect(page.getByRole("textbox", { name: "Value for target" })).toHaveValue("scarred bandit");
+
+  await backend.events([{
+    kind: "variable",
+    variable: { name: "target", value: "hooded figure" },
+  }]);
+  await expect(page.getByRole("textbox", { name: "Value for target" })).toHaveValue("hooded figure");
+});
+
 test("the Escape menu Variables area saves command variables", async ({ page, backend }) => {
   await page.keyboard.press("Escape");
   let dialog = page.getByRole("dialog");

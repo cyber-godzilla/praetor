@@ -17,6 +17,16 @@
   let dirty = $state(false);
   let saving = $state(false);
 
+  // /set-variable and PraetorScript variable steps arrive as live store
+  // events. Refresh an untouched editor immediately; once the user has a
+  // local draft, leave it alone until they save or remount the editor.
+  $effect(() => {
+    const entries = Object.entries(store.config?.Commands?.Variables ?? {})
+      .sort(([a], [b]) => a.localeCompare(b));
+    if (dirty) return;
+    rows = entries.map(([name, value]) => ({ id: nextId++, name, value }));
+  });
+
   const namePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
   const validation = $derived.by(() => {
     const seen = new Set<string>();
