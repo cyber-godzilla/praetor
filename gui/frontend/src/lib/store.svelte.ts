@@ -17,6 +17,7 @@ import type {
   SuppressPayload,
   WireEvent,
   CredentialStoreStatus,
+  ColorwordStyle,
 } from "./types";
 import { Kind } from "./types";
 import type { DisplayMode } from "./display";
@@ -38,6 +39,7 @@ export interface Line {
   id: number;
   segments: Segment[];
   isEcho: boolean;
+  speechSpeaker?: string;
   suppressed?: { placeholder: Segment[]; original: Segment[]; revealed: boolean };
 }
 
@@ -112,6 +114,7 @@ class AppStore {
   config = $state<AppConfig | null>(null);
   modeNames = $state<string[]>([]);
   modeSpecs = $state<ModeSpec[]>([]);
+  colorwordStyles = $state<ColorwordStyle[]>([]);
   hasModes = $state(false);
 
   tabs = $state<Tab[]>([]);
@@ -158,6 +161,9 @@ class AppStore {
   // True while the custom right-click context menu is open, so the game view's
   // Escape handler yields to it instead of opening the app menu.
   contextMenuOpen = $state(false);
+  // Character inferred from a right-clicked speech line. SpeechColorsModal
+  // consumes this once and seeds a new rule when one does not already exist.
+  speechColorPrefill = $state("");
   // Current Actions-tab set index. Ephemeral (not persisted): lifted out of
   // ActionsTab so the add-action modal can target the shown set and the
   // add-set modal can select the newly created set.
@@ -267,7 +273,12 @@ class AppStore {
   }
 
   private ingestText(p: TextPayload) {
-    const line: Line = { id: this.nextLineId++, segments: p.segments ?? [], isEcho: !!p.isEcho };
+    const line: Line = {
+      id: this.nextLineId++,
+      segments: p.segments ?? [],
+      isEcho: !!p.isEcho,
+      speechSpeaker: p.speechSpeaker,
+    };
     const mark = (p.text ?? "").trim() !== "";
     for (const tab of this.tabs) {
       if (tab.kind === "all") {
@@ -285,6 +296,7 @@ class AppStore {
       id: this.nextLineId++,
       segments: p.placeholderStyled ?? [],
       isEcho: false,
+      speechSpeaker: p.speechSpeaker,
       suppressed: { placeholder: p.placeholderStyled ?? [], original: p.originalStyled ?? [], revealed: false },
     };
     const mark = (p.originalText ?? "").trim() !== "";
@@ -355,6 +367,7 @@ class AppStore {
     this.mobileCommandInputActive = false;
     this.openModal = null;
     this.contextMenuOpen = false;
+    this.speechColorPrefill = "";
     this.actionSetIndex = 0;
     this.searchOpen = false;
     this.histSearchActive = false;
@@ -430,7 +443,8 @@ class AppStore {
         this.connState === "disconnected" &&
         ev.kind !== Kind.Conn &&
         ev.kind !== Kind.Notify &&
-        ev.kind !== Kind.Error
+        ev.kind !== Kind.Error &&
+        ev.kind !== Kind.Variable
       ) {
         continue;
       }
@@ -458,6 +472,15 @@ class AppStore {
           break;
         case Kind.Error:
           if (ev.error) this.addToast("Error: " + ev.error.context, ev.error.error);
+          break;
+        case Kind.Variable:
+          if (ev.variable && this.config?.Commands) {
+            this.config.Commands.Variables = {
+              ...(this.config.Commands.Variables ?? {}),
+              [ev.variable.name]: ev.variable.value,
+            };
+            this.addToast("Variable saved", `${ev.variable.name} = ${ev.variable.value}`);
+          }
           break;
         case Kind.Minimap:
           if (ev.image) this.minimap = ev.image.dataURI;

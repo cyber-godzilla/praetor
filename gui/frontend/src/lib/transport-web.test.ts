@@ -40,6 +40,7 @@ describe("web transport operation parity", () => {
       SetMobileLowercaseFirstLetter: "mobile-lowercase-first-letter",
       SetMobileOutputFontSize: "mobile-output-font-size",
       SetRetainAppLogs: "retain-app-logs",
+      SetSpeechColors: "speech-colors",
     });
   });
 

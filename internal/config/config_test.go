@@ -1044,6 +1044,10 @@ func TestSaveLoadListsRoundTrip(t *testing.T) {
 	c.Ignorelist.Think = []string{"carol"}
 	c.Commands.HighPriority = []string{"flee", "quaff"}
 	c.Scripts = []string{"~/one/scripts", "~/two/scripts"}
+	c.SpeechColors = []SpeechColorConfig{
+		{Character: "Apula", Style: "cinnabar", Active: true, IncludeThink: true},
+		{Character: "Constantine", Style: "oranges", Active: true, IncludeOOC: true},
+	}
 
 	if err := Save(c, path); err != nil {
 		t.Fatalf("Save() error: %v", err)
@@ -1064,6 +1068,28 @@ func TestSaveLoadListsRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loaded.Scripts, c.Scripts) {
 		t.Errorf("Scripts not persisted: got %v want %v", loaded.Scripts, c.Scripts)
+	}
+	if !reflect.DeepEqual(loaded.SpeechColors, c.SpeechColors) {
+		t.Errorf("SpeechColors not persisted: got %v want %v", loaded.SpeechColors, c.SpeechColors)
+	}
+}
+
+func TestValidateSpeechColors(t *testing.T) {
+	c := Defaults()
+	c.SpeechColors = []SpeechColorConfig{
+		{Character: " Apula ", Style: "CINNABAR", Active: true, IncludeThink: true, IncludeOOC: true},
+		{Character: "apula", Style: "rainbow", Active: true},
+		{Character: "Constantine", Style: "not-a-color", Active: true},
+		{Character: " ", Style: "red", Active: true},
+	}
+	if err := c.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if len(c.SpeechColors) != 1 {
+		t.Fatalf("validated SpeechColors = %+v, want one valid unique rule", c.SpeechColors)
+	}
+	if got := c.SpeechColors[0]; got.Character != "Apula" || got.Style != "cinnabar" || !got.Active || !got.IncludeThink || !got.IncludeOOC {
+		t.Fatalf("validated rule = %+v", got)
 	}
 }
 

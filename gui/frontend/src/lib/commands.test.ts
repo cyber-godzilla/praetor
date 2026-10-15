@@ -286,6 +286,7 @@ describe("completionFor", () => {
   const mode = COMMANDS.find((c) => c.name === "/mode")!;
   const help = COMMANDS.find((c) => c.name === "/help")!;
   const set = COMMANDS.find((c) => c.name === "/set")!;
+  const setVariable = COMMANDS.find((c) => c.name === "/set-variable")!;
   const berserk: CommandSpec = { name: "/mode berserk", desc: "" };
   const smBerserk: CommandSpec = { name: "/sm berserk", desc: "" };
 
@@ -297,6 +298,7 @@ describe("completionFor", () => {
   it("completes to the alias being typed, not the canonical name", () => {
     expect(completionFor("/s", mode)).toBe("/sm ");
     expect(completionFor("/sm", mode)).toBe("/sm ");
+    expect(completionFor("/set-var", setVariable)).toBe("/set-var ");
   });
 
   it("completes a mode row from the command or a partial name", () => {

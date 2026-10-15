@@ -118,6 +118,7 @@
       store.config = init.config;
       store.modeNames = init.modeNames ?? [];
       store.modeSpecs = init.modeSpecs ?? [];
+      store.colorwordStyles = init.colorwordStyles ?? [];
       store.hasModes = init.hasModes;
       store.displayMode = normalizeDisplayMode(init.config?.UI?.DisplayMode);
       store.rebuildTabs(init.config?.UI?.CustomTabs);

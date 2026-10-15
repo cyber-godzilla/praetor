@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -22,15 +23,21 @@ const EventChannel = "praetor:events"
 func toWire(ev types.Event) (WireEvent, bool) {
 	switch e := ev.(type) {
 	case types.GameTextEvent:
+		speaker, _ := speechcolor.Speaker(e.Text)
+		if e.IsEcho {
+			speaker = ""
+		}
 		return WireEvent{Kind: KindText, Text: &TextPayload{
-			Text:      e.Text,
-			Segments:  toSegments(e.Styled),
-			Raw:       e.Raw,
-			IsEcho:    e.IsEcho,
-			Timestamp: unixMillis(e.Timestamp),
+			Text:          e.Text,
+			Segments:      toSegments(e.Styled),
+			Raw:           e.Raw,
+			IsEcho:        e.IsEcho,
+			SpeechSpeaker: speaker,
+			Timestamp:     unixMillis(e.Timestamp),
 		}}, true
 
 	case types.SuppressedGameTextEvent:
+		speaker, _ := speechcolor.Speaker(e.OriginalText)
 		return WireEvent{Kind: KindSuppressed, Suppressed: &SuppressPayload{
 			Channel:           int(e.Channel),
 			SourceName:        e.SourceName,
@@ -38,6 +45,7 @@ func toWire(ev types.Event) (WireEvent, bool) {
 			PlaceholderStyled: toSegments(e.PlaceholderStyled),
 			OriginalText:      e.OriginalText,
 			OriginalStyled:    toSegments(e.OriginalStyled),
+			SpeechSpeaker:     speaker,
 			Timestamp:         unixMillis(e.Timestamp),
 		}}, true
 
@@ -68,6 +76,11 @@ func toWire(ev types.Event) (WireEvent, bool) {
 			msg = e.Err.Error()
 		}
 		return WireEvent{Kind: KindError, Error: &ErrorPayload{Context: e.Context, Error: msg}}, true
+
+	case types.InputVariableSetEvent:
+		return WireEvent{Kind: KindVariable, Variable: &VariablePayload{
+			Name: e.Name, Value: e.Value,
+		}}, true
 
 	case types.WikiOpenMenuEvent:
 		return WireEvent{Kind: KindOpenMenu, OpenMenu: "wiki"}, true

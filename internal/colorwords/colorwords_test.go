@@ -611,3 +611,54 @@ func BenchmarkApplyColorWords(b *testing.B) {
 		_ = ApplyColorWords(segs[i%len(segs)])
 	}
 }
+
+func TestCatalogIncludesSolidFamilyAndSpecialStyles(t *testing.T) {
+	tests := []struct {
+		name, family, kind string
+	}{
+		{"cinnabar", "Reds", "solid"},
+		{"oranges", "Special", "alternating"},
+		{"rainbow", "Special", "rainbow"},
+	}
+	for _, tc := range tests {
+		style, ok := LookupStyle(tc.name)
+		if !ok {
+			t.Fatalf("LookupStyle(%q) did not find a catalog entry", tc.name)
+		}
+		if style.Family != tc.family || style.Kind != tc.kind {
+			t.Errorf("LookupStyle(%q) = family %q kind %q, want %q/%q", tc.name, style.Family, style.Kind, tc.family, tc.kind)
+		}
+	}
+}
+
+func TestApplyStyleColorsWholeLineAndPreservesText(t *testing.T) {
+	input := []types.StyledSegment{
+		{Text: "Apula says, ", Bold: true},
+		{Text: "\"hello\"", Italic: true},
+	}
+	for _, styleName := range []string{"cinnabar", "oranges", "rainbow"} {
+		out := ApplyStyle(input, styleName)
+		var text strings.Builder
+		for _, segment := range out {
+			text.WriteString(segment.Text)
+			if segment.Text != "" && segment.Color == "" {
+				t.Errorf("%s left non-empty segment uncolored: %+v", styleName, segment)
+			}
+		}
+		if text.String() != "Apula says, \"hello\"" {
+			t.Errorf("%s reassembled to %q", styleName, text.String())
+		}
+	}
+}
+
+func TestCatalogReturnsDefensiveCopy(t *testing.T) {
+	first := Catalog()
+	if len(first) == 0 {
+		t.Fatal("Catalog returned no styles")
+	}
+	first[0].Colors[0] = "changed"
+	second := Catalog()
+	if second[0].Colors[0] == "changed" {
+		t.Fatal("Catalog exposed mutable color storage")
+	}
+}

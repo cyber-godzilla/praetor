@@ -14,6 +14,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/engine"
 	"github.com/cyber-godzilla/praetor/internal/session"
+	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
 
@@ -57,6 +58,12 @@ type GuiApp struct {
 	// colorWords is read on the per-line hot path in the event loop and
 	// written by SetColorWords, so it is atomic to avoid a data race.
 	colorWords atomic.Bool
+	// speechColors stores an immutable []config.SpeechColorConfig snapshot for
+	// the per-line rendering path. SetSpeechColors replaces the whole value.
+	speechColors atomic.Value
+	// inputVariables stores the immutable variable snapshot used by speech-color
+	// character patterns. SetInputVariables replaces the whole value.
+	inputVariables atomic.Value
 	// kudosQueueAtConnect snapshots the queued-kudos count for the current
 	// connection. It is refreshed on ConnectedEvent under mu so the event loop
 	// can check it without racing Wails config mutations.
@@ -101,6 +108,11 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 		eventLimit:          guiEventBacklogLimit(deps.Config.UI.Scrollback),
 	}
 	a.colorWords.Store(deps.Config.UI.ColorWords)
+	a.speechColors.Store(cloneSpeechColors(deps.Config.SpeechColors))
+	a.inputVariables.Store(cloneStringMap(deps.Config.Commands.Variables))
+	if deps.Client != nil && deps.ConfigPath != "" {
+		deps.Client.SetInputVariableSaver(a.SetInputVariables)
+	}
 	return a
 }
 
@@ -412,9 +424,14 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 			disconnected = true
 		}
 
-		// Apply color-word coloring (if enabled) before conversion, mirroring
-		// the TUI order (color words -> highlights -> IP mask; highlights and
-		// masking happen in the frontend renderer).
+		// A character's speech style supplies the base color for the whole line.
+		// Colorwords then override individual color phrases, and the frontend's
+		// configured highlights/search remain the final visual layers.
+		ev = withSpeechColors(
+			ev,
+			a.speechColors.Load().([]config.SpeechColorConfig),
+			a.inputVariables.Load().(map[string]string),
+		)
 		if a.colorWords.Load() {
 			ev = withColorWords(ev)
 		}
@@ -430,6 +447,25 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 		}
 	}
 	a.emit(wire)
+}
+
+func withSpeechColors(ev types.Event, rules []config.SpeechColorConfig, variables map[string]string) types.Event {
+	if len(rules) == 0 {
+		return ev
+	}
+	switch e := ev.(type) {
+	case types.GameTextEvent:
+		if e.IsEcho {
+			return ev
+		}
+		e.Styled = speechcolor.Apply(e.Styled, e.Text, rules, variables)
+		return e
+	case types.SuppressedGameTextEvent:
+		e.OriginalStyled = speechcolor.Apply(e.OriginalStyled, e.OriginalText, rules, variables)
+		return e
+	default:
+		return ev
+	}
 }
 
 // claimNewUserWelcome persists and claims the one-time welcome popup after a
@@ -493,14 +529,15 @@ func withColorWords(ev types.Event) types.Event {
 // InitState is the snapshot the frontend fetches on load to render the initial
 // screen (account select vs. login) and seed its settings.
 type InitState struct {
-	Version         string                `json:"version"`
-	Debug           bool                  `json:"debug"`
-	Accounts        []string              `json:"accounts"`
-	CredentialStore CredentialStoreStatus `json:"credentialStore"`
-	HasModes        bool                  `json:"hasModes"`
-	ModeNames       []string              `json:"modeNames"`
-	ModeSpecs       []engine.ModeSpec     `json:"modeSpecs"`
-	Config          *config.Config        `json:"config"`
+	Version         string                   `json:"version"`
+	Debug           bool                     `json:"debug"`
+	Accounts        []string                 `json:"accounts"`
+	CredentialStore CredentialStoreStatus    `json:"credentialStore"`
+	HasModes        bool                     `json:"hasModes"`
+	ModeNames       []string                 `json:"modeNames"`
+	ModeSpecs       []engine.ModeSpec        `json:"modeSpecs"`
+	ColorwordStyles []colorwords.StyleOption `json:"colorwordStyles"`
+	Config          *config.Config           `json:"config"`
 }
 
 // GetInitState returns the initial application state.
@@ -518,8 +555,21 @@ func (a *GuiApp) GetInitState() InitState {
 		HasModes:        len(modes) > 0,
 		ModeNames:       modes,
 		ModeSpecs:       a.client().Engine.ModeSpecs(),
+		ColorwordStyles: colorwords.Catalog(),
 		Config:          configSnapshot,
 	}
+}
+
+func cloneSpeechColors(source []config.SpeechColorConfig) []config.SpeechColorConfig {
+	return append([]config.SpeechColorConfig(nil), source...)
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	cloned := make(map[string]string, len(source))
+	for key, value := range source {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 // GetConfig returns an immutable deep snapshot of the current configuration.

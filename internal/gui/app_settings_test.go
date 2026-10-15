@@ -41,6 +41,43 @@ func TestFacadeSettings_ConcurrentSettersDoNotRace(t *testing.T) {
 	}
 }
 
+func TestSetSpeechColorsValidatesPersistsAndPublishes(t *testing.T) {
+	cfg := config.Defaults()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path}, &captureEmitter{})
+
+	rules := []config.SpeechColorConfig{
+		{Character: " ${speaker:Apula} ", Style: "CINNABAR", Active: true, IncludeThink: true},
+		{Character: "A * cloak", Style: "oranges", Active: true, IncludeOOC: true},
+	}
+	if err := a.SetSpeechColors(rules); err != nil {
+		t.Fatalf("SetSpeechColors: %v", err)
+	}
+	rules[0].Character = "changed by caller"
+
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(loaded.SpeechColors) != 2 || loaded.SpeechColors[0].Character != "${speaker:Apula}" || loaded.SpeechColors[0].Style != "cinnabar" || !loaded.SpeechColors[0].IncludeThink || loaded.SpeechColors[1].Character != "A * cloak" || !loaded.SpeechColors[1].IncludeOOC {
+		t.Fatalf("persisted speech colors = %+v", loaded.SpeechColors)
+	}
+	live := a.speechColors.Load().([]config.SpeechColorConfig)
+	if live[0].Character != "${speaker:Apula}" || live[0].Style != "cinnabar" {
+		t.Fatalf("published speech colors = %+v", live)
+	}
+
+	if err := a.SetSpeechColors([]config.SpeechColorConfig{{Character: "Apula", Style: "not-a-style", Active: true}}); err == nil {
+		t.Fatal("SetSpeechColors accepted an invalid style")
+	}
+	if err := a.SetSpeechColors([]config.SpeechColorConfig{
+		{Character: "Apula", Style: "red", Active: true},
+		{Character: "apula", Style: "blue", Active: true},
+	}); err == nil {
+		t.Fatal("SetSpeechColors accepted duplicate character patterns")
+	}
+}
+
 func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	cfg := config.Defaults()
 	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
@@ -70,6 +107,34 @@ func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	}
 	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
 		t.Fatalf("invalid update changed live variables to %q", got)
+	}
+	if got := a.inputVariables.Load().(map[string]string)["target"]; got != "scarred bandit" {
+		t.Fatalf("speech-color variable snapshot = %q, want %q", got, "scarred bandit")
+	}
+}
+
+func TestSetVariableCommandPersistsThroughGuiFacade(t *testing.T) {
+	cfg := config.Defaults()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	t.Cleanup(c.Engine.Close)
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+
+	if err := a.SendInput(`/set-variable speaker "A man in a hooded cloak"`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := loaded.Commands.Variables["speaker"]; got != "A man in a hooded cloak" {
+		t.Fatalf("persisted speaker = %q", got)
+	}
+	if got := a.inputVariables.Load().(map[string]string)["speaker"]; got != "A man in a hooded cloak" {
+		t.Fatalf("speech-color speaker snapshot = %q", got)
 	}
 }
 

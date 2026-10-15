@@ -24,6 +24,7 @@ import type {
   AccountState,
   ConnectResult,
   InputChainStatus,
+  SpeechColorConfig,
 } from "./types";
 import type { PraetorTransport, SystemUpdate } from "./transport";
 import { WebAuthRequiredError } from "./transport";
@@ -69,6 +70,7 @@ export const getInitState = () =>
     hasModes: false,
     modeNames: [],
     modeSpecs: [],
+    colorwordStyles: [],
     config: {} as AppConfig,
   });
 
@@ -152,6 +154,8 @@ export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean)
 
 // ---- Settings lists ----
 export const setHighlights = (h: HighlightConfig[]) => call<void>("SetHighlights", undefined, h);
+export const setSpeechColors = (rules: SpeechColorConfig[]) =>
+  call<void>("SetSpeechColors", undefined, rules);
 export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs", undefined, t);
 export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);

@@ -19,6 +19,7 @@ export const Kind = {
   Conn: "conn",
   Notify: "notify",
   Error: "error",
+  Variable: "variable",
   Command: "command",
   OpenMenu: "openMenu",
   Minimap: "minimap",
@@ -31,6 +32,7 @@ export interface TextPayload {
   segments: Segment[];
   raw?: string;
   isEcho?: boolean;
+  speechSpeaker?: string;
   timestamp: number;
 }
 
@@ -41,6 +43,7 @@ export interface SuppressPayload {
   placeholderStyled: Segment[];
   originalText: string;
   originalStyled: Segment[];
+  speechSpeaker?: string;
   timestamp: number;
 }
 
@@ -112,10 +115,16 @@ export interface WireEvent {
   conn?: ConnPayload;
   notify?: NotifyPayload;
   error?: ErrorPayload;
+  variable?: VariablePayload;
   command?: string;
   openMenu?: string;
   image?: ImagePayload;
   debug?: DebugPayload;
+}
+
+export interface VariablePayload {
+  name: string;
+  value: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +135,22 @@ export interface HighlightConfig {
   Pattern: string;
   Style: string; // red | gold | green | blue
   Active: boolean;
+}
+
+export interface SpeechColorConfig {
+  Character: string;
+  Style: string;
+  Active: boolean;
+  IncludeThink: boolean;
+  IncludeOOC: boolean;
+}
+
+export interface ColorwordStyle {
+  name: string;
+  label: string;
+  family: string;
+  kind: "solid" | "alternating" | "rainbow";
+  colors: string[];
 }
 
 export interface TabRuleConfig {
@@ -224,6 +249,7 @@ export interface AppConfig {
   Scripts: string[] | null;
   UI: UIConfig;
   Highlights: HighlightConfig[] | null;
+  SpeechColors: SpeechColorConfig[] | null;
   Kudos: KudosConfig;
   Ignorelist: { OOC: string[] | null; Think: string[] | null };
   Notifications: { Desktop: DesktopNotificationsConfig };
@@ -267,6 +293,7 @@ export interface InitState {
   hasModes: boolean;
   modeNames: string[] | null;
   modeSpecs: ModeSpec[] | null;
+  colorwordStyles: ColorwordStyle[] | null;
   config: AppConfig;
 }
 

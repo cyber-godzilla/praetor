@@ -11,6 +11,7 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **Multiple Script Directories** — load modes and libraries from any number of directories
 - **Custom Tabs** — user-defined output tabs with include/exclude pattern filters
 - **Colorwords** — automatic color highlighting of color words in game text (200+ colors, adjectives, suffixes, rainbow)
+- **Speech Colors** — assign any Colorword style to a character name, wildcard, or variable so matching speech—and optionally think/OOC lines—is identifiable at a glance
 - **String Highlighting** — configurable pattern highlighting for rare loot detection
 - **Desktop Notifications** — alerts for health/fatigue thresholds and custom pattern matches
 - **Metrics Dashboard** — session tracking for kills, actions, and custom metrics with history
@@ -249,6 +250,7 @@ Nothing opens automatically; choose a link in the popup to open it.
 | `/list` | List / select available modes |
 | `/toggle <label>` | Toggle a boolean state value |
 | `/set <label> <val>` | Set a state value |
+| `/set-variable <name> <val>` | Save a command variable (alias `/set-var`) |
 | `/wiki [term]` | Open a TEC wiki bookmark (bare `/wiki` lists them) |
 | `/maps [term]` | Open a TEC map page (bare `/maps` lists them) |
 | `/calc` | Rank-bonus & training-cost calculator (alias `/rb`) |
@@ -266,7 +268,7 @@ literal quote and `\\` for a literal backslash.
 The pause menu provides access to all settings:
 
 - **Scripts** — Reload scripts, manage script directories, configure quick-cycle modes, set priority commands
-- **Display** — Highlights, custom tabs, colorwords, echo commands, IP masking
+- **Display** — Highlights, speech colors, custom tabs, colorwords, echo commands, IP masking
 - **Tools & References** — Notes, kudos, rank-bonus calculator, wiki & map bookmarks
 - **Logs** — Game log toggle and log location
 - **Data** — Persistent data viewer with export/clear

@@ -11,6 +11,8 @@ export function chainStateLabel(status: InputChainStatus): string {
       return `repeating “${status.detail ?? "command"}” (${status.attempts ?? 1}${limit})`;
     }
     case "notify": return `notifying “${status.detail ?? "Praetor"}”`;
+    case "set-var": return `setting “${status.detail ?? "variable"}”`;
+    case "add-var": return `adding to “${status.detail ?? "variable"}”`;
     case "send": return `sending “${status.detail ?? "command"}”`;
     default: return status.state || "starting";
   }

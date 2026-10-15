@@ -4,6 +4,7 @@ package commandinput
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -102,6 +103,8 @@ const (
 	KindWaitFor
 	KindNotify
 	KindRepeat
+	KindSetVariable
+	KindAddVariable
 )
 
 // Command is one fully expanded command and the separator that preceded it.
@@ -116,6 +119,9 @@ type Command struct {
 	Cancel   string
 	Max      int
 	Count    int
+	Variable string
+	Value    string
+	Amount   float64
 }
 
 type part struct {
@@ -379,11 +385,65 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		}
 		return Command{Kind: KindRepeat, Text: command, Match: match, Cancel: cancel, Max: max, Count: count}, nil
 
+	case "set-var":
+		variable, value, err := parseSetVariableArguments(arg)
+		if err != nil {
+			return Command{}, err
+		}
+		value, err = ExpandVariables(value, variables)
+		if err != nil {
+			return Command{}, err
+		}
+		return Command{Kind: KindSetVariable, Variable: variable, Value: value}, nil
+
+	case "add-var":
+		variable, amountText, err := parseAddVariableArguments(arg)
+		if err != nil {
+			return Command{}, err
+		}
+		amountText, err = ExpandVariables(amountText, variables)
+		if err != nil {
+			return Command{}, err
+		}
+		amount, err := strconv.ParseFloat(amountText, 64)
+		if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) {
+			return Command{}, fmt.Errorf("add-var amount must be a finite number")
+		}
+		return Command{Kind: KindAddVariable, Variable: variable, Amount: amount}, nil
+
 	case "":
 		return Command{}, fmt.Errorf("empty input directive")
 	default:
 		return Command{}, fmt.Errorf("unknown input directive %q", name)
 	}
+}
+
+func parseSetVariableArguments(arg string) (variable, value string, err error) {
+	words, err := SplitWords(arg)
+	if err != nil {
+		return "", "", err
+	}
+	if len(words) < 2 {
+		return "", "", fmt.Errorf("set-var requires a variable name and value")
+	}
+	if !config.ValidVariableName(words[0]) {
+		return "", "", fmt.Errorf("invalid variable name %q", words[0])
+	}
+	return words[0], strings.Join(words[1:], " "), nil
+}
+
+func parseAddVariableArguments(arg string) (variable, amount string, err error) {
+	words, err := SplitWords(arg)
+	if err != nil {
+		return "", "", err
+	}
+	if len(words) != 2 {
+		return "", "", fmt.Errorf("add-var requires a variable name and amount")
+	}
+	if !config.ValidVariableName(words[0]) {
+		return "", "", fmt.Errorf("invalid variable name %q", words[0])
+	}
+	return words[0], words[1], nil
 }
 
 func expandPositiveSeconds(input string, variables map[string]string, name string) (time.Duration, error) {

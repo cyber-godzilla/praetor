@@ -351,6 +351,72 @@ func TestWithColorWords(t *testing.T) {
 	}
 }
 
+func TestWithSpeechColorsColorsWholeLineAndSkipsEcho(t *testing.T) {
+	rules := []config.SpeechColorConfig{{Character: "Apula", Style: "cinnabar", Active: true}}
+	ev := types.GameTextEvent{
+		Text:   `Apula asks, "Ready?"`,
+		Styled: []types.StyledSegment{{Text: `Apula asks, "Ready?"`}},
+	}
+	out := withSpeechColors(ev, rules, nil).(types.GameTextEvent)
+	if len(out.Styled) != 1 || out.Styled[0].Color != "#cc3322" {
+		t.Fatalf("speech color output = %+v", out.Styled)
+	}
+
+	ev.IsEcho = true
+	echo := withSpeechColors(ev, rules, nil).(types.GameTextEvent)
+	if echo.Styled[0].Color != "" {
+		t.Fatalf("command echo was speech-colored: %+v", echo.Styled)
+	}
+}
+
+func TestSpeechColorThenColorWordsPrecedence(t *testing.T) {
+	rules := []config.SpeechColorConfig{{Character: "Apula", Style: "cinnabar", Active: true}}
+	ev := types.GameTextEvent{
+		Text:   `Apula says, "Take the blue cloak."`,
+		Styled: []types.StyledSegment{{Text: `Apula says, "Take the blue cloak."`}},
+	}
+	styled := withColorWords(withSpeechColors(ev, rules, nil)).(types.GameTextEvent).Styled
+	foundBlue := false
+	foundCinnabar := false
+	for _, segment := range styled {
+		if segment.Text == "blue" && segment.Color == "#2255cc" {
+			foundBlue = true
+		}
+		if segment.Color == "#cc3322" {
+			foundCinnabar = true
+		}
+	}
+	if !foundBlue || !foundCinnabar {
+		t.Fatalf("speech/colorword precedence wrong: %+v", styled)
+	}
+}
+
+func TestToWireIncludesRecognizedSpeechSpeaker(t *testing.T) {
+	wire, ok := toWire(types.GameTextEvent{
+		Text:   `A man in a hooded cloak murmurs, "Leave."`,
+		Styled: []types.StyledSegment{{Text: `A man in a hooded cloak murmurs, "Leave."`}},
+	})
+	if !ok || wire.Text == nil || wire.Text.SpeechSpeaker != "A man in a hooded cloak" {
+		t.Fatalf("speech speaker metadata = %+v, want hooded-cloak speaker", wire.Text)
+	}
+
+	echo, ok := toWire(types.GameTextEvent{
+		Text:   `Apula says, "Hello."`,
+		Styled: []types.StyledSegment{{Text: `Apula says, "Hello."`}},
+		IsEcho: true,
+	})
+	if !ok || echo.Text == nil || echo.Text.SpeechSpeaker != "" {
+		t.Fatalf("echo speech speaker metadata = %+v, want empty", echo.Text)
+	}
+}
+
+func TestToWireIncludesInputVariableChange(t *testing.T) {
+	wire, ok := toWire(types.InputVariableSetEvent{Name: "speaker", Value: "Apula"})
+	if !ok || wire.Kind != KindVariable || wire.Variable == nil || wire.Variable.Name != "speaker" || wire.Variable.Value != "Apula" {
+		t.Fatalf("variable wire event = %+v, %v", wire, ok)
+	}
+}
+
 func TestEncodeImage_Nil(t *testing.T) {
 	if encodeImage(nil) != nil {
 		t.Error("nil image should encode to nil payload")

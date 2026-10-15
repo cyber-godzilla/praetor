@@ -52,6 +52,7 @@ const (
 	KindConn       = "conn"       // connection state change
 	KindNotify     = "notify"     // desktop notification mirror
 	KindError      = "error"      // error event
+	KindVariable   = "variable"   // saved input-variable change
 	KindOpenMenu   = "openMenu"   // client asks the UI to open a menu (wiki/maps/calc)
 	KindMinimap    = "minimap"    // minimap PNG (base64 data URI) — synthesized, not a core event
 	KindCompass    = "compass"    // compass PNG (base64 data URI) — synthesized
@@ -70,9 +71,17 @@ type WireEvent struct {
 	Conn       *ConnPayload     `json:"conn,omitempty"`
 	Notify     *NotifyPayload   `json:"notify,omitempty"`
 	Error      *ErrorPayload    `json:"error,omitempty"`
+	Variable   *VariablePayload `json:"variable,omitempty"`
 	OpenMenu   string           `json:"openMenu,omitempty"`
 	Image      *ImagePayload    `json:"image,omitempty"`
 	Debug      *DebugPayload    `json:"debug,omitempty"`
+}
+
+// VariablePayload synchronizes a successful /set-variable command into every
+// connected frontend's local config view.
+type VariablePayload struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }
 
 // DebugPayload carries a raw SKOOT channel + payload for the debug panel.
@@ -83,11 +92,12 @@ type DebugPayload struct {
 
 // TextPayload carries a single game text line.
 type TextPayload struct {
-	Text      string    `json:"text"`
-	Segments  []Segment `json:"segments"`
-	Raw       string    `json:"raw,omitempty"`
-	IsEcho    bool      `json:"isEcho,omitempty"`
-	Timestamp int64     `json:"timestamp"` // unix millis
+	Text          string    `json:"text"`
+	Segments      []Segment `json:"segments"`
+	Raw           string    `json:"raw,omitempty"`
+	IsEcho        bool      `json:"isEcho,omitempty"`
+	SpeechSpeaker string    `json:"speechSpeaker,omitempty"`
+	Timestamp     int64     `json:"timestamp"` // unix millis
 }
 
 // SuppressPayload carries an ignorelist-suppressed line. The frontend renders
@@ -99,6 +109,7 @@ type SuppressPayload struct {
 	PlaceholderStyled []Segment `json:"placeholderStyled"`
 	OriginalText      string    `json:"originalText"`
 	OriginalStyled    []Segment `json:"originalStyled"`
+	SpeechSpeaker     string    `json:"speechSpeaker,omitempty"`
 	Timestamp         int64     `json:"timestamp"`
 }
 

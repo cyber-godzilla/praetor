@@ -3,11 +3,13 @@ package client
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	neturl "net/url"
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -129,6 +131,8 @@ type Client struct {
 	// direct UI controls bypass it.
 	inputMu             sync.RWMutex
 	inputVariables      map[string]string
+	inputVariableSaver  func(map[string]string) error
+	inputVariableSetMu  sync.Mutex
 	inputChainMu        sync.Mutex
 	inputChains         map[*inputChain]struct{}
 	inputWaiters        []*inputContinuation
@@ -276,10 +280,65 @@ func (c *Client) SetInputVariables(variables map[string]string) {
 	c.inputMu.Unlock()
 }
 
+// SetInputVariableSaver installs the frontend-owned persistence hook used by
+// /set-variable and PraetorScript variable directives. The client owns the
+// live snapshot; the frontend owns where configuration is saved.
+func (c *Client) SetInputVariableSaver(saver func(map[string]string) error) {
+	c.inputMu.Lock()
+	c.inputVariableSaver = saver
+	c.inputMu.Unlock()
+}
+
 func (c *Client) inputVariableSnapshot() map[string]string {
 	c.inputMu.RLock()
 	defer c.inputMu.RUnlock()
 	return cloneVariables(c.inputVariables)
+}
+
+func (c *Client) setInputVariable(name, value string) error {
+	c.inputVariableSetMu.Lock()
+	defer c.inputVariableSetMu.Unlock()
+
+	return c.setInputVariableLocked(name, value)
+}
+
+func (c *Client) addInputVariable(name string, amount float64) error {
+	c.inputVariableSetMu.Lock()
+	defer c.inputVariableSetMu.Unlock()
+
+	c.inputMu.RLock()
+	raw, ok := c.inputVariables[name]
+	c.inputMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("variable %q does not exist", name)
+	}
+	current, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil || math.IsNaN(current) || math.IsInf(current, 0) {
+		return fmt.Errorf("variable %q does not contain a finite number", name)
+	}
+	value := current + amount
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fmt.Errorf("adding to variable %q produced a non-finite number", name)
+	}
+	return c.setInputVariableLocked(name, strconv.FormatFloat(value, 'f', -1, 64))
+}
+
+// setInputVariableLocked persists and publishes a variable mutation while
+// inputVariableSetMu serializes it with every other read-modify-write update.
+func (c *Client) setInputVariableLocked(name, value string) error {
+	c.inputMu.RLock()
+	variables := cloneVariables(c.inputVariables)
+	saver := c.inputVariableSaver
+	c.inputMu.RUnlock()
+	variables[name] = value
+	if saver != nil {
+		if err := saver(cloneVariables(variables)); err != nil {
+			return err
+		}
+	}
+	c.SetInputVariables(variables)
+	c.emit(types.InputVariableSetEvent{Name: name, Value: value})
+	return nil
 }
 
 // ExpandInputVariables substitutes current ${name} values and
@@ -488,7 +547,10 @@ func (c *Client) sendCommand(sess *session.Session, input string) error {
 			log.Printf("[CLIENT] %v", err)
 			return err
 		}
-		c.handleLocalCommand(input)
+		if err := c.handleLocalCommand(input); err != nil {
+			log.Printf("[CLIENT] %v", err)
+			return err
+		}
 		return nil
 	}
 	log.Printf("[SEND:GAME] %s", input)
@@ -610,6 +672,13 @@ func (c *Client) validateLocalCommand(input string) error {
 		if !strings.EqualFold(mode, "disable") && !c.Engine.HasMode(mode) {
 			return fmt.Errorf("unknown mode %q", mode)
 		}
+	case "/set-variable", "/set-var":
+		if len(parts) < 3 {
+			return fmt.Errorf("/set-variable requires a name and value")
+		}
+		if !config.ValidVariableName(parts[1]) {
+			return fmt.Errorf("invalid variable name %q", parts[1])
+		}
 	}
 	return nil
 }
@@ -701,6 +770,22 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 			c.finishInputChain(chain)
 			return err
 		}
+		return nil
+	case commandinput.KindSetVariable:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "set-var", current.Variable, 0, 0, 0)
+		if err := c.setInputVariable(current.Variable, current.Value); err != nil {
+			c.finishInputChain(chain)
+			return fmt.Errorf("saving variable %q: %w", current.Variable, err)
+		}
+		c.scheduleInputCommands(chain, remaining)
+		return nil
+	case commandinput.KindAddVariable:
+		c.setInputChainStatus(chain, chain.total-len(commands)+1, "add-var", current.Variable, 0, 0, 0)
+		if err := c.addInputVariable(current.Variable, current.Amount); err != nil {
+			c.finishInputChain(chain)
+			return err
+		}
+		c.scheduleInputCommands(chain, remaining)
 		return nil
 	}
 
@@ -1550,14 +1635,14 @@ func (c *Client) sendNotification(title, message string) {
 }
 
 // handleLocalCommand parses and executes slash commands.
-func (c *Client) handleLocalCommand(input string) {
+func (c *Client) handleLocalCommand(input string) error {
 	parts, err := commandinput.SplitWords(input)
 	if err != nil {
 		log.Printf("[CLIENT] invalid command arguments: %v", err)
-		return
+		return err
 	}
 	if len(parts) == 0 {
-		return
+		return nil
 	}
 
 	cmd := strings.ToLower(parts[0])
@@ -1567,7 +1652,7 @@ func (c *Client) handleLocalCommand(input string) {
 		// /mode <name> [args...] (alias: /sm)
 		if len(parts) < 2 {
 			log.Printf("[CLIENT] /mode requires a mode name")
-			return
+			return nil
 		}
 		mode := parts[1]
 		if strings.EqualFold(mode, "disable") {
@@ -1582,13 +1667,13 @@ func (c *Client) handleLocalCommand(input string) {
 	case "/toggle":
 		if len(parts) < 2 {
 			log.Printf("[CLIENT] /toggle requires a label")
-			return
+			return nil
 		}
 		label := parts[1]
 		key, ok := c.Engine.State().ResolveLabel(label)
 		if !ok {
 			log.Printf("[CLIENT] unknown state label: %s", label)
-			return
+			return nil
 		}
 		c.Engine.State().Toggle(key)
 		c.emitStatusUpdate()
@@ -1596,17 +1681,30 @@ func (c *Client) handleLocalCommand(input string) {
 	case "/set":
 		if len(parts) < 3 {
 			log.Printf("[CLIENT] /set requires a label and value")
-			return
+			return nil
 		}
 		label := parts[1]
 		value := strings.Join(parts[2:], " ")
 		key, ok := c.Engine.State().ResolveLabel(label)
 		if !ok {
 			log.Printf("[CLIENT] unknown state label: %s", label)
-			return
+			return nil
 		}
 		c.Engine.State().SetFromString(key, value)
 		c.emitStatusUpdate()
+
+	case "/set-variable", "/set-var":
+		if len(parts) < 3 {
+			return fmt.Errorf("/set-variable requires a name and value")
+		}
+		name := parts[1]
+		if !config.ValidVariableName(name) {
+			return fmt.Errorf("invalid variable name %q", name)
+		}
+		value := strings.Join(parts[2:], " ")
+		if err := c.setInputVariable(name, value); err != nil {
+			return fmt.Errorf("saving variable %q: %w", name, err)
+		}
 
 	case "/wiki":
 		// Strip "/wiki " prefix; trim spaces.
@@ -1614,7 +1712,7 @@ func (c *Client) handleLocalCommand(input string) {
 		if rest == "" {
 			// Bare /wiki — ask the TUI to open the bookmark menu.
 			c.emit(types.WikiOpenMenuEvent{})
-			return
+			return nil
 		}
 		slug, ok := wiki.Lookup(rest)
 		if !ok {
@@ -1627,7 +1725,7 @@ func (c *Client) handleLocalCommand(input string) {
 				Timestamp: time.Now(),
 				IsEcho:    true,
 			})
-			return
+			return nil
 		}
 		url := wiki.URL(slug)
 		c.openURL(url)
@@ -1645,7 +1743,7 @@ func (c *Client) handleLocalCommand(input string) {
 		rest := strings.TrimSpace(strings.TrimPrefix(input, parts[0]))
 		if rest == "" {
 			c.emit(types.MapsOpenMenuEvent{})
-			return
+			return nil
 		}
 		slug, ok := wiki.LookupMap(rest)
 		if !ok {
@@ -1672,7 +1770,7 @@ func (c *Client) handleLocalCommand(input string) {
 					IsEcho:    true,
 				})
 			}
-			return
+			return nil
 		}
 		url := wiki.URL(slug)
 		c.openURL(url)
@@ -1692,6 +1790,7 @@ func (c *Client) handleLocalCommand(input string) {
 	default:
 		log.Printf("[CLIENT] unknown command: %s", cmd)
 	}
+	return nil
 }
 
 // suggestMaps returns up to 3 known map keys whose Levenshtein distance

@@ -85,6 +85,12 @@ describe("store connection routing", () => {
     expect(store.mode).toBe("craft");
   });
 
+  it("applies saved variable changes to the local config", () => {
+    store.config = { UI: { Scrollback: 5000 }, Commands: { Variables: {} } } as any;
+    store.apply([{ kind: Kind.Variable, variable: { name: "speaker", value: "Apula" } }]);
+    expect(store.config?.Commands.Variables).toEqual({ speaker: "Apula" });
+  });
+
   it("installs the complete web fixture atomically and idempotently", () => {
     store.debug = true;
     store.rebuildTabs([]);

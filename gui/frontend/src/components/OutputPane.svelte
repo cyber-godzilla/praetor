@@ -530,6 +530,7 @@
             class:suppressed={!!line.suppressed}
             class:search-current={line.id === currentMatchId}
             data-lid={line.id}
+            data-speech-speaker={line.speechSpeaker || undefined}
             onclick={() => line.suppressed && reveal(line)}
             role={line.suppressed ? "button" : undefined}
             tabindex={line.suppressed ? -1 : undefined}

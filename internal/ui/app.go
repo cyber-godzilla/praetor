@@ -15,6 +15,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/compass"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
+	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	"github.com/mattn/go-runewidth"
@@ -202,6 +203,8 @@ type App struct {
 	modePicker       ModePicker
 	highlightsMgr    HighlightsManager
 	highlights       []config.HighlightConfig
+	speechColors     []config.SpeechColorConfig
+	inputVariables   map[string]string
 	help             HelpScreen
 	colorWords       bool
 	echoTyped        bool
@@ -254,7 +257,7 @@ type tabBarCache struct {
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(displayMode string, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
+func NewApp(displayMode string, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, speechColors []config.SpeechColorConfig, inputVariables map[string]string, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -280,25 +283,27 @@ func NewApp(displayMode string, defaultTab string, scrollback int, accounts []st
 		scrollback:   scrollback,
 		state:        initialState,
 
-		tabs:          tabs,
-		metrics:       NewMetricsPane(),
-		debug:         NewDebugPane(),
-		sidebar:       newSidebarPtr(minimapScale, minimapHeight, graphicsMode),
-		status:        NewStatusBar(),
-		input:         NewInput(),
-		login:         NewLoginScreen(),
-		accountSelect: NewAccountSelect(accounts),
-		menu:          NewMenu(colorWords, echoTyped, echoScript, hideIPs, gameLogs, logPath, false),
-		quickCycle:    NewQuickCycle(quickCycleModes),
-		highlights:    highlights,
-		colorWords:    colorWords,
-		echoTyped:     echoTyped,
-		echoScript:    echoScript,
-		hideIPs:       hideIPs,
-		gameLogs:      gameLogs,
-		logPath:       logPath,
-		unread:        make([]bool, len(tabs)),
-		tabBar:        &tabBarCache{},
+		tabs:           tabs,
+		metrics:        NewMetricsPane(),
+		debug:          NewDebugPane(),
+		sidebar:        newSidebarPtr(minimapScale, minimapHeight, graphicsMode),
+		status:         NewStatusBar(),
+		input:          NewInput(),
+		login:          NewLoginScreen(),
+		accountSelect:  NewAccountSelect(accounts),
+		menu:           NewMenu(colorWords, echoTyped, echoScript, hideIPs, gameLogs, logPath, false),
+		quickCycle:     NewQuickCycle(quickCycleModes),
+		highlights:     highlights,
+		speechColors:   speechColors,
+		inputVariables: inputVariables,
+		colorWords:     colorWords,
+		echoTyped:      echoTyped,
+		echoScript:     echoScript,
+		hideIPs:        hideIPs,
+		gameLogs:       gameLogs,
+		logPath:        logPath,
+		unread:         make([]bool, len(tabs)),
+		tabBar:         &tabBarCache{},
 
 		splash:                  NewSplash(version),
 		wikiMenu:                NewWikiMenu(),
@@ -1117,8 +1122,12 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 		switch ev := event.(type) {
 
 		case types.GameTextEvent:
-			// Apply color words first (if enabled), then highlights on top.
+			// Speech colors establish the line color; colorwords and configured
+			// highlights remain progressively more specific overlays.
 			styled := ev.Styled
+			if !ev.IsEcho {
+				styled = speechcolor.Apply(styled, ev.Text, a.speechColors, a.inputVariables)
+			}
 			if a.colorWords {
 				styled = colorwords.ApplyColorWords(styled)
 			}
@@ -1138,6 +1147,7 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			// Apply the same display transforms as GameTextEvent, but on
 			// the ORIGINAL styled segments. The placeholder renders as-is.
 			styled := ev.OriginalStyled
+			styled = speechcolor.Apply(styled, ev.OriginalText, a.speechColors, a.inputVariables)
 			if a.colorWords {
 				styled = colorwords.ApplyColorWords(styled)
 			}
@@ -1188,6 +1198,20 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 
 		case types.DisconnectedEvent:
 			a.status.SetConnected(false)
+
+		case types.InputVariableSetEvent:
+			variables := make(map[string]string, len(a.inputVariables)+1)
+			for name, value := range a.inputVariables {
+				variables[name] = value
+			}
+			variables[ev.Name] = ev.Value
+			a.inputVariables = variables
+			a.tabs[0].Pane.Append([]types.StyledSegment{{
+				Text:   fmt.Sprintf("Variable %s saved as %q.", ev.Name, ev.Value),
+				Color:  "#e8a838",
+				Italic: true,
+			}})
+			routedTabs |= 1
 
 		case types.WikiOpenMenuEvent:
 			pendingMenu = MenuWikiMsg{}

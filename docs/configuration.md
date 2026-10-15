@@ -104,6 +104,13 @@ substituted once rather than recursively. An unknown reference without a
 fallback, or any malformed reference, rejects the entire input line without
 sending any part of it. Use `\${` to send a literal `${`.
 
+Use `/set-variable <name> <value>` (or `/set-var`) to create or replace a
+saved variable without opening the editor. Names follow the same rules as the
+editor: they begin with a letter or underscore and contain only letters,
+numbers, and underscores. The remainder of the command becomes the value, so
+spaces are supported; use `""` to save an empty value. The change is persisted
+and is available to subsequent input and Speech Color character patterns.
+
 Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
 roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
 for an unbusy response plus the configured 100 ms default before sending
@@ -128,12 +135,23 @@ $(wait-for "The gate opens" timeout 30)          # cancel the chain after 30 sec
 $(wait-for "open" cancel-on "locked" timeout 30)
 $(notify "Training complete")                    # notify, then continue
 $(notify "Training" "Complete")                  # custom title and message
+$(set-var target "scarred bandit")               # save target = scarred bandit
+$(add-var attempts 1)                             # save attempts = attempts + 1
 $(repeat "climb wall" until "You reach the top")
 $(repeat "climb wall" until "You reach the top" cancel-on "You fall")
 $(repeat "climb wall" until "You reach the top" max 10)
 $(repeat "search" count 5)
 $(repeat "search" count ${tries:5} cancel-on "You find nothing")
 ```
+
+`set-var` creates or replaces the same persisted variables used by `${name}`
+references, the Variables editor, `/set-variable`, and Speech Color character
+patterns. Its value may be quoted when it contains spaces, and `""` stores an
+empty value. `add-var` requires an existing variable whose value is a finite
+number, plus a finite numeric amount; it accepts positive, negative, integer,
+or decimal amounts. It persists the sum using ordinary decimal notation. Both
+steps take effect at their position in a chain, so
+`$(set-var attempts 0);;$(add-var attempts 1)` leaves `attempts` set to `1`.
 
 Each directive occupies one chain step, so compose it with the existing
 separators—for example, `look;;$(wait 2);;inventory`. Separators around a
@@ -255,6 +273,43 @@ Each rule has:
 `echo_commands` applies only when the tab has no active include rules (i.e. it is exclude-only, including zero-rule catch-all tabs). When false, command echoes are not routed to the tab even though other non-excluded text is.
 
 Managed via Esc → Custom Tabs.
+
+## Speech Colors
+
+```yaml
+speech_colors:
+  - character: Apula
+    style: cinnabar
+    active: true
+    include_think: true
+  - character: Constantine
+    style: oranges
+    active: true
+    include_ooc: true
+  - character: A man in a hooded cloak
+    style: rainbow
+    active: true
+```
+
+`character` is a case-insensitive, whole-name pattern. It supports `*` for any
+run of characters, `?` for one character, and the same `${name}` or
+`${name:fallback}` references as command input. Variables are expanded from
+their current values whenever a line is matched, so editing a variable takes
+effect immediately. For example, `A * cloak`, `Apul?`, and `${speaker}` are all
+valid character patterns. An unknown variable without a fallback simply leaves
+that rule unmatched until the variable is defined.
+
+Each active rule colors the entire line when its character pattern matches. Set
+`include_think` and/or `include_ooc` to also color that character's think-aloud
+or OOC lines; both default to `false`. Styles come from the same catalog as
+Colorwords, including alternating plural styles such as `oranges` and special
+styles such as `rainbow`. Individual Colorwords within a colored line retain
+their own colors.
+
+Manage rules via Esc → Speech Colors. The picker searches partial color names
+(`crim` finds Crimson) and expands exact family names (`red` lists the complete
+Reds family). In the GUI or web client, right-click a recognized speech line and
+choose **Set a speech color** to open the editor with that speaker pre-filled.
 
 ## Highlights
 

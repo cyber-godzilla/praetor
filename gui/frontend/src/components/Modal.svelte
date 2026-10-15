@@ -80,7 +80,7 @@
      the ✕ button, the Back button, or Esc (handled once in GameView). This
      prevents stray outside clicks from dismissing a submenu mid-interaction. -->
 <div class="backdrop" role="presentation">
-  <div class="modal" class:wide class:extra-wide={extraWide} bind:this={modalEl} role="dialog" aria-modal="true" tabindex="-1">
+  <div class="modal" class:wide class:extra-wide={extraWide} bind:this={modalEl} role="dialog" aria-label={title} aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}

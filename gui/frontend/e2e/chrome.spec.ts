@@ -23,10 +23,69 @@ test("Esc opens and closes the menu; Help opens from it", async ({ page }) => {
   await expect(dialog).toContainText("command && command");
   await expect(dialog).toContainText('$(repeat "command" until "success" max 10)');
   await expect(dialog).toContainText('$(repeat "command" count 5)');
+  await expect(dialog).toContainText("$(set-var name value)");
+  await expect(dialog).toContainText("$(add-var name amount)");
   await expect(dialog).toContainText('cancel-on "text"');
+  await expect(dialog).toContainText("/set-variable (/set-var)");
   await expect(dialog.getByText("Send the syntax literally").locator("..").locator(".k"))
     .toHaveText(/\\\$\{\s+\\\$\(\s+\\;;\s+\\&&/);
   await expect(dialog).toContainText("Commands");
+});
+
+test("the Escape menu groups related controls in a stable order", async ({ page }) => {
+  await page.keyboard.press("Escape");
+
+  const groups = await page
+    .getByRole("dialog", { name: "Menu" })
+    .locator(".group")
+    .evaluateAll((elements) =>
+      elements.map((element) => ({
+        name: element.querySelector(".gname")?.textContent?.trim(),
+        items: [...element.querySelectorAll("button.mitem")].map((button) =>
+          button.textContent?.trim(),
+        ),
+      })),
+    );
+
+  expect(groups).toEqual([
+    {
+      name: "Behavior",
+      items: ["Settings", "Custom Tabs", "Notifications", "Retro CRT Effects"],
+    },
+    {
+      name: "Automation",
+      items: [
+        "Variables",
+        "Action Sets",
+        "Script Directories",
+        "Quick-Cycle Modes",
+        "High-Priority Commands",
+        "Persistent Data",
+        "Reload Scripts",
+      ],
+    },
+    {
+      name: "Text Parsing and Display",
+      items: [
+        "Highlights",
+        "Speech Colors",
+        "Ignore OOC Accounts",
+        "Ignore Think Characters",
+      ],
+    },
+    {
+      name: "Tools & References",
+      items: [
+        "Kudos",
+        "Rank-Bonus Calculator",
+        "Wiki Bookmarks",
+        "Map Bookmarks",
+        "Notes",
+        "Help",
+      ],
+    },
+    { name: "Session", items: ["Logout", "Exit"] },
+  ]);
 });
 
 test("Help can search game help and open the wiki", async ({ page, backend }) => {
@@ -190,6 +249,54 @@ test("a custom tab routes matching lines and Tab cycles tabs", async ({ page, ba
   await expect(tabbar.locator("button.active")).toHaveText("Metrics");
   await page.keyboard.press("Shift+Tab");
   await expect(tabbar.locator("button.active")).toHaveText(/^Chat/);
+});
+
+test("a speech line can seed a character in the speech-color picker", async ({ page, backend }) => {
+  await backend.text([
+    {
+      text: 'Apula says, "Keep moving."',
+      segments: [{ text: 'Apula says, "Keep moving."' }],
+      speechSpeaker: "Apula",
+      timestamp: 0,
+    },
+    "The wind blows.",
+  ]);
+
+  await backend.output.getByText("The wind blows.", { exact: true }).click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Set a speech color" })).toHaveCount(0);
+
+  await backend.output.getByText('Apula says, "Keep moving."', { exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Set a speech color" }).click();
+
+  const settings = page.getByRole("dialog", { name: "Speech Colors" });
+  await expect(settings.getByRole("textbox", { name: "Character pattern" })).toHaveValue("Apula");
+  await expect(settings.getByRole("checkbox", { name: "Include think for Apula" })).not.toBeChecked();
+  await expect(settings.getByRole("checkbox", { name: "Include OOC for Apula" })).not.toBeChecked();
+  await settings.getByRole("checkbox", { name: "Include think for Apula" }).check();
+  await settings.getByRole("checkbox", { name: "Include OOC for Apula" }).check();
+  await settings.locator("button.style-choice").click();
+
+  const picker = page.getByRole("dialog", { name: "Choose a Colorword style" });
+  const search = picker.getByRole("combobox", { name: "Search color names or families" });
+  await search.fill("red");
+  await expect(picker.getByRole("option", { name: /Scarlet/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /Crimson/ })).toBeVisible();
+  await search.fill("crim");
+  await expect(picker.getByRole("option", { name: /Crimson/ })).toBeVisible();
+  await expect(picker.getByRole("option", { name: /Scarlet/ })).toHaveCount(0);
+  await picker.getByRole("option", { name: /Crimson/ }).click();
+  await settings.getByRole("textbox", { name: "Character pattern" }).fill("${speaker:Apula}");
+
+  await settings.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => backend.args("SetSpeechColors")).toEqual([[
+    [{
+      Character: "${speaker:Apula}",
+      Style: "crimson",
+      Active: true,
+      IncludeThink: true,
+      IncludeOOC: true,
+    }],
+  ]]);
 });
 
 test("a notify event shows a toast", async ({ page, backend }) => {

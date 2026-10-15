@@ -119,6 +119,27 @@ Matching is case-insensitive. Patterns are plain text substrings, not wildcards.
 
 ---
 
+## Identify Speakers With Speech Colors
+
+Speech Colors tint a character's entire speech line, making speakers easier to
+identify while quickly scrolling through conversation.
+
+1. Press **Esc** to open the menu
+2. Select **Speech Colors** under **Text Parsing and Display**
+3. Select **+ Add character** and enter a character name or pattern. Patterns
+   match the whole name, support `*` and `?` wildcards, and can use current
+   command variables such as `${speaker}` or `${speaker:Apula}`
+4. Open the Colorword-style dropdown and search by partial color name, or type a
+   family such as `red` to browse all reds
+5. Optionally enable **Think** and/or **OOC** for that character
+6. Select a style and save
+
+The picker includes ordinary Colorwords and special entries such as alternating
+plural colors and rainbow. You can also right-click any recognized speech line
+and choose **Set a speech color**; the speaker's name is filled in automatically.
+
+---
+
 ## Add or Remove Quick-Cycle Modes
 
 Quick-cycle lets you rapidly switch between automation modes with **Alt+M**.

@@ -195,6 +195,15 @@ type ErrorEvent struct {
 
 func (ErrorEvent) eventMarker() {}
 
+// InputVariableSetEvent reports a successful /set-variable command so every
+// frontend can update its local configuration view immediately.
+type InputVariableSetEvent struct {
+	Name  string
+	Value string
+}
+
+func (InputVariableSetEvent) eventMarker() {}
+
 // WikiOpenMenuEvent is sent by the /wiki command (bare, no key) to ask
 // the TUI to open the wiki bookmark browser.
 type WikiOpenMenuEvent struct{}

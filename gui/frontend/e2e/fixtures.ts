@@ -1,4 +1,4 @@
-import type { AppConfig, InitState, ModeSpec, TextPayload } from "../src/lib/types";
+import type { AppConfig, ColorwordStyle, InitState, ModeSpec, TextPayload } from "../src/lib/types";
 
 // Everything the fake backend hands the frontend. Keep this the ONE place
 // canned state lives so a config-shape change is a one-file fix.
@@ -9,6 +9,14 @@ export const modeSpecs: ModeSpec[] = [
   { name: "disable", usage: "", desc: "Turn automation off", chains: false },
   { name: "hunt", usage: "[target]", desc: "Hunt the given target", chains: false },
   { name: "hunt_wolves", usage: "", desc: "Hunt wolves specifically", chains: true },
+];
+
+export const colorwordStyles: ColorwordStyle[] = [
+  { name: "scarlet", label: "Scarlet", family: "Reds", kind: "solid", colors: ["#ff4b3e"] },
+  { name: "crimson", label: "Crimson", family: "Reds", kind: "solid", colors: ["#ff3355"] },
+  { name: "cinnabar", label: "Cinnabar", family: "Oranges", kind: "solid", colors: ["#ff6037"] },
+  { name: "oranges", label: "Oranges", family: "Special", kind: "alternating", colors: ["#ff9a26", "#ff6b1a"] },
+  { name: "rainbow", label: "Rainbow", family: "Special", kind: "rainbow", colors: ["#ff0000", "#ff7f00", "#ffff00", "#00ff00", "#0080ff", "#4b0082", "#ee82ee"] },
 ];
 
 export function makeConfig(): AppConfig {
@@ -64,6 +72,7 @@ export function makeConfig(): AppConfig {
       ],
     },
     Highlights: [],
+    SpeechColors: [],
     Kudos: { Favorites: [], Queue: [] },
     Ignorelist: { OOC: [], Think: [] },
     Notifications: {
@@ -93,6 +102,7 @@ export const baseInit: InitState = {
   hasModes: true,
   modeNames: modeSpecs.map((m) => m.name),
   modeSpecs,
+  colorwordStyles,
   config: makeConfig(),
 };
 

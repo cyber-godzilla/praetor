@@ -772,6 +772,7 @@ export const settingsOperations: Record<string, string> = {
   SetGUILayout: "gui-layout",
   SetCRTEffects: "crt-effects",
   SetHighlights: "highlights",
+  SetSpeechColors: "speech-colors",
   SetCustomTabs: "custom-tabs",
   SetActionSets: "action-sets",
   SetQuickCycleModes: "quick-cycle-modes",

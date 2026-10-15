@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/atomicfile"
+	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,6 +46,7 @@ type Config struct {
 	Scripts       []string            `yaml:"scripts"`
 	UI            UIConfig            `yaml:"ui"`
 	Highlights    []HighlightConfig   `yaml:"highlights"`
+	SpeechColors  []SpeechColorConfig `yaml:"speech_colors"`
 	Kudos         KudosConfig         `yaml:"kudos"`
 	Ignorelist    Ignorelist          `yaml:"ignorelist"`
 	Notifications NotificationsConfig `yaml:"notifications"`
@@ -127,6 +129,18 @@ type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
 	Style   string `yaml:"style"` // red, gold, green, blue
 	Active  bool   `yaml:"active"`
+}
+
+// SpeechColorConfig assigns a Colorword style to recognized lines from a
+// character pattern. Character expands input variables and supports * and ?
+// wildcards. Ordinary speech is always eligible; think and OOC lines are
+// opt-in. Style names come from colorwords.Catalog.
+type SpeechColorConfig struct {
+	Character    string `yaml:"character"`
+	Style        string `yaml:"style"`
+	Active       bool   `yaml:"active"`
+	IncludeThink bool   `yaml:"include_think,omitempty"`
+	IncludeOOC   bool   `yaml:"include_ooc,omitempty"`
 }
 
 // KudosConfig stores favorites and queued kudos messages, persisted in
@@ -372,7 +386,8 @@ func Defaults() *Config {
 			MobileShowTabBar:     true,
 			NumpadNavigation:     "numlock",
 		},
-		Highlights: []HighlightConfig{},
+		Highlights:   []HighlightConfig{},
+		SpeechColors: []SpeechColorConfig{},
 		Kudos: KudosConfig{
 			Favorites: []string{},
 			Queue:     []KudosQueueEntry{},
@@ -719,6 +734,31 @@ func (c *Config) Validate() error {
 		kept = append(kept, c.Highlights[i])
 	}
 	c.Highlights = kept
+
+	// Speech colors
+	seenCharacters := make(map[string]bool, len(c.SpeechColors))
+	keptSpeechColors := c.SpeechColors[:0]
+	for _, rule := range c.SpeechColors {
+		rule.Character = strings.TrimSpace(rule.Character)
+		if rule.Character == "" {
+			log.Printf("[CONFIG] dropping speech color with empty character pattern")
+			continue
+		}
+		style, ok := colorwords.LookupStyle(rule.Style)
+		if !ok {
+			log.Printf("[CONFIG] dropping speech color for %q with unknown style %q", rule.Character, rule.Style)
+			continue
+		}
+		key := strings.ToLower(rule.Character)
+		if seenCharacters[key] {
+			log.Printf("[CONFIG] dropping duplicate speech color character pattern %q", rule.Character)
+			continue
+		}
+		seenCharacters[key] = true
+		rule.Style = style.Name
+		keptSpeechColors = append(keptSpeechColors, rule)
+	}
+	c.SpeechColors = keptSpeechColors
 
 	// Notifications
 	if c.Notifications.Desktop.HealthBelow.Threshold < 0 || c.Notifications.Desktop.HealthBelow.Threshold > 100 {

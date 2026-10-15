@@ -45,7 +45,7 @@ function scanClientGo(): Set<string> {
   const body = end === -1 ? rest : rest.slice(0, end);
 
   // Cases look like:  case "/mode", "/sm":
-  return new Set(matchAll(body, /"(\/[a-z]+)"/g));
+  return new Set(matchAll(body, /"(\/[a-z-]+)"/g));
 }
 
 describe("catalog covers every dispatched command", () => {

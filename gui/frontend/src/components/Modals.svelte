@@ -4,6 +4,7 @@
   import SettingsModal from "./modals/SettingsModal.svelte";
   import VariablesModal from "./modals/VariablesModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
+  import SpeechColorsModal from "./modals/SpeechColorsModal.svelte";
   import CustomTabsModal from "./modals/CustomTabsModal.svelte";
   import ActionSetsModal from "./modals/ActionSetsModal.svelte";
   import AddActionSetModal from "./modals/AddActionSetModal.svelte";
@@ -69,6 +70,8 @@
   <CRTEffectsModal />
 {:else if m === "highlights"}
   <HighlightsModal />
+{:else if m === "speech-colors"}
+  <SpeechColorsModal />
 {:else if m === "tabs"}
   <CustomTabsModal />
 {:else if m === "actionsets"}

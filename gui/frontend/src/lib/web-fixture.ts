@@ -64,6 +64,7 @@ export const webFixtureEvents: WireEvent[] = [
   { kind: Kind.Compass, image: { dataURI: "data:image/png;base64,fixture", width: 120, height: 120 } },
   { kind: Kind.Notify, notify: { title: "Fixture alert", message: "Notification delivery works." } },
   { kind: Kind.Error, error: { context: "fixture", error: "Example recoverable error" } },
+  { kind: Kind.Variable, variable: { name: "fixture_target", value: "bronze lamp" } },
   { kind: Kind.Debug, debug: { channel: 9, payload: "23" } },
   { kind: Kind.OpenMenu, openMenu: "help" },
 ];

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
 
@@ -345,6 +346,39 @@ func (a *GuiApp) SetHighlights(highlights []config.HighlightConfig) error {
 	return a.save()
 }
 
+// SetSpeechColors replaces the character speech-color rules and atomically
+// publishes the persisted snapshot to the event rendering loop.
+func (a *GuiApp) SetSpeechColors(rules []config.SpeechColorConfig) error {
+	normalized := make([]config.SpeechColorConfig, 0, len(rules))
+	seen := make(map[string]bool, len(rules))
+	for _, rule := range rules {
+		rule.Character = strings.TrimSpace(rule.Character)
+		if rule.Character == "" {
+			return fmt.Errorf("speech color character patterns must not be empty")
+		}
+		key := strings.ToLower(rule.Character)
+		if seen[key] {
+			return fmt.Errorf("duplicate speech color character pattern %q", rule.Character)
+		}
+		style, ok := colorwords.LookupStyle(rule.Style)
+		if !ok {
+			return fmt.Errorf("invalid Colorword style %q", rule.Style)
+		}
+		seen[key] = true
+		rule.Style = style.Name
+		normalized = append(normalized, rule)
+	}
+
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().SpeechColors = cloneSpeechColors(normalized)
+	if err := a.save(); err != nil {
+		return err
+	}
+	a.speechColors.Store(cloneSpeechColors(normalized))
+	return nil
+}
+
 // SetCustomTabs replaces the custom tab definitions.
 func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 	for _, tab := range tabs {
@@ -404,7 +438,10 @@ func (a *GuiApp) SetInputVariables(variables map[string]string) error {
 	}
 	return a.withConfigApplied(
 		func() { a.cfg().Commands.Variables = cloned },
-		func() { a.client().SetInputVariables(cloned) },
+		func() {
+			a.client().SetInputVariables(cloned)
+			a.inputVariables.Store(cloneStringMap(cloned))
+		},
 	)
 }
 

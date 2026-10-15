@@ -37,6 +37,8 @@ describe("chainStateLabel", () => {
     ["repeat", {}, "repeating “command” (1)"],
     ["notify", { detail: "Training" }, "notifying “Training”"],
     ["notify", {}, "notifying “Praetor”"],
+    ["set-var", { detail: "counter" }, "setting “counter”"],
+    ["add-var", { detail: "counter" }, "adding to “counter”"],
     ["send", { detail: "look" }, "sending “look”"],
     ["send", {}, "sending “command”"],
     ["custom", {}, "custom"],

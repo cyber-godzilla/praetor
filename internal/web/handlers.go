@@ -363,6 +363,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return s.app.SetCRTEffects(value.Scanlines, value.Roll, value.Bloom)
 	case "highlights":
 		return settingValue[[]config.HighlightConfig](raw, s.app.SetHighlights)
+	case "speech-colors":
+		return settingValue[[]config.SpeechColorConfig](raw, s.app.SetSpeechColors)
 	case "custom-tabs":
 		return settingValue[[]config.CustomTabConfig](raw, s.app.SetCustomTabs)
 	case "action-sets":

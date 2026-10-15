@@ -817,6 +817,15 @@ func main() {
 	}
 	gc.SetIgnoreOOC(cfg.Ignorelist.OOC)
 	gc.SetIgnoreThink(cfg.Ignorelist.Think)
+	gc.SetInputVariableSaver(func(variables map[string]string) error {
+		previous := cfg.Commands.Variables
+		cfg.Commands.Variables = variables
+		if err := config.Save(cfg, cfgFile); err != nil {
+			cfg.Commands.Variables = previous
+			return err
+		}
+		return nil
+	})
 
 	// Session transcript logging.
 	logDir := sessionsDir
@@ -845,7 +854,7 @@ func main() {
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
-	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
+	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, cfg.SpeechColors, cfg.Commands.Variables, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify, sessionLog: sessLog, sessionsDir: sessionsDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

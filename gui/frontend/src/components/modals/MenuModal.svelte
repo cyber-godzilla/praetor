@@ -11,20 +11,19 @@
 
   const groups: { name: string; items: Item[] }[] = [
     {
-      name: "Display & Behavior",
+      name: "Behavior",
       items: [
         { label: "Settings", go: "settings" },
-        { label: "Retro CRT Effects", go: "crt" },
-        { label: "Highlights", go: "highlights" },
         { label: "Custom Tabs", go: "tabs" },
-        { label: "Action Sets", go: "actionsets" },
         { label: "Notifications", go: "notifications" },
+        { label: "Retro CRT Effects", go: "crt" },
       ],
     },
     {
       name: "Automation",
       items: [
         { label: "Variables", go: "variables" },
+        { label: "Action Sets", go: "actionsets" },
         { label: "Script Directories", go: "scripts" },
         { label: "Quick-Cycle Modes", go: "quickcycle" },
         { label: "High-Priority Commands", go: "priority" },
@@ -33,8 +32,10 @@
       ],
     },
     {
-      name: "Filters",
+      name: "Text Parsing and Display",
       items: [
+        { label: "Highlights", go: "highlights" },
+        { label: "Speech Colors", go: "speech-colors" },
         { label: "Ignore OOC Accounts", go: "ignore-ooc" },
         { label: "Ignore Think Characters", go: "ignore-think" },
       ],

@@ -10,6 +10,7 @@
   let target = $state<HTMLInputElement | HTMLTextAreaElement | null>(null); // focused input at open
   let caret = $state({ start: 0, end: 0 });
   let menuEl = $state<HTMLDivElement | undefined>(undefined);
+  let speechSpeaker = $state("");
 
   // Copyable text: an output/DOM selection, or a range highlighted inside the
   // captured input (window.getSelection() is empty for input-internal selections).
@@ -43,6 +44,9 @@
       target = null;
     }
     pos = { x: e.clientX, y: e.clientY };
+    const eventTarget = e.target instanceof Element ? e.target : null;
+    speechSpeaker = eventTarget?.closest<HTMLElement>(".line[data-speech-speaker]")
+      ?.dataset.speechSpeaker ?? "";
     open = true;
     // Signal so the game view's Escape handler yields to us instead of opening
     // the app menu when Esc dismisses this menu.
@@ -87,6 +91,14 @@
     el.setSelectionRange(p, p);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }
+
+  function setSpeechColor() {
+    const speaker = speechSpeaker;
+    close();
+    if (!speaker) return;
+    store.speechColorPrefill = speaker;
+    store.openModal = "speech-colors";
+  }
 </script>
 
 <svelte:window
@@ -103,6 +115,10 @@
   <div class="ctxmenu" bind:this={menuEl} style="left:{pos.x}px; top:{pos.y}px" role="menu">
     <button class="item" role="menuitem" disabled={!copyText} onclick={copy}>Copy</button>
     <button class="item" role="menuitem" disabled={!target} onclick={paste}>Paste</button>
+    {#if speechSpeaker}
+      <div class="separator"></div>
+      <button class="item" role="menuitem" onclick={setSpeechColor}>Set a speech color</button>
+    {/if}
   </div>
 {/if}
 
@@ -134,5 +150,10 @@
   .item:disabled {
     color: var(--fg-dim);
     cursor: default;
+  }
+  .separator {
+    height: 1px;
+    margin: 3px 6px;
+    background: var(--border);
   }
 </style>

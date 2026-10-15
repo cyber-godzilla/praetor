@@ -76,6 +76,7 @@ export const COMMANDS: CommandSpec[] = [
   { name: "/mode", aliases: ["/sm"], args: "<name> [args…]", desc: "Switch Lua mode" },
   { name: "/toggle", args: "<label>", desc: "Toggle a mode state value" },
   { name: "/set", args: "<label> <value>", desc: "Set a mode state value" },
+  { name: "/set-variable", aliases: ["/set-var"], args: "<name> <value>", desc: "Save a command variable" },
   { name: "/calc", aliases: ["/rb"], desc: "Rank-bonus calculator" },
   { name: "/wiki", args: "[name]", desc: "Open a wiki bookmark, or list them" },
   { name: "/maps", args: "[name]", desc: "Open a map bookmark, or list them" },
@@ -115,7 +116,10 @@ export function commandHead(c: CommandSpec): string {
 export function completionFor(input: string, c: CommandSpec): string | null {
   // Trim to match dispatch, which trims before it interprets the line.
   const typed = input.trim().toLowerCase();
-  for (const n of [c.name, ...(c.aliases ?? [])]) {
+  const names = [c.name, ...(c.aliases ?? [])];
+  const exact = names.find((n) => n.toLowerCase() === typed);
+  if (exact) return exact + " ";
+  for (const n of names) {
     if (n.toLowerCase().startsWith(typed)) return n + " ";
   }
   return null;
