@@ -43,7 +43,7 @@ test.describe("retain input after send", () => {
   retainConfig.UI.KeepInputOnSend = true;
   test.use({ init: { ...baseInit, config: retainConfig } });
 
-  test("retains game commands but clears /sm and /mode commands", async ({ page, backend }) => {
+  test("retains game commands but clears every slash command", async ({ page, backend }) => {
     await backend.input.fill("look");
     await page.keyboard.press("Enter");
     await expect(backend.input).toHaveValue("look");
@@ -57,10 +57,22 @@ test.describe("retain input after send", () => {
     await page.keyboard.press("Enter");
     await expect(backend.input).toHaveValue("");
 
+    // Unknown slash commands still route through SendInput, and must follow
+    // the same clearing rule without needing their own special case here.
+    await backend.input.fill("/future-command argument");
+    await page.keyboard.press("Enter");
+    await expect(backend.input).toHaveValue("");
+
+    await backend.input.fill("  /another-future-command");
+    await page.keyboard.press("Enter");
+    await expect(backend.input).toHaveValue("");
+
     await expect.poll(() => backend.args("SendInput")).toEqual([
       ["look"],
       ["/sm hunt"],
       ["/mode hunt_wolves"],
+      ["/future-command argument"],
+      ["  /another-future-command"],
     ]);
   });
 });
