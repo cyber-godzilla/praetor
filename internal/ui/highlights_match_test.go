@@ -24,7 +24,7 @@ func TestApplyHighlights_CaseFoldingRunesNoPanic(t *testing.T) {
 					t.Errorf("applyHighlights panicked on %q: %v", text, r)
 				}
 			}()
-			out := applyHighlights([]types.StyledSegment{{Text: text}}, hl)
+			out := applyHighlights([]types.StyledSegment{{Text: text}}, hl, nil)
 			var sb strings.Builder
 			for _, s := range out {
 				sb.WriteString(s.Text)
@@ -51,7 +51,7 @@ func TestApplyHighlights_MatchesAcrossSegmentBoundary(t *testing.T) {
 		{Text: " ring"},
 	}
 	hl := []config.HighlightConfig{{Pattern: "gold ring", Style: "gold", Active: true}}
-	out := applyHighlights(segs, hl)
+	out := applyHighlights(segs, hl, nil)
 
 	var hlText, all strings.Builder
 	for _, s := range out {
@@ -74,7 +74,7 @@ func TestApplyHighlights_FirstConfiguredWinsOnOverlap(t *testing.T) {
 		{Pattern: "gold ring", Style: "red", Active: true}, // configured first
 		{Pattern: "gold", Style: "green", Active: true},    // overlaps, configured later
 	}
-	out := applyHighlights(segs, hl)
+	out := applyHighlights(segs, hl, nil)
 	for _, s := range out {
 		if s.Color == "highlight:green" {
 			t.Errorf("later-configured highlight won an overlap: %+v", out)
@@ -87,7 +87,7 @@ func TestApplyHighlights_FirstConfiguredWinsOnOverlap(t *testing.T) {
 // rune shifts byte positions.
 func TestApplyHighlights_CaseInsensitiveSpan(t *testing.T) {
 	hl := []config.HighlightConfig{{Pattern: "LOOT", Style: "gold", Active: true}}
-	out := applyHighlights([]types.StyledSegment{{Text: "ȺȺȺȺloot here"}}, hl)
+	out := applyHighlights([]types.StyledSegment{{Text: "ȺȺȺȺloot here"}}, hl, nil)
 	found := false
 	for _, s := range out {
 		if s.Text == "loot" && s.Color == "highlight:gold" {
@@ -96,5 +96,29 @@ func TestApplyHighlights_CaseInsensitiveSpan(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("mixed-case 'loot' not highlighted after a growing rune: %+v", out)
+	}
+}
+
+func TestApplyHighlights_WildcardVariableUsesExactConsumedSpan(t *testing.T) {
+	hl := []config.HighlightConfig{{Pattern: "${loot}*ring", Style: "gold", Active: true}}
+	out := applyHighlights([]types.StyledSegment{{Text: "a ruby small ring and ruby huge ring"}}, hl, map[string]string{"loot": "ruby "})
+	var highlighted []string
+	for _, segment := range out {
+		if segment.Color == "highlight:gold" {
+			highlighted = append(highlighted, segment.Text)
+		}
+	}
+	if got := strings.Join(highlighted, "|"); got != "ruby small ring|ruby huge ring" {
+		t.Fatalf("highlighted %q, want both shortest wildcard spans", got)
+	}
+}
+
+func TestApplyHighlights_UnresolvedAndEmptyPatternsMatchNothing(t *testing.T) {
+	input := []types.StyledSegment{{Text: "anything"}}
+	for _, pattern := range []string{"${missing}", "${empty}"} {
+		out := applyHighlights(input, []config.HighlightConfig{{Pattern: pattern, Style: "gold", Active: true}}, map[string]string{"empty": ""})
+		if &out[0] != &input[0] {
+			t.Fatalf("pattern %q unexpectedly changed output", pattern)
+		}
 	}
 }

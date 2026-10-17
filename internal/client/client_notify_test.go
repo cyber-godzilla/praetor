@@ -97,13 +97,8 @@ func TestUpdateConfig_RecompilesPatterns(t *testing.T) {
 		t.Error("expected second pattern disabled")
 	}
 
-	// Verify compiled regexes work.
-	if !dn.patterns[0].regex.MatchString("attack the bandit") {
-		t.Error("first pattern regex should match 'attack the bandit'")
-	}
-	if !dn.patterns[1].regex.MatchString("you  die") {
-		t.Error("second pattern regex should match 'you  die' (? matches any char)")
-	}
+	// Raw rules are retained so variables can be resolved against the current
+	// snapshot at match time rather than frozen during configuration updates.
 }
 
 func TestUpdateConfig_PreservesDedup(t *testing.T) {
@@ -178,4 +173,80 @@ func TestDesktopNotifier_NilSinkDoesNotDeliverNatively(t *testing.T) {
 	// The assertion is that this returns without attempting to dereference the
 	// sink. Native process execution is deliberately outside unit tests.
 	dn.CheckHealth(20)
+}
+
+func TestDesktopNotifier_ExpandsLiveVariablesInRulesAndTemplates(t *testing.T) {
+	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{Patterns: []config.NotifyPatternConfig{{
+		Pattern: `${target} dropped \*`,
+		Title:   "Loot: ${target}",
+		Message: "Owner ${owner:unknown}",
+		Enabled: true,
+	}}})
+	type delivered struct{ title, message string }
+	got := make(chan delivered, 2)
+	dn.SetSink(NotificationSinkFunc(func(title, message string) {
+		got <- delivered{title: title, message: message}
+	}))
+	dn.SetVariables(map[string]string{"target": "Apula"})
+
+	dn.CheckText("Apula dropped *")
+	select {
+	case notification := <-got:
+		if notification.title != "Loot: Apula" || notification.message != "Owner unknown" {
+			t.Fatalf("unexpected expanded notification: %#v", notification)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expanded notification was not delivered")
+	}
+
+	dn.SetVariables(map[string]string{"target": "Constantine", "owner": "Neil"})
+	dn.CheckText("Apula dropped *")
+	select {
+	case notification := <-got:
+		t.Fatalf("stale variable snapshot matched: %#v", notification)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestDesktopNotifier_UnresolvedPatternVariableMatchesNothing(t *testing.T) {
+	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{Patterns: []config.NotifyPatternConfig{{
+		Pattern: "${missing}", Enabled: true,
+	}}})
+	got := make(chan struct{}, 1)
+	dn.SetSink(NotificationSinkFunc(func(string, string) { got <- struct{}{} }))
+	dn.CheckText("missing")
+	select {
+	case <-got:
+		t.Fatal("unresolved notification pattern matched")
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestDesktopNotifier_UnresolvedTemplateSuppressesAndWarnsOnce(t *testing.T) {
+	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{Patterns: []config.NotifyPatternConfig{{
+		Pattern: "loot", Title: "${missing}", Enabled: true,
+	}}})
+	delivered := 0
+	dn.SetSink(NotificationSinkFunc(func(string, string) { delivered++ }))
+	warnings := make(chan string, 2)
+	dn.SetWarningSink(func(message string) { warnings <- message })
+
+	dn.CheckText("loot")
+	dn.CheckText("loot again")
+	if delivered != 0 {
+		t.Fatalf("unresolved template delivered %d notifications", delivered)
+	}
+	select {
+	case warning := <-warnings:
+		if !strings.Contains(warning, "missing") {
+			t.Fatalf("warning %q does not identify the unresolved variable", warning)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("missing in-app warning")
+	}
+	select {
+	case warning := <-warnings:
+		t.Fatalf("duplicate warning was not rate limited: %q", warning)
+	case <-time.After(20 * time.Millisecond):
+	}
 }

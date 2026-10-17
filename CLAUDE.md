@@ -247,7 +247,7 @@ Behavior is set by `ui.numpad_navigation` (Settings → Numpad navigation):
 ## Tabs
 
 - **All** — always present, receives all game text
-- **Custom tabs** — user-defined via Esc → Custom Tabs, with include/exclude pattern rules
+- **Custom Views** — user-defined via Esc → Layout, with include/exclude pattern rules and tab/Sidebar 1–3 placement
 - **Metrics** — session metrics dashboard (kills, actions, duration, history)
 - **Debug** — raw SKOOT protocol data (visible only with `--debug` flag)
 
@@ -312,7 +312,7 @@ server splits it. Slash commands are not interpreted inside a block.
 
 - Word-aware line wrapping: breaks at last whitespace before width limit
 - Leading whitespace preserved (custom `padLines()` avoids lipgloss Width trimming)
-- Command echo: typed and script commands shown as italic; controlled by separate `Echo Typed Commands` / `Echo Script Commands` menu toggles. Exclude-only custom tabs opt in to echo routing via per-tab `echo_commands` flag (default off)
+- Command echo: typed and script commands shown as italic; controlled by separate `Echo Typed Commands` / `Echo Script Commands` menu toggles. Exclude-only Custom Views opt in to echo routing via per-view `echo_commands` flag (default off)
 - Scrollback: configurable per-tab, scroll position tracks display rows not logical lines
 - Highlight patterns applied before rendering (see String Highlighting above)
 
@@ -337,16 +337,25 @@ commands:
   semicolon_delay_ms: 900 # delay between ;; commands; GUI range 100-10000
   unbusy_delay_ms: 100    # delay after && response; GUI range 0-10000
   high_priority: []
-  variables: {}           # GUI-managed ${name} substitutions for typed input
+character_profiles:
+  default_id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+  profiles:
+    - id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+      name: Default
+      account: ""              # Default has no game character identity
+      character_number: 0
+      variables: {}       # GUI-managed ${name} substitutions for typed input
+      custom_views: []
+      action_sets: []      # sidebar Actions view: named sets of buttons
 ui:
-  display_mode: sidebar   # TUI: sidebar | topbar | off; GUI: sidebar | off
+  display_mode: sidebar   # TUI: sidebar | topbar | off
   default_tab: all
   scrollback: 5000
   sidebar_width: 40       # TUI columns
-  gui_sidebar_width: 260  # GUI pixels
+  gui_sidebar_width: 260  # legacy GUI value migrated to Sidebar 1
   minimap_scale: 1.0
   minimap_height: 12      # TUI rows
-  gui_minimap_height: 160 # GUI pixels
+  gui_minimap_height: 160 # legacy GUI value migrated to Map view height
   quick_cycle_modes:
     - disable
   color_words: false
@@ -356,9 +365,21 @@ ui:
   input_spellcheck: true       # GUI: native spellcheck on the command input
   keep_input_on_send: false    # GUI: keep the sent command selected in the input instead of clearing
   numpad_navigation: numlock   # numlock | always | off (GUI numpad walking)
-  custom_tabs: []
-  action_sets: []       # sidebar Actions tab: named sets of {label, command} buttons
+display_profiles:
+  default_id: 0b40c7dd-fba7-44cb-83f7-f125f5bc98b3
+  profiles:
+    - id: 0b40c7dd-fba7-44cb-83f7-f125f5bc98b3
+      name: Default
+      sidebars_visible: true
+      main: []          # ordered {component_id} placements
+      sidebars: []      # UUID sidebars, each with an ordered components list
 highlights: []
+wound_highlights:
+  enabled: false
+  cuts: red
+  bruises: purple
+  punctures: blue
+  burns: orange
 updates:
   check: true           # GUI: startup check against GitHub releases (toast on newer)
 notifications:

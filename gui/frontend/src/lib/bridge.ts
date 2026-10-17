@@ -14,6 +14,7 @@ import type {
   HighlightConfig,
   CustomTabConfig,
   ActionSet,
+  DisplayProfileConfig,
   DesktopNotificationsConfig,
   UpdateInfo,
   NoteSummary,
@@ -25,6 +26,8 @@ import type {
   ConnectResult,
   InputChainStatus,
   SpeechColorConfig,
+  WoundHighlightConfig,
+  CharacterProfileIdentity,
 } from "./types";
 import type { PraetorTransport, SystemUpdate } from "./transport";
 import { WebAuthRequiredError } from "./transport";
@@ -71,6 +74,7 @@ export const getInitState = () =>
     modeNames: [],
     modeSpecs: [],
     colorwordStyles: [],
+    activeCharacterProfileId: "",
     config: {} as AppConfig,
   });
 
@@ -143,6 +147,8 @@ export const setRetainAppLogs = (v: boolean) => call<void>("SetRetainAppLogs", u
 export const setSessionLogging = (v: boolean) => call<void>("SetSessionLogging", undefined, v);
 export const setLogPath = (p: string) => call<void>("SetLogPath", undefined, p);
 export const setDisplayMode = (m: string) => call<void>("SetDisplayMode", undefined, m);
+export const setGUISidebarsVisible = (visible: boolean) =>
+  call<void>("SetGUISidebarsVisible", undefined, visible);
 export const setNumpadNavigation = (m: string) => call<void>("SetNumpadNavigation", undefined, m);
 export const setMinimapScale = (s: number) => call<void>("SetMinimapScale", undefined, s);
 export const setCompassScale = (s: number) => call<void>("SetCompassScale", undefined, s);
@@ -156,12 +162,22 @@ export const setCRTEffects = (scanlines: boolean, roll: boolean, bloom: boolean)
 export const setHighlights = (h: HighlightConfig[]) => call<void>("SetHighlights", undefined, h);
 export const setSpeechColors = (rules: SpeechColorConfig[]) =>
   call<void>("SetSpeechColors", undefined, rules);
+export const setWoundHighlights = (config: WoundHighlightConfig) =>
+  call<void>("SetWoundHighlights", undefined, config);
 export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs", undefined, t);
+export const setViewLayout = (layout: DisplayProfileConfig, customViews: CustomTabConfig[]) =>
+  call<void>("SetViewLayout", undefined, layout, customViews);
 export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
+export const setSelectedActionSetID = (id: string) =>
+  call<void>("SetSelectedActionSetID", undefined, id);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);
 export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", undefined, c);
 export const setInputVariables = (v: Record<string, string>) =>
   call<void>("SetInputVariables", undefined, v);
+export const setCharacterProfiles = async (profiles: CharacterProfileIdentity[]) => {
+  await call<void>("SetCharacterProfiles", undefined, profiles);
+  return getConfig();
+};
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);
 export const setIgnoreThink = (n: string[]) => call<void>("SetIgnoreThink", undefined, n);
 export const setScriptDirs = (d: string[]) => call<void>("SetScriptDirs", undefined, d);

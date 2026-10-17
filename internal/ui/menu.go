@@ -15,6 +15,7 @@ type MenuColorWordsMsg struct{}           // toggle color words
 type MenuEchoTypedMsg struct{}            // toggle echo of user-typed commands
 type MenuEchoScriptMsg struct{}           // toggle echo of script-sent commands
 type MenuHideIPsMsg struct{}              // toggle IP address masking
+type MenuWoundHighlightsMsg struct{}      // open wound highlight settings
 type MenuGameLogsMsg struct{}             // toggle session logging
 type MenuNotificationSettingsMsg struct{} // open notification settings
 type MenuLogPathMsg struct {
@@ -86,6 +87,7 @@ func NewMenu(colorWords, echoTyped, echoScript, hideIPs, gameLogs bool, logPath 
 
 		menuItem{label: "Display", isHeader: true},
 		menuItem{label: "Highlights", action: func() tea.Msg { return MenuHighlightsMsg{} }},
+		menuItem{label: "Wound Highlighting", action: func() tea.Msg { return MenuWoundHighlightsMsg{} }},
 		menuItem{label: "Custom Tabs", action: func() tea.Msg { return MenuTabsMsg{} }},
 		menuItem{label: "Ignorelist (OOC)", action: func() tea.Msg { return MenuIgnorelistOOCMsg{} }},
 		menuItem{label: "Ignorelist (Think)", action: func() tea.Msg { return MenuIgnorelistThinkMsg{} }},

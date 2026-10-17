@@ -41,6 +41,11 @@ describe("web transport operation parity", () => {
       SetMobileOutputFontSize: "mobile-output-font-size",
       SetRetainAppLogs: "retain-app-logs",
       SetSpeechColors: "speech-colors",
+      SetWoundHighlights: "wound-highlights",
+      SetViewLayout: "view-layout",
+      SetSelectedActionSetID: "selected-action-set",
+      SetGUISidebarsVisible: "gui-sidebars-visible",
+      SetCharacterProfiles: "character-profiles",
     });
   });
 

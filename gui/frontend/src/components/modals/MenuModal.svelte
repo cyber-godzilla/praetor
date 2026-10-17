@@ -14,7 +14,8 @@
       name: "Behavior",
       items: [
         { label: "Settings", go: "settings" },
-        { label: "Custom Tabs", go: "tabs" },
+        { label: "Character Profiles", go: "character-profiles" },
+        { label: "Layout", go: "layout" },
         { label: "Notifications", go: "notifications" },
         { label: "Retro CRT Effects", go: "crt" },
       ],

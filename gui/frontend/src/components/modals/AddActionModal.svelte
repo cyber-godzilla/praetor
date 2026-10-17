@@ -13,12 +13,12 @@
     if (!valid || saving) return; // guard invalid input and double-submit
     saving = true;
     // Deep-clone so we don't mutate the reactive store objects before persisting.
-    const sets: ActionSet[] = (store.config?.UI?.ActionSets ?? []).map((s) => ({
+    const sets: ActionSet[] = (store.characterProfile()?.ActionSets ?? []).map((s) => ({
       ID: s.ID,
       Name: s.Name,
       Buttons: (s.Buttons ?? []).map((b) => ({ ...b })),
     }));
-    const target = sets[store.actionSetIndex];
+    const target = sets.find((set) => set.ID === store.selectedActionSetID) ?? sets[0];
     if (!target) {
       saving = false;
       store.openModal = null;
@@ -27,7 +27,7 @@
     target.Buttons = [...(target.Buttons ?? []), { Label: label.trim(), Command: command.trim() }];
     try {
       await api.setActionSets(sets);
-      if (store.config) store.config.UI.ActionSets = sets;
+      store.characterProfile()!.ActionSets = sets;
       store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));

@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Modal from "../Modal.svelte";
   import { store } from "../../lib/store.svelte";
+  import ExpansionPreview from "../ExpansionPreview.svelte";
 
   let {
     title,
@@ -9,6 +10,7 @@
     initial,
     onsave,
     onBrowse,
+    variablePatterns = false,
   }: {
     title: string;
     hint?: string;
@@ -18,6 +20,7 @@
     // and its non-empty result is appended (deduped). Other users of this modal
     // (ignore lists, high-priority commands) omit it and show no button.
     onBrowse?: () => Promise<string | null>;
+    variablePatterns?: boolean;
   } = $props();
 
   // Seed once from the prop; the editor owns the list thereafter.
@@ -54,12 +57,13 @@
   <div class="list">
     {#each items as item, i (item)}
       <div class="item">
-        <span class="txt">{item}</span>
+        <span class="txt">{item}{#if variablePatterns}<ExpansionPreview value={item} match />{/if}</span>
         <button class="danger sm" onclick={() => remove(i)}>Remove</button>
       </div>
     {/each}
     {#if items.length === 0}<div class="dim empty">Empty</div>{/if}
   </div>
+  {#if variablePatterns}<ExpansionPreview value={draft} match />{/if}
   <div class="add row">
     <input type="text" bind:value={draft} placeholder="Add…"
       onkeydown={(e) => e.key === "Enter" && add()} />
@@ -88,6 +92,8 @@
     border-radius: 5px;
   }
   .txt {
+    flex: 1;
+    min-width: 0;
     font-family: var(--mono);
     font-size: 13px;
   }

@@ -39,14 +39,19 @@ type IgnorelistThinkCloseMsg struct {
 
 // IgnorelistScreen is a generic add/remove editor backing both ignorelists.
 type IgnorelistScreen struct {
-	kind    IgnorelistKind
-	names   []string
-	cursor  int
-	adding  bool
-	addBuf  string
-	confirm bool
-	width   int
-	height  int
+	kind      IgnorelistKind
+	names     []string
+	cursor    int
+	adding    bool
+	addBuf    string
+	confirm   bool
+	width     int
+	height    int
+	variables map[string]string
+}
+
+func (s *IgnorelistScreen) SetVariables(values map[string]string) {
+	s.variables = clonePreviewVariables(values)
 }
 
 // NewIgnorelistScreen creates an editor seeded with the given list.
@@ -251,6 +256,13 @@ func (s IgnorelistScreen) View() string {
 		b.WriteString(dimStyle.Render("[Enter] add  [Esc] cancel"))
 	} else {
 		b.WriteString(dimStyle.Render("[↑/↓] navigate  [A] add  [D] remove  [Esc] save & close"))
+	}
+	previewPattern := s.addBuf
+	if !s.adding && len(s.names) > 0 && s.cursor < len(s.names) {
+		previewPattern = s.names[s.cursor]
+	}
+	if preview := expansionPreview(previewPattern, s.variables, true); preview != "" {
+		b.WriteString("\n" + dimStyle.Render(preview))
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,

@@ -178,6 +178,7 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		return nil, fmt.Errorf("creating engine: %w", err)
 	}
 
+	defaultProfile := cfg.DefaultCharacterProfile()
 	c := &Client{
 		Config:         cfg,
 		Session:        session.New(),
@@ -186,10 +187,11 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		Settings:       Settings{EchoTyped: true, EchoScript: true},
 		events:         make(chan types.Event, 256),
 		ignore:         NewIgnoreFilter(),
-		inputVariables: cloneVariables(cfg.Commands.Variables),
+		inputVariables: cloneVariables(defaultProfile.Variables),
 		openURL:        func(u string) { go OpenBrowser(u) },
 		desktopNotify:  sendDesktopNotification,
 	}
+	c.ignore.SetVariables(c.inputVariables)
 	c.allowScriptNotifications.Store(cfg.Notifications.Desktop.AllowScriptNotifications)
 	c.notificationSound.Store(cfg.Notifications.Desktop.Sound)
 	c.SetSemicolonDelay(time.Duration(cfg.Commands.SemicolonDelayMS) * time.Millisecond)
@@ -275,9 +277,11 @@ func (c *Client) SetIgnoreThink(names []string) {
 // SetInputVariables replaces the typed-input variable snapshot. The copy keeps
 // command expansion race-free while the GUI persists a newly edited map.
 func (c *Client) SetInputVariables(variables map[string]string) {
+	cloned := cloneVariables(variables)
 	c.inputMu.Lock()
-	c.inputVariables = cloneVariables(variables)
+	c.inputVariables = cloned
 	c.inputMu.Unlock()
+	c.ignore.SetVariables(cloned)
 }
 
 // SetInputVariableSaver installs the frontend-owned persistence hook used by

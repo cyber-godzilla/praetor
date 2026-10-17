@@ -3,9 +3,10 @@
   import MenuModal from "./modals/MenuModal.svelte";
   import SettingsModal from "./modals/SettingsModal.svelte";
   import VariablesModal from "./modals/VariablesModal.svelte";
+  import CharacterProfilesModal from "./modals/CharacterProfilesModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
   import SpeechColorsModal from "./modals/SpeechColorsModal.svelte";
-  import CustomTabsModal from "./modals/CustomTabsModal.svelte";
+  import LayoutModal from "./modals/LayoutModal.svelte";
   import ActionSetsModal from "./modals/ActionSetsModal.svelte";
   import AddActionSetModal from "./modals/AddActionSetModal.svelte";
   import AddActionModal from "./modals/AddActionModal.svelte";
@@ -66,14 +67,16 @@
   <SettingsModal />
 {:else if m === "variables"}
   <VariablesModal />
+{:else if m === "character-profiles"}
+  <CharacterProfilesModal />
 {:else if m === "crt"}
   <CRTEffectsModal />
 {:else if m === "highlights"}
   <HighlightsModal />
 {:else if m === "speech-colors"}
   <SpeechColorsModal />
-{:else if m === "tabs"}
-  <CustomTabsModal />
+{:else if m === "layout"}
+  <LayoutModal />
 {:else if m === "actionsets"}
   <ActionSetsModal />
 {:else if m === "actionset-add"}
@@ -86,6 +89,7 @@
     hint="Lines from these OOC account names are suppressed. Press Alt+I in the game view to reveal suppressed lines."
     initial={store.config?.Ignorelist?.OOC ?? []}
     onsave={saveIgnoreOOC}
+    variablePatterns
   />
 {:else if m === "ignore-think"}
   <StringListModal
@@ -93,6 +97,7 @@
     hint="Think-channel lines from these character names are suppressed. Press Alt+I in the game view to reveal suppressed lines."
     initial={store.config?.Ignorelist?.Think ?? []}
     onsave={saveIgnoreThink}
+    variablePatterns
   />
 {:else if m === "scripts"}
   <StringListModal

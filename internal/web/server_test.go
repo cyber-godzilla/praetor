@@ -489,37 +489,52 @@ func TestServerMobileWebSettings(t *testing.T) {
 	tests := []struct {
 		operation string
 		value     any
-		matches   func(config.UIConfig) bool
+		matches   func(*config.Config) bool
 	}{
 		{
 			operation: "mobile-show-toolbar",
 			value:     false,
-			matches:   func(ui config.UIConfig) bool { return !ui.MobileShowToolbar },
+			matches:   func(cfg *config.Config) bool { return !cfg.UI.MobileShowToolbar },
 		},
 		{
 			operation: "mobile-show-tab-bar",
 			value:     false,
-			matches:   func(ui config.UIConfig) bool { return !ui.MobileShowTabBar },
+			matches:   func(cfg *config.Config) bool { return !cfg.UI.MobileShowTabBar },
 		},
 		{
 			operation: "mobile-hide-navigation-on-input",
 			value:     true,
-			matches:   func(ui config.UIConfig) bool { return ui.MobileHideNavigationOnInput },
+			matches:   func(cfg *config.Config) bool { return cfg.UI.MobileHideNavigationOnInput },
 		},
 		{
 			operation: "mobile-lowercase-first-letter",
 			value:     true,
-			matches:   func(ui config.UIConfig) bool { return ui.MobileLowercaseFirstLetter },
+			matches:   func(cfg *config.Config) bool { return cfg.UI.MobileLowercaseFirstLetter },
 		},
 		{
 			operation: "mobile-output-font-size",
 			value:     6,
-			matches:   func(ui config.UIConfig) bool { return ui.MobileOutputFontSize == 6 },
+			matches:   func(cfg *config.Config) bool { return cfg.UI.MobileOutputFontSize == 6 },
 		},
 		{
 			operation: "input-spellcheck",
 			value:     false,
-			matches:   func(ui config.UIConfig) bool { return !ui.InputSpellcheck },
+			matches:   func(cfg *config.Config) bool { return !cfg.UI.InputSpellcheck },
+		},
+		{
+			operation: "gui-sidebars-visible",
+			value:     false,
+			matches:   func(cfg *config.Config) bool { return !cfg.DefaultDisplayProfile().SidebarsVisible },
+		},
+		{
+			operation: "character-profiles",
+			value: []config.CharacterProfileIdentity{
+				{ID: config.DefaultCharacterProfileID, Name: "Default"},
+				{ID: "2a764b7a-4145-44d9-9574-3bc2f0fe29cd", Name: "Marcus", Account: "PlayerOne", CharacterNumber: 1},
+			},
+			matches: func(cfg *config.Config) bool {
+				return len(cfg.CharacterProfiles.Profiles) == 2 && cfg.CharacterProfiles.Profiles[1].Account == "PlayerOne"
+			},
 		},
 	}
 
@@ -551,8 +566,8 @@ func TestServerMobileWebSettings(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 			}
-			if !test.matches(srv.app.GetConfig().UI) {
-				t.Fatalf("setting was not applied: %+v", srv.app.GetConfig().UI)
+			if !test.matches(srv.app.GetConfig()) {
+				t.Fatalf("setting was not applied: %+v", srv.app.GetConfig())
 			}
 			message := <-sub.Messages
 			if message.Type != "config" || message.Revision != 2 {

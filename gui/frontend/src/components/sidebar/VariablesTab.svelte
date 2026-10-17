@@ -10,7 +10,7 @@
 
   let nextId = 1;
   let rows = $state<Row[]>(
-    Object.entries(store.config?.Commands?.Variables ?? {})
+    Object.entries(store.characterProfile()?.Variables ?? {})
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, value]) => ({ id: nextId++, name, value })),
   );
@@ -21,7 +21,7 @@
   // events. Refresh an untouched editor immediately; once the user has a
   // local draft, leave it alone until they save or remount the editor.
   $effect(() => {
-    const entries = Object.entries(store.config?.Commands?.Variables ?? {})
+    const entries = Object.entries(store.characterProfile()?.Variables ?? {})
       .sort(([a], [b]) => a.localeCompare(b));
     if (dirty) return;
     rows = entries.map(([name, value]) => ({ id: nextId++, name, value }));
@@ -60,7 +60,7 @@
     saving = true;
     try {
       await api.setInputVariables(variables);
-      if (store.config?.Commands) store.config.Commands.Variables = variables;
+      store.characterProfile()!.Variables = variables;
       dirty = false;
       store.addToast("Variables", "Saved");
     } catch (e) {

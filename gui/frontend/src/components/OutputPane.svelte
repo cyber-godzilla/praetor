@@ -19,7 +19,7 @@
 
   let { tab }: { tab: Tab } = $props();
 
-  const highlights = $derived(compileHighlights(store.config?.Highlights));
+  const highlights = $derived(compileHighlights(store.config?.Highlights, store.characterProfile()?.Variables));
   const hideIPs = $derived(!!store.config?.UI?.HideIPs);
   const desktopFontSize = $derived(store.config?.UI?.OutputFontSize || 14);
   const mobileFontSize = $derived(store.config?.UI?.MobileOutputFontSize || desktopFontSize);

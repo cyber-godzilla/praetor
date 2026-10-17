@@ -403,10 +403,16 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return w, nil
 
 	case ui.TabEditorCloseMsg:
+		msg.Tabs = config.NormalizeCustomViewIDs(msg.Tabs)
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.UI.CustomTabs = msg.Tabs
+			profile := w.cfg.DefaultCharacterProfile()
+			profile.CustomViews = msg.Tabs
+			w.cfg.PlaceUnplacedCustomViewsInDefault()
+			if err := w.cfg.Validate(); err != nil {
+				log.Printf("validating config: %v", err)
+			}
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -419,6 +425,17 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
 			w.cfg.Highlights = msg.Highlights
+			if err := config.Save(w.cfg, w.cfgPath); err != nil {
+				log.Printf("saving config: %v", err)
+			}
+		}
+		return w, cmd
+
+	case ui.WoundSettingsCloseMsg:
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		if msg.Changed && w.cfg != nil && w.cfgPath != "" {
+			w.cfg.WoundHighlights = msg.Config
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -650,6 +667,14 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		refreshCmd := func() tea.Msg { return ui.MenuPersistentDataMsg{} }
 		return w, refreshCmd
 
+	case types.InputVariableSetEvent:
+		if w.desktopNotify != nil && w.cfg != nil {
+			w.desktopNotify.SetVariables(w.cfg.DefaultCharacterProfile().Variables)
+		}
+		newApp, cmd := w.app.Update(msg)
+		w.app = newApp.(ui.App)
+		return w, cmd
+
 	default:
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
@@ -818,10 +843,11 @@ func main() {
 	gc.SetIgnoreOOC(cfg.Ignorelist.OOC)
 	gc.SetIgnoreThink(cfg.Ignorelist.Think)
 	gc.SetInputVariableSaver(func(variables map[string]string) error {
-		previous := cfg.Commands.Variables
-		cfg.Commands.Variables = variables
+		profile := cfg.DefaultCharacterProfile()
+		previous := profile.Variables
+		profile.Variables = variables
 		if err := config.Save(cfg, cfgFile); err != nil {
-			cfg.Commands.Variables = previous
+			profile.Variables = previous
 			return err
 		}
 		return nil
@@ -851,13 +877,18 @@ func main() {
 
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	defaultProfile := cfg.DefaultCharacterProfile()
+	desktopNotify.SetVariables(defaultProfile.Variables)
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
-	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, cfg.SpeechColors, cfg.Commands.Variables, *debugFlag, cfg.UI.ColorWords, cfg.UI.CustomTabs, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
+	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, cfg.WoundHighlights, cfg.SpeechColors, defaultProfile.Variables, *debugFlag, cfg.UI.ColorWords, defaultProfile.CustomViews, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify, sessionLog: sessLog, sessionsDir: sessionsDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	desktopNotify.SetWarningSink(func(message string) {
+		p.Send(ui.NotificationWarningMsg{Message: message})
+	})
 
 	// Snapshot the kudos-queue length before the bridge goroutine starts. The
 	// login prompt is one-time and only needs the count at login, so reading it

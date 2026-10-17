@@ -3,9 +3,7 @@
 package speechcolor
 
 import (
-	"regexp"
 	"strings"
-	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -13,9 +11,8 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
 	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
+	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
-
-var characterPatternCache sync.Map // map[string]*regexp.Regexp
 
 var speechVerbs = map[string]bool{
 	"adds": true, "admits": true, "announces": true, "answers": true,
@@ -67,18 +64,8 @@ func matchesCharacter(pattern, speaker string, variables map[string]string) bool
 	if err != nil || expanded == "" {
 		return false
 	}
-	if !strings.ContainsAny(expanded, "*?") {
-		return strings.EqualFold(expanded, speaker)
-	}
-	if cached, ok := characterPatternCache.Load(expanded); ok {
-		return cached.(*regexp.Regexp).MatchString(speaker)
-	}
-	escaped := regexp.QuoteMeta(expanded)
-	escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
-	escaped = strings.ReplaceAll(escaped, `\?`, `.`)
-	compiled := regexp.MustCompile(`(?i)^` + escaped + `\z`)
-	actual, _ := characterPatternCache.LoadOrStore(expanded, compiled)
-	return actual.(*regexp.Regexp).MatchString(speaker)
+	compiled, err := wildcard.Compile(expanded, wildcard.Whole)
+	return err == nil && compiled.Match(speaker)
 }
 
 // Speaker returns the character/account name at the start of a speech line.

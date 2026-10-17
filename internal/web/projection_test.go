@@ -13,6 +13,7 @@ func TestProjectionSnapshotAndDisconnectReset(t *testing.T) {
 	h := 80
 	p.Apply([]appgui.WireEvent{
 		{Kind: appgui.KindConn, Conn: &appgui.ConnPayload{State: "connected"}},
+		{Kind: appgui.KindCharacterProfile, CharacterProfile: &appgui.CharacterProfilePayload{ID: "profile-1", Name: "Marcus"}},
 		{Kind: appgui.KindText, Text: &appgui.TextPayload{Text: "hello"}},
 		{Kind: appgui.KindBars, Bars: &appgui.BarsPayload{HasHealth: true, Health: h}},
 		{Kind: appgui.KindMinimap, Image: &appgui.ImagePayload{DataURI: "data:image/png;base64,a"}},
@@ -22,20 +23,27 @@ func TestProjectionSnapshotAndDisconnectReset(t *testing.T) {
 	})
 
 	snap := p.SnapshotEvents()
-	if len(snap) != 4 {
-		t.Fatalf("snapshot len = %d, want 4: %#v", len(snap), snap)
+	if len(snap) != 5 {
+		t.Fatalf("snapshot len = %d, want 5: %#v", len(snap), snap)
 	}
 	if snap[0].Conn == nil || snap[0].Conn.State != "connected" {
 		t.Fatalf("first event is not connected: %#v", snap[0])
 	}
 	var bars *appgui.BarsPayload
+	var character *appgui.CharacterProfilePayload
 	for _, ev := range snap {
 		if ev.Kind == appgui.KindBars {
 			bars = ev.Bars
 		}
+		if ev.Kind == appgui.KindCharacterProfile {
+			character = ev.CharacterProfile
+		}
 	}
 	if bars == nil || !bars.HasHealth || bars.Health != 80 || !bars.HasFatigue || bars.Fatigue != 10 {
 		t.Fatalf("merged bars = %#v", bars)
+	}
+	if character == nil || character.ID != "profile-1" {
+		t.Fatalf("projected character profile = %#v", character)
 	}
 
 	p.Apply([]appgui.WireEvent{{Kind: appgui.KindConn, Conn: &appgui.ConnPayload{State: "disconnected"}}})

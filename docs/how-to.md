@@ -27,35 +27,36 @@ After adding a directory, select **Reload Scripts** from the menu to load the ne
 
 ---
 
-## Create a "Think/OOC" Channel
+## Create a "Think/OOC" View
 
-> For custom tab filters, these will match any line that contains the filter you specify.
+> Custom View filters match any line that contains the filter you specify.
 
-Custom tabs let you filter game text into separate channels. To create a tab that captures think and OOC messages:
+Custom Views let you filter game text into separate channels and place them in
+a main tab or any UUID-addressed sidebar. To create one that captures think and
+OOC messages:
 
 1. Press **Esc** to open the menu
-2. Select **Custom Tabs** (under Display)
-3. Navigate to **+ Add new tab...** and press **Enter**
-4. Type `Think/OOC` and press **Enter**
-5. You're now in the rule editor — navigate to **+ Add match...** and press **Enter**
-6. Type `thinks aloud` and press **Enter**
-7. Add another match: `You think aloud`
-7. Add another match: `?m OOC>`
-8. Press **Esc** to go back to the tab list, then **Esc** again to save
+2. Select **Layout**
+3. Under **Filtered text components**, enter `Think/OOC` and press **+**
+4. Drag the component into a sidebar, or unplace it and use that sidebar's
+   **Add component by ID** picker
+5. Add match rules for `thinks aloud`, `You think aloud`, and `?m OOC>`
+6. Close the editor; placement and filter changes save immediately
 
-Rules use wildcard patterns (`*` matches any characters, `?` matches a single character) and are case-insensitive substring matches. A line appears in the tab if it matches any include rule and does not match any exclude rule.
+Rules use case-insensitive wildcard patterns: `*` matches any characters, `?`
+matches one character, and `\*` or `\?` match literal wildcard characters.
+They may use live variables such as `${target}`. A line appears in the tab if it
+matches any include rule and does not match any exclude rule; unresolved or
+empty expanded rules match nothing.
 
-Controls in the rule editor:
-- **Space** — enable/disable a rule
-- **T** — toggle between MATCH and EXCLUDE
-- **D** — delete a rule
-- **Esc** — back
+Each rule can be enabled, changed between **matches** and **excludes**, or
+deleted directly in the editor.
 
 ---
 
-## Create a "Combat/Skills" Channel
+## Create a "Combat/Skills" View
 
-1. Press **Esc** → **Custom Tabs** → **+ Add new tab...** → type `Combat` → **Enter**
+1. Press **Esc** → **Layout**, add a Custom View named `Combat`, and choose its location
 2. Add match rules for the text you want to capture, for example:
    - `[Success:`
    - `*You hit*`
@@ -63,9 +64,9 @@ Controls in the rule editor:
    - `*damages you*`
    - `*You begin to*`
    - `*skill in*`
-3. Press **Esc** twice to save
+3. Press **Save**
 
-Text matching any include rule will appear in both the All tab and your custom tab.
+Text matching any include rule will appear in both All and your Custom View.
 
 ---
 
@@ -115,7 +116,40 @@ Available styles:
 | green | Green background, black text |
 | blue | Blue background, white text |
 
-Matching is case-insensitive. Patterns are plain text substrings, not wildcards.
+Matching is case-insensitive and supports `*` and `?` wildcards, escaped literal
+wildcards (`\*`, `\?`), and live variables such as `${loot}`. The exact text
+consumed by each match is highlighted.
+
+---
+
+## Highlight Wounds in Character Descriptions
+
+Praetor can color verified wound phrases by injury category and severity. The
+feature starts off so upgrades do not change existing output.
+
+In the GUI or web client:
+
+1. Open **Menu → Settings**
+2. Turn on **Highlight wounds**
+3. Choose a family for cuts, bruises/fractures, punctures/wounds, and burns
+4. Save
+
+In the TUI:
+
+1. Press **Esc**
+2. Select **Wound Highlighting** under Display
+3. Toggle **Highlight wounds** and use Left/Right to choose each family
+4. Press **Esc** to save
+
+Severity chooses the shade automatically, and levels 4–5 are bold. This version
+recognizes combat-result phrases such as `a shallow cut`, `a major bruise`, and
+`a gaping wound`, plus captured character-inspection descriptions such as `His
+right arm is badly scratched` and `Her face is completely black and blue`.
+
+The inspection severity mapping is provisional. Bleeding text, plural or
+treated wounds, unknown phrases, incomplete healer descriptions, and the
+still-unverified level-5 burn description are left unchanged. Completing the
+catalogue is tracked as a [0.6.0 release blocker](release-0.6.0.md#wound-language-catalogue-blocking).
 
 ---
 
@@ -175,7 +209,11 @@ Commands can be echoed back in the output window as italic text. The two sources
 2. Select **Echo Typed Commands: ON/OFF** or **Echo Script Commands: ON/OFF** (under Display)
 3. Press **Enter** to toggle
 
-**Custom tab routing:** Exclude-only custom tabs do not receive command echoes by default (otherwise they would catch every echo, since exclude rules match everything not explicitly excluded). Open a tab's edit view via Esc → Custom Tabs → Enter, and press **E** to toggle `Echoes: ON/OFF` for that tab. The option is hidden for tabs that have at least one active match rule, since such tabs already filter echoes via their patterns.
+**Custom View routing:** Exclude-only Custom Views do not receive command
+echoes by default (otherwise they would catch every echo, since exclude rules
+match everything not explicitly excluded). Use **Esc → Layout → Custom Views**
+to toggle **Route command echoes**. The setting only affects exclude-only views;
+views with active match rules already filter echoes through those rules.
 
 ---
 

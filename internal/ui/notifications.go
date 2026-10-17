@@ -60,8 +60,13 @@ type NotificationSettingsScreen struct {
 	confirm bool
 	changed bool
 
-	width  int
-	height int
+	width     int
+	height    int
+	variables map[string]string
+}
+
+func (s *NotificationSettingsScreen) SetVariables(values map[string]string) {
+	s.variables = clonePreviewVariables(values)
 }
 
 func NewNotificationSettingsScreen(cfg config.DesktopNotificationsConfig) NotificationSettingsScreen {
@@ -496,6 +501,25 @@ func (s NotificationSettingsScreen) View() string {
 		b.WriteString(dimStyle.Render("[Enter] confirm  [Esc] cancel"))
 	} else {
 		b.WriteString(dimStyle.Render("[↑/↓] navigate  [Space] toggle  [Enter] edit  [D] delete  [Esc] save & close"))
+	}
+	if s.cursor < len(s.items) && s.items[s.cursor].kind == notifyItemPattern {
+		item := s.items[s.cursor]
+		p := s.patterns[item.index]
+		if s.editing {
+			if preview := expansionPreview(s.editBuf, s.variables, s.editField == fieldPattern); preview != "" {
+				b.WriteString("\n" + dimStyle.Render(preview))
+			}
+		} else {
+			for _, candidate := range []struct {
+				label string
+				raw   string
+				match bool
+			}{{"Pattern", p.Pattern, true}, {"Title", p.Title, false}, {"Message", p.Message, false}} {
+				if preview := expansionPreview(candidate.raw, s.variables, candidate.match); preview != "" {
+					b.WriteString("\n" + dimStyle.Render(candidate.label+": "+preview))
+				}
+			}
+		}
 	}
 
 	return lipgloss.Place(s.width, s.height, lipgloss.Center, lipgloss.Center,

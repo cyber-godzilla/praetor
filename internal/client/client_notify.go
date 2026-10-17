@@ -4,24 +4,28 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
+	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
 
 // DesktopNotifier sends desktop notifications for health, fatigue,
 // and pattern-matched game text.
 type DesktopNotifier struct {
-	mu       sync.RWMutex
-	cfg      config.DesktopNotificationsConfig
-	patterns []*compiledNotifyPattern
-	lastSent map[string]time.Time // dedup key → last send time
-	cooldown time.Duration
-	sink     NotificationSink
+	mu          sync.RWMutex
+	cfg         config.DesktopNotificationsConfig
+	patterns    []*compiledNotifyPattern
+	lastSent    map[string]time.Time // dedup key → last send time
+	cooldown    time.Duration
+	sink        NotificationSink
+	variables   map[string]string
+	warningSink func(string)
+	warningLast map[string]time.Time
 }
 
 // NotificationSink receives notifications after rule evaluation and cooldown
@@ -48,37 +52,48 @@ type compiledNotifyPattern struct {
 	pattern string
 	title   string
 	message string
-	regex   *regexp.Regexp
 	enabled bool
 }
 
 // NewDesktopNotifier creates a notifier from config.
 func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier {
 	dn := &DesktopNotifier{
-		cfg:      cfg,
-		lastSent: make(map[string]time.Time),
-		cooldown: 30 * time.Second,
-		sink:     NativeNotificationSink{Sound: cfg.Sound},
+		cfg:         cfg,
+		lastSent:    make(map[string]time.Time),
+		warningLast: make(map[string]time.Time),
+		cooldown:    30 * time.Second,
+		sink:        NativeNotificationSink{Sound: cfg.Sound},
 	}
 
 	for _, p := range cfg.Patterns {
-		escaped := regexp.QuoteMeta(p.Pattern)
-		escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
-		escaped = strings.ReplaceAll(escaped, `\?`, `.`)
-		re, err := regexp.Compile("(?i)" + escaped)
-		if err != nil {
-			continue
-		}
 		dn.patterns = append(dn.patterns, &compiledNotifyPattern{
 			pattern: p.Pattern,
 			title:   p.Title,
 			message: p.Message,
-			regex:   re,
 			enabled: p.Enabled,
 		})
 	}
 
 	return dn
+}
+
+// SetWarningSink installs the in-app destination for rule diagnostics.
+func (dn *DesktopNotifier) SetWarningSink(sink func(string)) {
+	dn.mu.Lock()
+	dn.warningSink = sink
+	dn.mu.Unlock()
+}
+
+// SetVariables replaces the snapshot used to resolve notification patterns
+// and output templates at match/delivery time.
+func (dn *DesktopNotifier) SetVariables(variables map[string]string) {
+	cloned := make(map[string]string, len(variables))
+	for name, value := range variables {
+		cloned[name] = value
+	}
+	dn.mu.Lock()
+	dn.variables = cloned
+	dn.mu.Unlock()
 }
 
 // SetSink changes notification delivery without changing matching rules or
@@ -102,18 +117,10 @@ func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
 
 	dn.patterns = nil
 	for _, p := range cfg.Patterns {
-		escaped := regexp.QuoteMeta(p.Pattern)
-		escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
-		escaped = strings.ReplaceAll(escaped, `\?`, `.`)
-		re, err := regexp.Compile("(?i)" + escaped)
-		if err != nil {
-			continue
-		}
 		dn.patterns = append(dn.patterns, &compiledNotifyPattern{
 			pattern: p.Pattern,
 			title:   p.Title,
 			message: p.Message,
-			regex:   re,
 			enabled: p.Enabled,
 		})
 	}
@@ -152,25 +159,40 @@ func (dn *DesktopNotifier) CheckFatigue(fatigue int) {
 // CheckText sends a desktop notification if text matches any enabled pattern.
 func (dn *DesktopNotifier) CheckText(text string) {
 	dn.mu.RLock()
-	patterns := dn.patterns
+	patterns := append([]*compiledNotifyPattern(nil), dn.patterns...)
+	variables := cloneVariables(dn.variables)
 	dn.mu.RUnlock()
 
-	for _, p := range patterns {
+	for index, p := range patterns {
 		if !p.enabled {
 			continue
 		}
-		if p.regex.MatchString(text) {
-			title := p.title
-			if title == "" {
-				title = "Alert"
-			}
-			msg := p.message
-			if msg == "" {
-				msg = text
-			}
-			dn.send(title, msg, "pattern:"+p.pattern)
-			return // one notification per text line
+		expandedPattern, err := sharedvars.Expand(strings.TrimSpace(p.pattern), variables)
+		if err != nil || expandedPattern == "" {
+			continue
 		}
+		matcher, err := wildcard.Compile(expandedPattern, wildcard.Substring)
+		if err != nil || !matcher.Match(text) {
+			continue
+		}
+		title, err := sharedvars.Expand(p.title, variables)
+		if err != nil {
+			dn.warn(fmt.Sprintf("pattern:%d:%s:title", index, p.pattern), fmt.Sprintf("Notification rule %q title: %v", p.pattern, err))
+			continue
+		}
+		msg, err := sharedvars.Expand(p.message, variables)
+		if err != nil {
+			dn.warn(fmt.Sprintf("pattern:%d:%s:message", index, p.pattern), fmt.Sprintf("Notification rule %q message: %v", p.pattern, err))
+			continue
+		}
+		if title == "" {
+			title = "Alert"
+		}
+		if msg == "" {
+			msg = text
+		}
+		dn.send(title, msg, "pattern:"+p.pattern)
+		return // one notification per text line
 	}
 }
 
@@ -190,6 +212,26 @@ func (dn *DesktopNotifier) Prune() {
 		if now.Sub(last) >= dn.cooldown {
 			delete(dn.lastSent, key)
 		}
+	}
+	for key, last := range dn.warningLast {
+		if now.Sub(last) >= dn.cooldown {
+			delete(dn.warningLast, key)
+		}
+	}
+}
+
+func (dn *DesktopNotifier) warn(key, message string) {
+	dn.mu.Lock()
+	now := time.Now()
+	if last, ok := dn.warningLast[key]; ok && now.Sub(last) < dn.cooldown {
+		dn.mu.Unlock()
+		return
+	}
+	dn.warningLast[key] = now
+	sink := dn.warningSink
+	dn.mu.Unlock()
+	if sink != nil {
+		sink(message)
 	}
 }
 

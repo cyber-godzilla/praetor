@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"log"
@@ -42,20 +43,23 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 }
 
 type Config struct {
-	Server        ServerConfig        `yaml:"server"`
-	Commands      CommandsConfig      `yaml:"commands"`
-	Credentials   CredentialsConfig   `yaml:"credentials"`
-	Scripts       []string            `yaml:"scripts"`
-	UI            UIConfig            `yaml:"ui"`
-	Highlights    []HighlightConfig   `yaml:"highlights"`
-	SpeechColors  []SpeechColorConfig `yaml:"speech_colors"`
-	Kudos         KudosConfig         `yaml:"kudos"`
-	Ignorelist    Ignorelist          `yaml:"ignorelist"`
-	Notifications NotificationsConfig `yaml:"notifications"`
-	Logging       LoggingConfig       `yaml:"logging"`
-	Updates       UpdatesConfig       `yaml:"updates"`
-	Play          PlayConfig          `yaml:"play"`
-	Onboarding    OnboardingConfig    `yaml:"onboarding"`
+	Server            ServerConfig            `yaml:"server"`
+	Commands          CommandsConfig          `yaml:"commands"`
+	CharacterProfiles CharacterProfilesConfig `yaml:"character_profiles"`
+	DisplayProfiles   DisplayProfilesConfig   `yaml:"display_profiles"`
+	Credentials       CredentialsConfig       `yaml:"credentials"`
+	Scripts           []string                `yaml:"scripts"`
+	UI                UIConfig                `yaml:"ui"`
+	Highlights        []HighlightConfig       `yaml:"highlights"`
+	WoundHighlights   WoundHighlightConfig    `yaml:"wound_highlights"`
+	SpeechColors      []SpeechColorConfig     `yaml:"speech_colors"`
+	Kudos             KudosConfig             `yaml:"kudos"`
+	Ignorelist        Ignorelist              `yaml:"ignorelist"`
+	Notifications     NotificationsConfig     `yaml:"notifications"`
+	Logging           LoggingConfig           `yaml:"logging"`
+	Updates           UpdatesConfig           `yaml:"updates"`
+	Play              PlayConfig              `yaml:"play"`
+	Onboarding        OnboardingConfig        `yaml:"onboarding"`
 }
 
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
@@ -113,7 +117,9 @@ type CommandsConfig struct {
 	// ${name:fallback}.
 	// They are deliberately separate from Lua mode state and never expand
 	// recursively.
-	Variables map[string]string `yaml:"variables"`
+	// Variables is retained only to migrate pre-profile configuration. Runtime
+	// code reads variables from the active CharacterProfileConfig.
+	Variables map[string]string `yaml:"variables,omitempty" json:"-"`
 }
 
 const (
@@ -131,6 +137,17 @@ type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
 	Style   string `yaml:"style"` // red, gold, green, blue
 	Active  bool   `yaml:"active"`
+}
+
+// WoundHighlightConfig controls opt-in styling for verified wound phrases in
+// character descriptions. Each category selects one of the four color
+// families; severity selects the shade within that family automatically.
+type WoundHighlightConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	Cuts      string `yaml:"cuts"`
+	Bruises   string `yaml:"bruises"`
+	Punctures string `yaml:"punctures"`
+	Burns     string `yaml:"burns"`
 }
 
 // SpeechColorConfig assigns a Colorword style to recognized lines from a
@@ -309,16 +326,98 @@ type UIConfig struct {
 	//   "always"  — numpad always sends movement (needed on macOS, which has
 	//               no NumLock; the numpad can no longer type digits)
 	//   "off"     — numpad navigation disabled
-	NumpadNavigation string            `yaml:"numpad_navigation"`
-	CustomTabs       []CustomTabConfig `yaml:"custom_tabs"`
-	ActionSets       []ActionSet       `yaml:"action_sets"`
+	NumpadNavigation string `yaml:"numpad_navigation"`
+	// These fields are legacy migration inputs. Character-specific content now
+	// lives in CharacterProfileConfig; keeping the fields omitempty lets old
+	// configuration decode without writing duplicate canonical state.
+	CustomTabs []CustomTabConfig `yaml:"custom_tabs,omitempty" json:"-"`
+	ActionSets []ActionSet       `yaml:"action_sets,omitempty" json:"-"`
+	// GUILayout is retained only to migrate the pre-display-profile placement
+	// model. Runtime GUI/web code reads DisplayProfiles.
+	GUILayout           GUILayoutConfig `yaml:"gui_layout,omitempty" json:"-"`
+	SelectedActionSetID string          `yaml:"selected_action_set_id,omitempty" json:"-"`
 }
 
 type CustomTabConfig struct {
+	ID           string          `yaml:"id"`
 	Name         string          `yaml:"name"`
 	Visible      bool            `yaml:"visible"`
 	EchoCommands bool            `yaml:"echo_commands"` // only meaningful when tab is exclude-only
 	Rules        []TabRuleConfig `yaml:"rules"`
+}
+
+// GUILayoutConfig is the unified placement model for GUI/web views. All is a
+// fixed central tab and therefore deliberately absent from Views.
+type GUILayoutConfig struct {
+	SidebarsVisible bool               `yaml:"sidebars_visible"`
+	Sidebars        []GUISidebarConfig `yaml:"sidebars"`
+	Views           []ViewLayoutConfig `yaml:"views"`
+}
+
+type GUISidebarConfig struct {
+	ID      int    `yaml:"id"`
+	Enabled bool   `yaml:"enabled"`
+	Side    string `yaml:"side"`
+	Width   int    `yaml:"width"`
+}
+
+type ViewLayoutConfig struct {
+	ID            string `yaml:"id"`
+	Location      string `yaml:"location"`
+	Priority      int    `yaml:"priority"`
+	SidebarHeight int    `yaml:"sidebar_height"`
+	Collapsed     bool   `yaml:"collapsed"`
+}
+
+const (
+	DefaultDisplayProfileID = "0b40c7dd-fba7-44cb-83f7-f125f5bc98b3"
+	DefaultSidebarOneID     = "5afa1264-4ce7-41d0-b7ea-2050e0d34b07"
+	DefaultSidebarTwoID     = "026686ea-d46b-4d20-94f1-e1c2485d7e7b"
+	DefaultSidebarThreeID   = "55148f61-39f1-4c16-be64-b9f3245e99bc"
+
+	ComponentIDAll       = "a1ebe82e-7f0d-4ba9-9e00-181d045e3e12"
+	ComponentIDMetrics   = "3888f7f2-16fa-41df-86bc-11c7a2488dbf"
+	ComponentIDDebug     = "a1ba3fe5-10e2-406f-b1f1-7f8746c89762"
+	ComponentIDMap       = "ccb0ec1f-9a08-4d4f-941e-2b8b2c6eb8f1"
+	ComponentIDCompass   = "85178cda-7db8-4fe1-a09d-1a6e572016b2"
+	ComponentIDVitals    = "e9a0240c-64df-4086-92aa-0f6372f8dde6"
+	ComponentIDActions   = "fbf29dda-9c5c-4457-8a8b-d5a106206c29"
+	ComponentIDModes     = "631a65d1-9261-4940-a18b-7ee7bfd48f12"
+	ComponentIDVariables = "c043ea23-cb1d-4a30-97bd-01e588969d26"
+)
+
+// DisplayProfilesConfig is a registry from the outset. Character-profile
+// association is added after the account/character selection prerequisite.
+type DisplayProfilesConfig struct {
+	DefaultID string                 `yaml:"default_id"`
+	Profiles  []DisplayProfileConfig `yaml:"profiles"`
+}
+
+type DisplayProfileConfig struct {
+	ID              string                   `yaml:"id"`
+	Name            string                   `yaml:"name"`
+	SidebarsVisible bool                     `yaml:"sidebars_visible"`
+	Main            []DisplayComponentConfig `yaml:"main"`
+	Sidebars        []DisplaySidebarConfig   `yaml:"sidebars"`
+}
+
+// DisplaySidebarConfig owns the ordered component list for one independently
+// positioned column. UUID identity removes the former three-sidebar ceiling.
+type DisplaySidebarConfig struct {
+	ID         string                   `yaml:"id"`
+	Name       string                   `yaml:"name"`
+	Enabled    bool                     `yaml:"enabled"`
+	Side       string                   `yaml:"side"`
+	Width      int                      `yaml:"width"`
+	Components []DisplayComponentConfig `yaml:"components"`
+}
+
+// DisplayComponentConfig places one UUID-addressed component. Built-ins use
+// the fixed IDs above; Custom View IDs are generated UUIDs.
+type DisplayComponentConfig struct {
+	ComponentID   string `yaml:"component_id"`
+	SidebarHeight int    `yaml:"sidebar_height,omitempty"`
+	Collapsed     bool   `yaml:"collapsed,omitempty"`
 }
 
 type TabRuleConfig struct {
@@ -341,6 +440,154 @@ type ActionButton struct {
 	Command string `yaml:"command"`
 }
 
+// DefaultCharacterProfileID is the immutable identity of the global template
+// used whenever no game character is active.
+const DefaultCharacterProfileID = "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50"
+
+// CharacterProfilesConfig stores the global Default plus account/character
+// profiles selected from the game's play-number flow.
+type CharacterProfilesConfig struct {
+	DefaultID string                   `yaml:"default_id"`
+	Profiles  []CharacterProfileConfig `yaml:"profiles"`
+}
+
+// CharacterProfileConfig owns settings whose values are expected to change
+// with the played character. Display placement will reference this profile in
+// a later slice; it intentionally remains outside this type for now.
+type CharacterProfileConfig struct {
+	ID                  string            `yaml:"id"`
+	Name                string            `yaml:"name"`
+	Account             string            `yaml:"account,omitempty"`
+	CharacterNumber     int               `yaml:"character_number,omitempty"`
+	Variables           map[string]string `yaml:"variables"`
+	CustomViews         []CustomTabConfig `yaml:"custom_views"`
+	ActionSets          []ActionSet       `yaml:"action_sets"`
+	SelectedActionSetID string            `yaml:"selected_action_set_id,omitempty"`
+}
+
+// CharacterProfileIdentity is the editable identity projection used by the
+// profile manager. Character-scoped content is intentionally absent so a
+// rename or number change cannot overwrite variables, views, or action sets.
+type CharacterProfileIdentity struct {
+	ID              string `yaml:"id"`
+	Name            string `yaml:"name"`
+	Account         string `yaml:"account,omitempty"`
+	CharacterNumber int    `yaml:"character_number,omitempty"`
+}
+
+// ValidUUID accepts the canonical lower/upper-case UUID text form. UUIDs are
+// identifiers here rather than cryptographic secrets, so structural validation
+// is sufficient and avoids another dependency.
+func ValidUUID(value string) bool {
+	if len(value) != 36 || value[8] != '-' || value[13] != '-' || value[18] != '-' || value[23] != '-' {
+		return false
+	}
+	for i, r := range value {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			continue
+		}
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+func newUUID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		// crypto/rand failure is extraordinarily rare. Preserve the UUID shape
+		// while incorporating time so validation can still repair the config.
+		sum := sha256.Sum256([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+		copy(value[:], sum[:16])
+	}
+	return uuidFromBytes(value[:])
+}
+
+// NewUUID returns a fresh UUID suitable for persisted profile and component
+// identities.
+func NewUUID() string { return newUUID() }
+
+func uuidFromBytes(source []byte) string {
+	var value [16]byte
+	copy(value[:], source)
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16])
+}
+
+// DefaultCharacterProfile returns the global default profile. Validate ensures
+// it exists; nil only describes a manually constructed, unvalidated Config.
+func (c *Config) DefaultCharacterProfile() *CharacterProfileConfig {
+	for i := range c.CharacterProfiles.Profiles {
+		if c.CharacterProfiles.Profiles[i].ID == c.CharacterProfiles.DefaultID {
+			return &c.CharacterProfiles.Profiles[i]
+		}
+	}
+	return nil
+}
+
+func (c *Config) DefaultDisplayProfile() *DisplayProfileConfig {
+	for i := range c.DisplayProfiles.Profiles {
+		if c.DisplayProfiles.Profiles[i].ID == c.DisplayProfiles.DefaultID {
+			return &c.DisplayProfiles.Profiles[i]
+		}
+	}
+	return nil
+}
+
+// PlaceUnplacedCustomViewsInDefault gives editors without placement controls
+// (currently the TUI Custom Views editor) a safe default destination.
+func (c *Config) PlaceUnplacedCustomViewsInDefault() {
+	profile := c.DefaultDisplayProfile()
+	character := c.DefaultCharacterProfile()
+	if profile == nil || character == nil {
+		return
+	}
+	placed := map[string]bool{}
+	for _, component := range profile.Main {
+		placed[component.ComponentID] = true
+	}
+	for _, sidebar := range profile.Sidebars {
+		for _, component := range sidebar.Components {
+			placed[component.ComponentID] = true
+		}
+	}
+	for _, view := range character.CustomViews {
+		if !placed[view.ID] {
+			profile.Main = append(profile.Main, DisplayComponentConfig{ComponentID: view.ID})
+		}
+	}
+}
+
+func defaultDisplayProfile() DisplayProfileConfig {
+	return DisplayProfileConfig{
+		ID:              DefaultDisplayProfileID,
+		Name:            "Default",
+		SidebarsVisible: true,
+		Main: []DisplayComponentConfig{
+			{ComponentID: ComponentIDAll},
+			{ComponentID: ComponentIDMetrics},
+			{ComponentID: ComponentIDDebug},
+		},
+		Sidebars: []DisplaySidebarConfig{
+			{
+				ID: DefaultSidebarOneID, Name: "Sidebar 1", Enabled: true, Side: "right", Width: 260,
+				Components: []DisplayComponentConfig{
+					{ComponentID: ComponentIDMap, SidebarHeight: 160},
+					{ComponentID: ComponentIDCompass, SidebarHeight: 220},
+					{ComponentID: ComponentIDVitals, SidebarHeight: 140},
+					{ComponentID: ComponentIDActions, SidebarHeight: 240},
+					{ComponentID: ComponentIDModes, SidebarHeight: 240},
+					{ComponentID: ComponentIDVariables, SidebarHeight: 260},
+				},
+			},
+			{ID: DefaultSidebarTwoID, Name: "Sidebar 2", Side: "right", Width: 260, Components: []DisplayComponentConfig{}},
+			{ID: DefaultSidebarThreeID, Name: "Sidebar 3", Side: "right", Width: 260, Components: []DisplayComponentConfig{}},
+		},
+	}
+}
+
 func Defaults() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -356,7 +603,20 @@ func Defaults() *Config {
 			SemicolonDelayMS: DefaultSemicolonDelayMS,
 			UnbusyDelayMS:    DefaultUnbusyDelayMS,
 			HighPriority:     []string{},
-			Variables:        map[string]string{},
+		},
+		CharacterProfiles: CharacterProfilesConfig{
+			DefaultID: DefaultCharacterProfileID,
+			Profiles: []CharacterProfileConfig{{
+				ID:          DefaultCharacterProfileID,
+				Name:        "Default",
+				Variables:   map[string]string{},
+				CustomViews: []CustomTabConfig{},
+				ActionSets:  []ActionSet{},
+			}},
+		},
+		DisplayProfiles: DisplayProfilesConfig{
+			DefaultID: DefaultDisplayProfileID,
+			Profiles:  []DisplayProfileConfig{defaultDisplayProfile()},
 		},
 		Credentials: CredentialsConfig{
 			Backend: "keyring",
@@ -389,7 +649,13 @@ func Defaults() *Config {
 			MobileShowTabBar:     true,
 			NumpadNavigation:     "numlock",
 		},
-		Highlights:   []HighlightConfig{},
+		Highlights: []HighlightConfig{},
+		WoundHighlights: WoundHighlightConfig{
+			Cuts:      "red",
+			Bruises:   "purple",
+			Punctures: "blue",
+			Burns:     "orange",
+		},
 		SpeechColors: []SpeechColorConfig{},
 		Kudos: KudosConfig{
 			Favorites: []string{},
@@ -472,12 +738,92 @@ func Load(path string) (*Config, error) {
 	migrateLegacyDisplay(cfg, data)
 	migrateMobileOutputFontSize(cfg, data)
 	migrateLegacyOnboarding(cfg, data)
+	migrateLegacyCharacterProfiles(cfg, data)
+	migrateLegacyDisplayProfiles(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+// migrateLegacyCharacterProfiles moves the settings that predate character
+// profiles into the one global Default profile. Presence of the new top-level
+// section is authoritative, even when its collections are empty.
+func migrateLegacyCharacterProfiles(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if _, exists := raw["character_profiles"]; exists {
+		return
+	}
+	variables := make(map[string]string, len(cfg.Commands.Variables))
+	for name, value := range cfg.Commands.Variables {
+		variables[name] = value
+	}
+	cfg.CharacterProfiles = CharacterProfilesConfig{
+		DefaultID: DefaultCharacterProfileID,
+		Profiles: []CharacterProfileConfig{{
+			ID:                  DefaultCharacterProfileID,
+			Name:                "Default",
+			Variables:           variables,
+			CustomViews:         append([]CustomTabConfig(nil), cfg.UI.CustomTabs...),
+			ActionSets:          append([]ActionSet(nil), cfg.UI.ActionSets...),
+			SelectedActionSetID: cfg.UI.SelectedActionSetID,
+		}},
+	}
+	cfg.Commands.Variables = nil
+	cfg.UI.CustomTabs = nil
+	cfg.UI.ActionSets = nil
+	cfg.UI.SelectedActionSetID = ""
+}
+
+// migrateLegacyDisplayProfiles converts the fixed three-sidebar/location model
+// into a global UUID display profile. It intentionally leaves DisplayMode
+// untouched because that field is still the TUI's sidebar/topbar preference.
+func migrateLegacyDisplayProfiles(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	if _, exists := raw["display_profiles"]; exists {
+		return
+	}
+	ui, ok := raw["ui"].(map[string]interface{})
+	characterProfile := cfg.DefaultCharacterProfile()
+	characterProfile.CustomViews = NormalizeCustomViewIDs(characterProfile.CustomViews)
+	custom := characterProfile.CustomViews
+
+	layout := cfg.UI.GUILayout
+	if !ok {
+		ui = map[string]interface{}{}
+	}
+	if _, exists := ui["gui_layout"]; !exists {
+		layout = defaultGUILayout(custom, cfg.UI.GUISidebarWidth, cfg.UI.GUIMinimapHeight, cfg.UI.DisplayMode != "off")
+	}
+
+	// Old layout records refer to the pre-normalized Custom Tab ID. Match the
+	// YAML list by index so those placements follow the migrated UUID.
+	customIDs := map[string]string{}
+	var legacy struct {
+		UI struct {
+			CustomTabs []CustomTabConfig `yaml:"custom_tabs"`
+		} `yaml:"ui"`
+	}
+	if err := yaml.Unmarshal(data, &legacy); err == nil {
+		for i, old := range legacy.UI.CustomTabs {
+			if i < len(custom) && old.ID != "" {
+				customIDs[old.ID] = custom[i].ID
+			}
+		}
+	}
+	cfg.DisplayProfiles = DisplayProfilesConfig{
+		DefaultID: DefaultDisplayProfileID,
+		Profiles:  []DisplayProfileConfig{displayProfileFromLegacy(layout, customIDs)},
+	}
+	cfg.UI.GUILayout = GUILayoutConfig{}
 }
 
 // migrateMobileOutputFontSize preserves the pre-split behavior for existing
@@ -617,6 +963,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("server.login_url is required")
 	}
 
+	c.normalizeCharacterProfiles()
+
 	// Commands
 	if c.Commands.DefaultDelay.Duration < 100*time.Millisecond {
 		c.Commands.DefaultDelay = Duration{defaultCommandDelay}
@@ -632,15 +980,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Commands.UnbusyDelayMS < MinUnbusyDelayMS || c.Commands.UnbusyDelayMS > MaxUnbusyDelayMS {
 		c.Commands.UnbusyDelayMS = DefaultUnbusyDelayMS
-	}
-	if c.Commands.Variables == nil {
-		c.Commands.Variables = map[string]string{}
-	}
-	for name := range c.Commands.Variables {
-		if !ValidVariableName(name) {
-			log.Printf("[CONFIG] dropping command variable with invalid name %q", name)
-			delete(c.Commands.Variables, name)
-		}
 	}
 
 	// Play
@@ -720,7 +1059,17 @@ func (c *Config) Validate() error {
 	default:
 		c.UI.NumpadNavigation = "numlock"
 	}
-	c.UI.ActionSets = NormalizeActionSetIDs(c.UI.ActionSets)
+	allCustomViews := make([]CustomTabConfig, 0)
+	for _, profile := range c.CharacterProfiles.Profiles {
+		allCustomViews = append(allCustomViews, profile.CustomViews...)
+	}
+	c.normalizeDisplayProfiles(allCustomViews)
+	// Clear migration-only aliases so Save writes one canonical copy.
+	c.Commands.Variables = nil
+	c.UI.CustomTabs = nil
+	c.UI.ActionSets = nil
+	c.UI.SelectedActionSetID = ""
+	c.UI.GUILayout = GUILayoutConfig{}
 
 	// Highlights
 	validStyles := map[string]bool{"red": true, "gold": true, "green": true, "blue": true}
@@ -738,6 +1087,23 @@ func (c *Config) Validate() error {
 		kept = append(kept, c.Highlights[i])
 	}
 	c.Highlights = kept
+
+	// Wound highlighting is opt-in. Empty family values occur naturally when
+	// loading a pre-feature config, so repair each independently to its category
+	// default without changing Enabled.
+	validWoundFamilies := map[string]bool{"red": true, "purple": true, "blue": true, "orange": true}
+	if !validWoundFamilies[c.WoundHighlights.Cuts] {
+		c.WoundHighlights.Cuts = "red"
+	}
+	if !validWoundFamilies[c.WoundHighlights.Bruises] {
+		c.WoundHighlights.Bruises = "purple"
+	}
+	if !validWoundFamilies[c.WoundHighlights.Punctures] {
+		c.WoundHighlights.Punctures = "blue"
+	}
+	if !validWoundFamilies[c.WoundHighlights.Burns] {
+		c.WoundHighlights.Burns = "orange"
+	}
 
 	// Speech colors
 	seenCharacters := make(map[string]bool, len(c.SpeechColors))
@@ -784,6 +1150,201 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+func (c *Config) normalizeCharacterProfiles() {
+	profiles := c.CharacterProfiles.Profiles
+	defaultIndex := -1
+	if ValidUUID(c.CharacterProfiles.DefaultID) {
+		for i := range profiles {
+			if profiles[i].ID == c.CharacterProfiles.DefaultID {
+				defaultIndex = i
+				break
+			}
+		}
+	}
+	if defaultIndex < 0 {
+		if len(profiles) == 0 {
+			profiles = append(profiles, CharacterProfileConfig{})
+		}
+		defaultIndex = 0
+		profiles[defaultIndex].ID = DefaultCharacterProfileID
+		c.CharacterProfiles.DefaultID = DefaultCharacterProfileID
+	}
+
+	seen := make(map[string]bool, len(profiles))
+	seenComponentIDs := make(map[string]bool)
+	for i := range profiles {
+		profile := &profiles[i]
+		if i == defaultIndex {
+			if !ValidUUID(profile.ID) {
+				profile.ID = DefaultCharacterProfileID
+				c.CharacterProfiles.DefaultID = profile.ID
+			}
+			if strings.TrimSpace(profile.Name) == "" {
+				profile.Name = "Default"
+			}
+			profile.Account = ""
+			profile.CharacterNumber = 0
+		} else {
+			profile.Name = strings.TrimSpace(profile.Name)
+			if profile.Name == "" {
+				profile.Name = "Profile"
+			}
+			if !ValidUUID(profile.ID) || seen[strings.ToLower(profile.ID)] {
+				profile.ID = newUUID()
+			}
+			profile.Account = strings.TrimSpace(profile.Account)
+			if profile.CharacterNumber < 0 {
+				profile.CharacterNumber = 0
+			}
+		}
+		seen[strings.ToLower(profile.ID)] = true
+		if profile.Variables == nil {
+			profile.Variables = map[string]string{}
+		}
+		for name := range profile.Variables {
+			if !ValidVariableName(name) {
+				log.Printf("[CONFIG] dropping command variable with invalid name %q from profile %q", name, profile.Name)
+				delete(profile.Variables, name)
+			}
+		}
+		profile.CustomViews = NormalizeCustomViewIDs(profile.CustomViews)
+		for viewIndex := range profile.CustomViews {
+			key := strings.ToLower(profile.CustomViews[viewIndex].ID)
+			if seenComponentIDs[key] {
+				profile.CustomViews[viewIndex].ID = newUUID()
+				key = strings.ToLower(profile.CustomViews[viewIndex].ID)
+			}
+			seenComponentIDs[key] = true
+		}
+		if profile.CustomViews == nil {
+			profile.CustomViews = []CustomTabConfig{}
+		}
+		profile.ActionSets = NormalizeActionSetIDs(profile.ActionSets)
+		if profile.ActionSets == nil {
+			profile.ActionSets = []ActionSet{}
+		}
+		profile.SelectedActionSetID = normalizeSelectedActionSetID(profile.SelectedActionSetID, profile.ActionSets)
+	}
+	c.CharacterProfiles.Profiles = profiles
+}
+
+func (c *Config) normalizeDisplayProfiles(custom []CustomTabConfig) {
+	profiles := c.DisplayProfiles.Profiles
+	defaultIndex := -1
+	if ValidUUID(c.DisplayProfiles.DefaultID) {
+		for i := range profiles {
+			if profiles[i].ID == c.DisplayProfiles.DefaultID {
+				defaultIndex = i
+				break
+			}
+		}
+	}
+	if defaultIndex < 0 {
+		if len(profiles) == 0 {
+			profiles = append(profiles, defaultDisplayProfile())
+		}
+		defaultIndex = 0
+		profiles[0].ID = DefaultDisplayProfileID
+		c.DisplayProfiles.DefaultID = DefaultDisplayProfileID
+	}
+
+	allowed := make(map[string]bool, len(builtinComponentKinds)+len(custom))
+	for id := range builtinComponentKinds {
+		allowed[id] = true
+	}
+	for _, view := range custom {
+		allowed[view.ID] = true
+	}
+	seenProfiles := map[string]bool{}
+	for i := range profiles {
+		profile := &profiles[i]
+		if i == defaultIndex {
+			if !ValidUUID(profile.ID) {
+				profile.ID = DefaultDisplayProfileID
+				c.DisplayProfiles.DefaultID = profile.ID
+			}
+			if strings.TrimSpace(profile.Name) == "" {
+				profile.Name = "Default"
+			}
+		} else {
+			profile.Name = strings.TrimSpace(profile.Name)
+			if profile.Name == "" {
+				profile.Name = "Display Profile"
+			}
+			if !ValidUUID(profile.ID) || seenProfiles[strings.ToLower(profile.ID)] {
+				profile.ID = newUUID()
+			}
+		}
+		seenProfiles[strings.ToLower(profile.ID)] = true
+
+		seenComponents := map[string]bool{}
+		profile.Main = normalizeDisplayComponents(profile.Main, allowed, seenComponents, false)
+		if !seenComponents[ComponentIDAll] {
+			profile.Main = append([]DisplayComponentConfig{{ComponentID: ComponentIDAll}}, profile.Main...)
+			seenComponents[ComponentIDAll] = true
+		} else {
+			for i, component := range profile.Main {
+				if component.ComponentID == ComponentIDAll && i != 0 {
+					profile.Main = append([]DisplayComponentConfig{component}, append(profile.Main[:i], profile.Main[i+1:]...)...)
+					break
+				}
+			}
+		}
+
+		seenSidebars := map[string]bool{}
+		for j := range profile.Sidebars {
+			sidebar := &profile.Sidebars[j]
+			if !ValidUUID(sidebar.ID) || seenSidebars[strings.ToLower(sidebar.ID)] {
+				sidebar.ID = newUUID()
+			}
+			seenSidebars[strings.ToLower(sidebar.ID)] = true
+			sidebar.Name = strings.TrimSpace(sidebar.Name)
+			if sidebar.Name == "" {
+				sidebar.Name = fmt.Sprintf("Sidebar %d", j+1)
+			}
+			if sidebar.Side != "left" && sidebar.Side != "right" {
+				sidebar.Side = "right"
+			}
+			if sidebar.Width < 180 {
+				sidebar.Width = 260
+			} else if sidebar.Width > 600 {
+				sidebar.Width = 600
+			}
+			sidebar.Components = normalizeDisplayComponents(sidebar.Components, allowed, seenComponents, true)
+			if sidebar.Components == nil {
+				sidebar.Components = []DisplayComponentConfig{}
+			}
+		}
+		if profile.Main == nil {
+			profile.Main = []DisplayComponentConfig{{ComponentID: ComponentIDAll}}
+		}
+		if profile.Sidebars == nil {
+			profile.Sidebars = []DisplaySidebarConfig{}
+		}
+	}
+	c.DisplayProfiles.Profiles = profiles
+}
+
+func normalizeDisplayComponents(components []DisplayComponentConfig, allowed, seen map[string]bool, sidebar bool) []DisplayComponentConfig {
+	result := make([]DisplayComponentConfig, 0, len(components))
+	for _, component := range components {
+		if !allowed[component.ComponentID] || seen[component.ComponentID] {
+			continue
+		}
+		seen[component.ComponentID] = true
+		if sidebar {
+			if component.SidebarHeight < 80 || component.SidebarHeight > 800 {
+				component.SidebarHeight = defaultComponentHeight(component.ComponentID)
+			}
+		} else {
+			component.SidebarHeight = 0
+			component.Collapsed = false
+		}
+		result = append(result, component)
+	}
+	return result
+}
+
 // NormalizeActionSetIDs returns a shallow copy that preserves the first
 // occurrence of every non-empty ID and deterministically repairs legacy,
 // missing, or duplicate IDs. The deterministic fallback keeps a legacy config
@@ -818,6 +1379,321 @@ func actionSetMigrationID(set ActionSet, index, attempt int) string {
 		fmt.Fprintf(hash, "%s\x00%s\x00", button.Label, button.Command)
 	}
 	return fmt.Sprintf("action-%x", hash.Sum(nil)[:12])
+}
+
+var builtinViewDefaults = []ViewLayoutConfig{
+	{ID: "metrics", Location: "tab", Priority: 100, SidebarHeight: 260},
+	{ID: "debug", Location: "tab", Priority: 0, SidebarHeight: 300},
+	{ID: "map", Location: "sidebar-1", Priority: 900, SidebarHeight: 160},
+	{ID: "exits", Location: "sidebar-1", Priority: 800, SidebarHeight: 220},
+	{ID: "vitals", Location: "sidebar-1", Priority: 700, SidebarHeight: 140},
+	{ID: "actions", Location: "sidebar-1", Priority: 600, SidebarHeight: 240},
+	{ID: "modes", Location: "sidebar-1", Priority: 500, SidebarHeight: 240},
+	{ID: "variables", Location: "sidebar-1", Priority: 400, SidebarHeight: 260},
+}
+
+var builtinComponentKinds = map[string]string{
+	ComponentIDAll:       "all",
+	ComponentIDMetrics:   "metrics",
+	ComponentIDDebug:     "debug",
+	ComponentIDMap:       "map",
+	ComponentIDCompass:   "exits",
+	ComponentIDVitals:    "vitals",
+	ComponentIDActions:   "actions",
+	ComponentIDModes:     "modes",
+	ComponentIDVariables: "variables",
+}
+
+// BuiltinComponentKinds returns the fixed UUID-to-renderer registry. Returning
+// a copy prevents callers from mutating configuration identity.
+func BuiltinComponentKinds() map[string]string {
+	result := make(map[string]string, len(builtinComponentKinds))
+	for id, kind := range builtinComponentKinds {
+		result[id] = kind
+	}
+	return result
+}
+
+func legacyComponentID(id string, customIDs map[string]string) string {
+	for componentID, kind := range builtinComponentKinds {
+		if kind == id {
+			return componentID
+		}
+	}
+	if migrated := customIDs[id]; migrated != "" {
+		return migrated
+	}
+	if ValidUUID(id) {
+		return id
+	}
+	return ""
+}
+
+func defaultComponentHeight(id string) int {
+	switch id {
+	case ComponentIDMap:
+		return 160
+	case ComponentIDCompass:
+		return 220
+	case ComponentIDVitals:
+		return 140
+	case ComponentIDMetrics, ComponentIDVariables:
+		return 260
+	case ComponentIDDebug:
+		return 300
+	case ComponentIDActions, ComponentIDModes:
+		return 240
+	default:
+		return 300
+	}
+}
+
+func displayProfileFromLegacy(layout GUILayoutConfig, customIDs map[string]string) DisplayProfileConfig {
+	profile := DisplayProfileConfig{
+		ID:              DefaultDisplayProfileID,
+		Name:            "Default",
+		SidebarsVisible: layout.SidebarsVisible,
+		Main:            []DisplayComponentConfig{{ComponentID: ComponentIDAll}},
+		Sidebars:        make([]DisplaySidebarConfig, 0, len(layout.Sidebars)),
+	}
+	views := append([]ViewLayoutConfig(nil), layout.Views...)
+	sort.SliceStable(views, func(i, j int) bool {
+		if views[i].Location != views[j].Location {
+			return views[i].Location < views[j].Location
+		}
+		return views[i].Priority > views[j].Priority
+	})
+	for _, view := range views {
+		if view.Location != "tab" {
+			continue
+		}
+		if id := legacyComponentID(view.ID, customIDs); id != "" && id != ComponentIDAll {
+			profile.Main = append(profile.Main, DisplayComponentConfig{ComponentID: id})
+		}
+	}
+	for i, old := range layout.Sidebars {
+		sidebarID := newUUID()
+		switch i {
+		case 0:
+			sidebarID = DefaultSidebarOneID
+		case 1:
+			sidebarID = DefaultSidebarTwoID
+		case 2:
+			sidebarID = DefaultSidebarThreeID
+		}
+		sidebar := DisplaySidebarConfig{
+			ID: sidebarID, Name: fmt.Sprintf("Sidebar %d", i+1), Enabled: old.Enabled,
+			Side: old.Side, Width: old.Width, Components: []DisplayComponentConfig{},
+		}
+		location := fmt.Sprintf("sidebar-%d", old.ID)
+		for _, view := range views {
+			if view.Location != location {
+				continue
+			}
+			if id := legacyComponentID(view.ID, customIDs); id != "" {
+				height := view.SidebarHeight
+				if height == 0 {
+					height = defaultComponentHeight(id)
+				}
+				sidebar.Components = append(sidebar.Components, DisplayComponentConfig{
+					ComponentID: id, SidebarHeight: height, Collapsed: view.Collapsed,
+				})
+			}
+		}
+		profile.Sidebars = append(profile.Sidebars, sidebar)
+	}
+	return profile
+}
+
+// FindDisplayComponent returns a copy of a component placement from main or a
+// sidebar. Its container and order remain owned by the display profile.
+func FindDisplayComponent(profile DisplayProfileConfig, id string) (DisplayComponentConfig, bool) {
+	for _, component := range profile.Main {
+		if component.ComponentID == id {
+			return component, true
+		}
+	}
+	for _, sidebar := range profile.Sidebars {
+		for _, component := range sidebar.Components {
+			if component.ComponentID == id {
+				return component, true
+			}
+		}
+	}
+	return DisplayComponentConfig{}, false
+}
+
+// BuiltinViewIDs returns the stable registry IDs owned by the GUI/web shell.
+func BuiltinViewIDs() []string {
+	ids := make([]string, len(builtinViewDefaults))
+	for i, view := range builtinViewDefaults {
+		ids[i] = view.ID
+	}
+	return ids
+}
+
+func defaultGUILayout(custom []CustomTabConfig, legacyWidth, legacyMapHeight int, visible bool) GUILayoutConfig {
+	if legacyWidth < 180 {
+		legacyWidth = 260
+	} else if legacyWidth > 600 {
+		legacyWidth = 600
+	}
+	if legacyMapHeight < 80 {
+		legacyMapHeight = 160
+	} else if legacyMapHeight > 800 {
+		legacyMapHeight = 800
+	}
+	views := append([]ViewLayoutConfig(nil), builtinViewDefaults...)
+	for i := range views {
+		if views[i].ID == "map" {
+			views[i].SidebarHeight = legacyMapHeight
+		}
+	}
+	for i, tab := range custom {
+		views = append(views, ViewLayoutConfig{
+			ID: tab.ID, Location: "tab", Priority: 1000 - i,
+			SidebarHeight: 300,
+		})
+	}
+	return GUILayoutConfig{
+		SidebarsVisible: visible,
+		Sidebars: []GUISidebarConfig{
+			{ID: 1, Enabled: true, Side: "right", Width: legacyWidth},
+			{ID: 2, Enabled: false, Side: "right", Width: 260},
+			{ID: 3, Enabled: false, Side: "right", Width: 260},
+		},
+		Views: views,
+	}
+}
+
+// NormalizeCustomViewIDs gives legacy Custom Tabs stable identities so their
+// layout and runtime buffers survive rename and reorder.
+func NormalizeCustomViewIDs(tabs []CustomTabConfig) []CustomTabConfig {
+	normalized := append([]CustomTabConfig(nil), tabs...)
+	seen := make(map[string]bool, len(normalized))
+	for i := range normalized {
+		id := strings.TrimSpace(normalized[i].ID)
+		if ValidUUID(id) && !seen[strings.ToLower(id)] && builtinComponentKinds[id] == "" {
+			normalized[i].ID = id
+			seen[strings.ToLower(id)] = true
+			continue
+		}
+		for attempt := 0; ; attempt++ {
+			hash := sha256.New()
+			fmt.Fprintf(hash, "praetor-custom-view\x00%d\x00%d\x00%s\x00%t\x00%t\x00", i, attempt, normalized[i].Name, normalized[i].Visible, normalized[i].EchoCommands)
+			for _, rule := range normalized[i].Rules {
+				fmt.Fprintf(hash, "%s\x00%t\x00%t\x00", rule.Pattern, rule.Include, rule.Active)
+			}
+			id = uuidFromBytes(hash.Sum(nil))
+			if !seen[strings.ToLower(id)] && builtinComponentKinds[id] == "" {
+				normalized[i].ID = id
+				seen[strings.ToLower(id)] = true
+				break
+			}
+		}
+	}
+	return normalized
+}
+
+// NormalizeGUILayout repairs malformed placement data without losing Custom
+// View definitions. The first occurrence of a view wins; missing registered
+// views are restored at deterministic defaults.
+func NormalizeGUILayout(layout GUILayoutConfig, custom []CustomTabConfig) GUILayoutConfig {
+	defaults := defaultGUILayout(custom, 260, 160, true)
+
+	sidebars := make([]GUISidebarConfig, 3)
+	seenSidebars := map[int]bool{}
+	for _, sidebar := range layout.Sidebars {
+		if sidebar.ID < 1 || sidebar.ID > 3 || seenSidebars[sidebar.ID] {
+			continue
+		}
+		seenSidebars[sidebar.ID] = true
+		if sidebar.Side != "left" && sidebar.Side != "right" {
+			sidebar.Side = "right"
+		}
+		if sidebar.Width < 180 {
+			sidebar.Width = 260
+		} else if sidebar.Width > 600 {
+			sidebar.Width = 600
+		}
+		sidebars[sidebar.ID-1] = sidebar
+	}
+	for i := range sidebars {
+		if !seenSidebars[i+1] {
+			sidebars[i] = defaults.Sidebars[i]
+		}
+	}
+	layout.Sidebars = sidebars
+
+	allowed := make(map[string]ViewLayoutConfig, len(defaults.Views))
+	for _, view := range defaults.Views {
+		allowed[view.ID] = view
+	}
+	seenViews := map[string]bool{}
+	views := make([]ViewLayoutConfig, 0, len(allowed))
+	for _, view := range layout.Views {
+		fallback, ok := allowed[view.ID]
+		if !ok || seenViews[view.ID] {
+			continue
+		}
+		seenViews[view.ID] = true
+		if !validViewLocation(view.Location) {
+			view.Location = fallback.Location
+		}
+		if view.SidebarHeight < 80 {
+			view.SidebarHeight = fallback.SidebarHeight
+		} else if view.SidebarHeight > 800 {
+			view.SidebarHeight = 800
+		}
+		views = append(views, view)
+	}
+	for _, fallback := range defaults.Views {
+		if !seenViews[fallback.ID] {
+			views = append(views, fallback)
+		}
+	}
+	layout.Views = views
+	return layout
+}
+
+func validViewLocation(location string) bool {
+	switch location {
+	case "tab", "sidebar-1", "sidebar-2", "sidebar-3":
+		return true
+	default:
+		return false
+	}
+}
+
+func isBuiltinViewID(id string) bool {
+	for _, view := range builtinViewDefaults {
+		if view.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// FindViewLayout looks up a placement by stable view ID.
+func FindViewLayout(layout GUILayoutConfig, id string) (ViewLayoutConfig, bool) {
+	for _, view := range layout.Views {
+		if view.ID == id {
+			return view, true
+		}
+	}
+	return ViewLayoutConfig{}, false
+}
+
+func normalizeSelectedActionSetID(selected string, sets []ActionSet) string {
+	for _, set := range sets {
+		if set.ID == selected {
+			return selected
+		}
+	}
+	if len(sets) > 0 {
+		return sets[0].ID
+	}
+	return ""
 }
 
 // ValidVariableName reports whether name can be referenced as ${name} or as the

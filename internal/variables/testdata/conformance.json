@@ -1,0 +1,12 @@
+[
+  {"name":"value","input":"look at ${target}","values":{"target":"bronze lamp"},"output":"look at bronze lamp"},
+  {"name":"fallback missing","input":"count ${count:25}","values":{},"output":"count 25"},
+  {"name":"fallback empty","input":"count ${count:25}","values":{"count":""},"output":"count 25"},
+  {"name":"empty value","input":"[${message}]","values":{"message":""},"output":"[]"},
+  {"name":"literal reference","input":"say \\${target}","values":{"target":"Marcus"},"output":"say ${target}"},
+  {"name":"one pass","input":"say ${message}","values":{"message":"${target}","target":"Marcus"},"output":"say ${target}"},
+  {"name":"Unicode","input":"say ${message}","values":{"message":"salvē, Rōma"},"output":"say salvē, Rōma"},
+  {"name":"unresolved","input":"say ${target}","values":{},"error":"unresolved","errorName":"target"},
+  {"name":"invalid name","input":"say ${bad-name}","values":{},"error":"invalid_name","errorName":"bad-name"},
+  {"name":"unterminated","input":"say ${target","values":{},"error":"unterminated","errorName":""}
+]

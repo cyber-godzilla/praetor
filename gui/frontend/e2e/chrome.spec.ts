@@ -50,7 +50,7 @@ test("the Escape menu groups related controls in a stable order", async ({ page 
   expect(groups).toEqual([
     {
       name: "Behavior",
-      items: ["Settings", "Custom Tabs", "Notifications", "Retro CRT Effects"],
+      items: ["Settings", "Character Profiles", "Layout", "Notifications", "Retro CRT Effects"],
     },
     {
       name: "Automation",
@@ -88,6 +88,36 @@ test("the Escape menu groups related controls in a stable order", async ({ page 
   ]);
 });
 
+test("character profiles can be added, renamed, numbered, and deleted", async ({ page, backend }) => {
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Menu" })
+    .getByRole("button", { name: "Character Profiles", exact: true }).click();
+
+  let dialog = page.getByRole("dialog", { name: "Character Profiles" });
+  await expect(dialog.locator(".default-name")).toContainText("Default");
+  await dialog.getByRole("button", { name: "Add character profile" }).click();
+  const rows = dialog.locator(".profile-row");
+  await expect(rows).toHaveCount(2);
+  await rows.nth(1).getByLabel("Profile name").fill("Marcus");
+  await rows.nth(1).getByLabel("Account").fill("PlayerOne");
+  await rows.nth(1).getByLabel("Character number").fill("1");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect.poll(async () => (await backend.args("SetCharacterProfiles")).length).toBe(1);
+  const saved = (await backend.args("SetCharacterProfiles"))[0][0] as Array<Record<string, unknown>>;
+  expect(saved).toHaveLength(2);
+  expect(saved[1]).toMatchObject({ Name: "Marcus", Account: "PlayerOne", CharacterNumber: 1 });
+  expect(saved[1].ID).toMatch(/^[0-9a-f]{8}-[0-9a-f-]{27}$/);
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Menu" })
+    .getByRole("button", { name: "Character Profiles", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Character Profiles" });
+  await dialog.locator(".profile-row").nth(1).getByLabel("Profile name").fill("Marcellus");
+  await dialog.locator(".profile-row").nth(1).getByRole("button", { name: "Delete profile" }).click();
+  await expect(dialog.locator(".profile-row")).toHaveCount(1);
+});
+
 test("Help can search game help and open the wiki", async ({ page, backend }) => {
   await page.keyboard.press("Escape");
   let dialog = page.getByRole("dialog");
@@ -108,8 +138,7 @@ test("Help can search game help and open the wiki", async ({ page, backend }) =>
 });
 
 test("the sidebar Modes tab lists the loaded modes", async ({ page }) => {
-  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Modes" }).click();
-  const modes = page.locator(".sidebartabs .modes");
+  const modes = page.locator('aside[aria-label="Sidebar 1"] .modes');
   await expect(modes.getByRole("button", { name: "disable" })).toBeVisible();
   await expect(modes.getByRole("button", { name: "hunt", exact: true })).toBeVisible();
   await expect(modes.getByRole("button", { name: "hunt_wolves" })).toBeVisible();
@@ -127,12 +156,12 @@ test("reloading scripts immediately refreshes mode listings and hint breadcrumbs
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Reload Scripts", exact: true }).click();
   await expect.poll(() => backend.calls("ReloadScripts")).toHaveLength(1);
-  await expect.poll(() => backend.calls("ModeNames")).toHaveLength(1);
+  // The always-mounted Modes view refreshes once on startup and once here.
+  await expect.poll(() => backend.calls("ModeNames")).toHaveLength(2);
   await expect.poll(() => backend.calls("ModeSpecs")).toHaveLength(1);
   await page.keyboard.press("Escape");
 
-  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Modes" }).click();
-  const modes = page.locator(".sidebartabs .modes");
+  const modes = page.locator('aside[aria-label="Sidebar 1"] .modes');
   await expect(modes.getByRole("button", { name: "new_mode" })).toBeVisible();
   await expect(modes.getByRole("button", { name: "hunt", exact: true })).toHaveCount(0);
 
@@ -151,28 +180,28 @@ test("reloading scripts immediately refreshes mode listings and hint breadcrumbs
 test.describe("TUI-only configured topbar", () => {
   test.use({ init: { ...baseInit, config: topbarConfig } });
 
-  test("falls back to the GUI sidebar without rewriting shared config", async ({ page, backend }) => {
+  test("uses the responsive Views drawer without rewriting shared config", async ({ page, backend }) => {
     await page.setViewportSize({ width: 600, height: 700 });
-    await expect(page.locator(".sidebar")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Views" })).toBeVisible();
     await expect(page.locator(".game-topbar")).toHaveCount(0);
     expect(await backend.args("SetDisplayMode")).toEqual([]);
   });
 });
 
 test("Alt+S toggles and persists sidebar and off", async ({ page, backend }) => {
-  const sidebar = page.locator(".sidebar");
+  const sidebar = page.locator('aside[aria-label="Sidebar 1"]');
   await expect(sidebar).toBeVisible();
 
   await page.keyboard.press("Alt+s");
   await expect(sidebar).toHaveCount(0);
-  await expect.poll(() => backend.args("SetDisplayMode")).toEqual([["off"]]);
+  await expect.poll(() => backend.args("SetGUISidebarsVisible")).toEqual([[false]]);
 
   await page.keyboard.press("Alt+s");
   await expect(sidebar).toBeVisible();
-  await expect.poll(() => backend.args("SetDisplayMode")).toEqual([["off"], ["sidebar"]]);
+  await expect.poll(() => backend.args("SetGUISidebarsVisible")).toEqual([[false], [true]]);
 });
 
-test("general settings persist chain delays and resize the GUI", async ({ page, backend }) => {
+test("general settings persist chain delays", async ({ page, backend }) => {
   await page.keyboard.press("Escape");
   let dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Settings", exact: true }).click();
@@ -180,21 +209,39 @@ test("general settings persist chain delays and resize the GUI", async ({ page, 
   await dialog.getByRole("spinbutton", { name: "Command chain delay" }).fill("1250");
   await dialog.getByRole("spinbutton", { name: "Unbusy response delay" }).fill("250");
   await dialog.getByRole("spinbutton", { name: "Minimap Scale (Zoom)" }).fill("1.4");
-  await dialog.getByRole("spinbutton", { name: "GUI sidebar width" }).fill("340");
-  await dialog.getByRole("spinbutton", { name: "GUI map height" }).fill("220");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect.poll(() => backend.args("SetSemicolonDelay")).toEqual([[1250]]);
   await expect.poll(() => backend.args("SetUnbusyDelay")).toEqual([[250]]);
   await expect.poll(() => backend.args("SetMinimapScale")).toEqual([[1.4]]);
-  await expect.poll(() => backend.args("SetGUILayout")).toEqual([[340, 220]]);
-  await expect(page.locator(".sidebar")).toHaveCSS("width", "340px");
-  await expect(page.locator(".sidebar .mapbox")).toHaveCSS("height", "220px");
+});
+
+test("Layout drag-and-drop immediately saves UUID sidebar placement and dimensions", async ({ page, backend }) => {
+  await page.keyboard.press("Escape");
+  let dialog = page.getByRole("dialog", { name: "Menu" });
+  await dialog.getByRole("button", { name: "Layout", exact: true }).click();
+  dialog = page.getByRole("dialog", { name: "Layout" });
+
+  const sidebar1 = dialog.getByRole("group", { name: "Sidebar 1" });
+  await sidebar1.getByRole("spinbutton", { name: "Sidebar 1 width" }).fill("340");
+  const sidebar2 = dialog.getByRole("group", { name: "Sidebar 2" });
+  await sidebar2.getByRole("checkbox", { name: "Sidebar 2 enabled" }).check();
+  await sidebar2.getByRole("combobox", { name: "Sidebar 2 side" }).selectOption("left");
+  await sidebar1.getByRole("spinbutton", { name: "Map height" }).fill("220");
+  await dialog.locator(".main-destination .component").filter({ hasText: "Metrics" }).dragTo(sidebar2.locator(".destination"));
+  await dialog.getByRole("button", { name: "+ Add sidebar" }).click();
+  await expect(dialog.getByRole("group", { name: "Sidebar 4" })).toBeVisible();
+  await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+
+  await expect.poll(async () => (await backend.args("SetViewLayout")).length).toBeGreaterThanOrEqual(5);
+  await expect(page.locator('aside[aria-label="Sidebar 1"]')).toHaveCSS("width", "340px");
+  await expect(page.locator('aside[aria-label="Sidebar 2"]')).toBeVisible();
+  await expect(page.locator('aside[aria-label="Sidebar 2"]')).toContainText("Metrics");
 });
 
 test("the sidebar Variables tab saves command variables", async ({ page, backend }) => {
-  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Variables" }).click();
-  await page.getByRole("button", { name: "Add variable" }).click();
+  const sidebar = page.locator('aside[aria-label="Sidebar 1"]');
+  await sidebar.getByRole("button", { name: "Add variable" }).click();
   await page.getByRole("textbox", { name: "Variable name" }).fill("target");
   await page.getByRole("textbox", { name: "Value for target" }).fill("scarred bandit");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -205,8 +252,8 @@ test("the sidebar Variables tab saves command variables", async ({ page, backend
 });
 
 test("saved variable events live-update an open Variables tab", async ({ page, backend }) => {
-  await page.locator(".sidebartabs .strip").getByRole("button", { name: "Variables" }).click();
-  await expect(page.getByText("No variables configured.")).toBeVisible();
+  const sidebar = page.locator('aside[aria-label="Sidebar 1"]');
+  await expect(sidebar.getByText("No variables configured.")).toBeVisible();
 
   await backend.events([{
     kind: "variable",
@@ -353,8 +400,8 @@ test("notification patterns save their custom message", async ({ page, backend }
   dialog = page.getByRole("dialog");
   await dialog.getByRole("button", { name: "Add pattern" }).click();
   await dialog.getByPlaceholder("match text").fill("whispers");
-  await dialog.getByPlaceholder("title (optional)").fill("Private message");
-  await dialog.getByPlaceholder("message (optional)").fill("Someone whispered to you");
+  await dialog.getByRole("textbox", { name: /^title \(optional/ }).fill("Private message");
+  await dialog.getByRole("textbox", { name: /^message \(optional/ }).fill("Someone whispered to you");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect.poll(() => backend.args("SetNotifications")).toEqual([

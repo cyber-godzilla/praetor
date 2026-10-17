@@ -53,6 +53,7 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
     // asks PlayActive before every send.
     const readers: Record<string, unknown> = {
       GetInitState: init,
+      GetConfig: init.config,
       ModeNames: init.modeNames ?? [],
       ModeSpecs: init.modeSpecs ?? [],
       ListNotes: [],
@@ -114,6 +115,24 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
                 ...(input.includes(";;") && !input.includes("wait-for") ? { durationMs: 900, remainingMs: 899 } : {}),
               };
             }
+          }
+          if (name === "SetCharacterProfiles") {
+            const identities = (args[0] ?? []) as Array<{
+              ID: string; Name: string; Account: string; CharacterNumber: number;
+            }>;
+            const profiles = init.config.CharacterProfiles.Profiles;
+            const byID = new Map(profiles.map((profile) => [profile.ID, profile]));
+            const fallback = profiles.find((profile) => profile.ID === init.config.CharacterProfiles.DefaultID)!;
+            init.config.CharacterProfiles.Profiles = identities.map((identity) => {
+              const current = byID.get(identity.ID);
+              if (current) return { ...current, ...identity };
+              return {
+                ...structuredClone(fallback),
+                ...identity,
+                CustomViews: (fallback.CustomViews ?? []).map((view) => ({ ...view, ID: crypto.randomUUID() })),
+              };
+            });
+            readers.GetConfig = init.config;
           }
           if (name === "CalcRankBonus") {
             const [mode, basics, subskill] = args as number[];

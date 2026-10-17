@@ -334,6 +334,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetLogPath)
 	case "display-mode":
 		return settingValue(raw, s.app.SetDisplayMode)
+	case "gui-sidebars-visible":
+		return settingValue(raw, s.app.SetGUISidebarsVisible)
 	case "numpad-navigation":
 		return settingValue(raw, s.app.SetNumpadNavigation)
 	case "minimap-scale":
@@ -351,6 +353,17 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 			return err
 		}
 		return s.app.SetGUILayout(value.SidebarWidth, value.MinimapHeight)
+	case "view-layout":
+		value, err := decodeValue[struct {
+			Layout      config.DisplayProfileConfig `json:"layout"`
+			CustomViews []config.CustomTabConfig    `json:"customViews"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		return s.app.SetViewLayout(value.Layout, value.CustomViews)
+	case "selected-action-set":
+		return settingValue(raw, s.app.SetSelectedActionSetID)
 	case "crt-effects":
 		value, err := decodeValue[struct {
 			Scanlines bool `json:"scanlines"`
@@ -365,6 +378,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue[[]config.HighlightConfig](raw, s.app.SetHighlights)
 	case "speech-colors":
 		return settingValue[[]config.SpeechColorConfig](raw, s.app.SetSpeechColors)
+	case "wound-highlights":
+		return settingValue[config.WoundHighlightConfig](raw, s.app.SetWoundHighlights)
 	case "custom-tabs":
 		return settingValue[[]config.CustomTabConfig](raw, s.app.SetCustomTabs)
 	case "action-sets":
@@ -375,6 +390,8 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue[[]string](raw, s.app.SetHighPriority)
 	case "input-variables":
 		return settingValue[map[string]string](raw, s.app.SetInputVariables)
+	case "character-profiles":
+		return settingValue[[]config.CharacterProfileIdentity](raw, s.app.SetCharacterProfiles)
 	case "ignore-ooc":
 		return settingValue[[]string](raw, s.app.SetIgnoreOOC)
 	case "ignore-think":

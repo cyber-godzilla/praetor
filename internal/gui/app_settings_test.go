@@ -78,6 +78,38 @@ func TestSetSpeechColorsValidatesPersistsAndPublishes(t *testing.T) {
 	}
 }
 
+func TestSetWoundHighlightsValidatesPersistsAndPublishes(t *testing.T) {
+	cfg := config.Defaults()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path}, &captureEmitter{})
+
+	wounds := config.WoundHighlightConfig{
+		Enabled: true, Cuts: "orange", Bruises: "blue", Punctures: "purple", Burns: "red",
+	}
+	if err := a.SetWoundHighlights(wounds); err != nil {
+		t.Fatalf("SetWoundHighlights: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.WoundHighlights != wounds {
+		t.Fatalf("persisted wound settings = %+v, want %+v", loaded.WoundHighlights, wounds)
+	}
+	if live := a.woundHighlights.Load().(config.WoundHighlightConfig); live != wounds {
+		t.Fatalf("published wound settings = %+v, want %+v", live, wounds)
+	}
+
+	invalid := wounds
+	invalid.Cuts = "chartreuse"
+	if err := a.SetWoundHighlights(invalid); err == nil {
+		t.Fatal("SetWoundHighlights accepted an invalid family")
+	}
+	if live := a.woundHighlights.Load().(config.WoundHighlightConfig); live != wounds {
+		t.Fatalf("invalid update changed live settings to %+v", live)
+	}
+}
+
 func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	cfg := config.Defaults()
 	c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
@@ -98,14 +130,14 @@ func TestSetInputVariablesValidatesPersistsAndApplies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := loaded.Commands.Variables["target"]; got != "scarred bandit" {
+	if got := loaded.DefaultCharacterProfile().Variables["target"]; got != "scarred bandit" {
 		t.Fatalf("persisted target = %q, want %q", got, "scarred bandit")
 	}
 
 	if err := a.SetInputVariables(map[string]string{"bad-name": "value"}); err == nil {
 		t.Fatal("SetInputVariables accepted an invalid name")
 	}
-	if got := a.cfg().Commands.Variables["target"]; got != "scarred bandit" {
+	if got := a.cfg().DefaultCharacterProfile().Variables["target"]; got != "scarred bandit" {
 		t.Fatalf("invalid update changed live variables to %q", got)
 	}
 	if got := a.inputVariables.Load().(map[string]string)["target"]; got != "scarred bandit" {
@@ -130,7 +162,7 @@ func TestSetVariableCommandPersistsThroughGuiFacade(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := loaded.Commands.Variables["speaker"]; got != "A man in a hooded cloak" {
+	if got := loaded.DefaultCharacterProfile().Variables["speaker"]; got != "A man in a hooded cloak" {
 		t.Fatalf("persisted speaker = %q", got)
 	}
 	if got := a.inputVariables.Load().(map[string]string)["speaker"]; got != "A man in a hooded cloak" {

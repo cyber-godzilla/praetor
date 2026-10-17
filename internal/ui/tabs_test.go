@@ -3,13 +3,23 @@ package ui
 import (
 	"testing"
 
+	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
 )
+
+func TestCustomViewIDSurvivesTUIBuildAndSave(t *testing.T) {
+	built := BuildTabs(100, false, []config.CustomTabConfig{{
+		ID: "custom-chat", Name: "Chat", Visible: true,
+	}})
+	got := TabsToConfig(built)
+	if len(got) != 1 || got[0].ID != "custom-chat" {
+		t.Fatalf("custom view identity did not round trip: %+v", got)
+	}
+}
 
 func excludeRule(pattern string) TabRule {
 	return TabRule{
 		Pattern: pattern,
-		Regex:   compileWildcardPattern(pattern),
 		Include: false,
 		Active:  true,
 	}
@@ -18,7 +28,6 @@ func excludeRule(pattern string) TabRule {
 func includeRule(pattern string) TabRule {
 	return TabRule{
 		Pattern: pattern,
-		Regex:   compileWildcardPattern(pattern),
 		Include: true,
 		Active:  true,
 	}
@@ -35,7 +44,7 @@ func buildTestTabs(rules []TabRule, echoCommands bool) []TabDef {
 func TestRouteText_ExcludeOnlyTab_EchoSkippedByDefault(t *testing.T) {
 	tabs := buildTestTabs([]TabRule{excludeRule("spam")}, false)
 	segs := []types.StyledSegment{{Text: "look"}}
-	routed := RouteText(tabs, segs, "look", true)
+	routed := RouteText(tabs, segs, "look", true, nil)
 
 	// All tab = index 0 (bit 0). Custom tab = index 1 (bit 1).
 	if routed&(1<<1) != 0 {
@@ -49,7 +58,7 @@ func TestRouteText_ExcludeOnlyTab_EchoSkippedByDefault(t *testing.T) {
 func TestRouteText_ExcludeOnlyTab_EchoRoutedWhenEnabled(t *testing.T) {
 	tabs := buildTestTabs([]TabRule{excludeRule("spam")}, true)
 	segs := []types.StyledSegment{{Text: "look"}}
-	routed := RouteText(tabs, segs, "look", true)
+	routed := RouteText(tabs, segs, "look", true, nil)
 
 	if routed&(1<<1) == 0 {
 		t.Error("echo should route to exclude-only tab when EchoCommands=true")
@@ -61,7 +70,7 @@ func TestRouteText_IncludeRulePresent_EchoFlagIgnored(t *testing.T) {
 	// prevent the echo from reaching the tab since include rules govern.
 	tabs := buildTestTabs([]TabRule{includeRule("look")}, false)
 	segs := []types.StyledSegment{{Text: "look"}}
-	routed := RouteText(tabs, segs, "look", true)
+	routed := RouteText(tabs, segs, "look", true, nil)
 
 	if routed&(1<<1) == 0 {
 		t.Error("echo matching include rule should route regardless of EchoCommands flag")
@@ -73,10 +82,30 @@ func TestRouteText_NormalText_ExcludeOnlyTab_Unaffected(t *testing.T) {
 	// of EchoCommands flag.
 	tabs := buildTestTabs([]TabRule{excludeRule("spam")}, false)
 	segs := []types.StyledSegment{{Text: "look"}}
-	routed := RouteText(tabs, segs, "look", false)
+	routed := RouteText(tabs, segs, "look", false, nil)
 
 	if routed&(1<<1) == 0 {
 		t.Error("normal text should route to exclude-only tab")
+	}
+}
+
+func TestMatchesTab_UsesLiveVariablesAndSharedWildcardEscapes(t *testing.T) {
+	rules := []TabRule{{Pattern: `${target} dropped \*`, Include: true, Active: true}}
+	if !MatchesTab("Apula dropped *", rules, map[string]string{"target": "Apula"}) {
+		t.Fatal("expanded escaped-wildcard rule did not match")
+	}
+	if MatchesTab("Apula dropped sword", rules, map[string]string{"target": "Apula"}) {
+		t.Fatal("escaped star behaved as a wildcard")
+	}
+	if MatchesTab("Apula dropped *", rules, map[string]string{"target": "Constantine"}) {
+		t.Fatal("rule did not observe the current variable snapshot")
+	}
+}
+
+func TestMatchesTab_UnresolvedExclusionMatchesNothing(t *testing.T) {
+	rules := []TabRule{{Pattern: "${missing}", Include: false, Active: true}}
+	if !MatchesTab("anything", rules, nil) {
+		t.Fatal("unresolved exclusion accidentally excluded text")
 	}
 }
 

@@ -116,12 +116,16 @@
       store.accounts = init.accounts ?? [];
       if (init.credentialStore) store.credentialStore = init.credentialStore;
       store.config = init.config;
+      store.activeCharacterProfileID = init.activeCharacterProfileId || init.config.CharacterProfiles.DefaultID;
+      store.selectedActionSetID = store.characterProfile()?.SelectedActionSetID ?? "";
       store.modeNames = init.modeNames ?? [];
       store.modeSpecs = init.modeSpecs ?? [];
       store.colorwordStyles = init.colorwordStyles ?? [];
       store.hasModes = init.hasModes;
-      store.displayMode = normalizeDisplayMode(init.config?.UI?.DisplayMode);
-      store.rebuildTabs(init.config?.UI?.CustomTabs);
+      store.displayMode = store.displayProfile()?.SidebarsVisible === false
+        ? "off"
+        : normalizeDisplayMode(init.config?.UI?.DisplayMode);
+      store.rebuildTabs(store.characterProfile()?.CustomViews);
       store.screen = store.accounts.length > 0 ? "account" : "login";
       webLocked = false;
       ready = true;

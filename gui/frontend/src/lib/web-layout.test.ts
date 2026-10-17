@@ -9,8 +9,8 @@ const source = (relative: string) =>
 describe("web responsive layout contract", () => {
   it("keeps the mobile map/navigation dock after output and command input", () => {
     const game = source("../components/GameView.svelte");
-    expect(game.indexOf("<OutputPane")).toBeGreaterThan(-1);
-    expect(game.indexOf("<InputLine")).toBeGreaterThan(game.indexOf("<OutputPane"));
+    expect(game.indexOf("<ViewContent")).toBeGreaterThan(-1);
+    expect(game.indexOf("<InputLine")).toBeGreaterThan(game.indexOf("<ViewContent"));
     expect(game.indexOf("<MobileDock")).toBeGreaterThan(game.indexOf("<InputLine"));
     expect(game).toContain("@media (max-width: 899px)");
   });

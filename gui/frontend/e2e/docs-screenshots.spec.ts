@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { test, expect } from "./test";
-import { baseInit, makeConfig } from "./fixtures";
+import { baseInit, COMPONENT_IDS, makeConfig } from "./fixtures";
 import type { Page } from "@playwright/test";
 import type { ImagePayload, ModeSpec, RBResult, TextPayload, TrainingCostRow, WireEvent } from "../src/lib/types";
 
@@ -46,7 +46,7 @@ const docsModeSpecs: ModeSpec[] = [
 ];
 
 const docsConfig = makeConfig();
-docsConfig.Commands.Variables = {
+docsConfig.CharacterProfiles.Profiles[0].Variables = {
   count: "5",
   target: "bandit",
   weapon: "gladius",
@@ -127,14 +127,15 @@ const sampleState: WireEvent[] = [
 ];
 
 async function addLayoutCallouts(page: Page): Promise<void> {
+  const sidebarSections = page.locator('aside[aria-label="Sidebar 1"] .section');
   const regions = [
     { number: 1, target: page.locator(".statusbar"), badgeX: 0.66, badgeY: 0.5 },
     { number: 2, target: page.locator(".tabbar"), badgeX: 0.59, badgeY: 0.5 },
     { number: 3, target: page.locator(".output"), badgeX: 0.97, badgeY: 0.96 },
-    { number: 4, target: page.getByRole("button", { name: "Map", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
-    { number: 5, target: page.getByRole("button", { name: "Exits", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
-    { number: 6, target: page.getByRole("button", { name: "Vitals", exact: true }).locator(".."), badgeX: 0.94, badgeY: 0.08 },
-    { number: 7, target: page.locator(".sidebartabs"), badgeX: 0.94, badgeY: 0.06 },
+    { number: 4, target: sidebarSections.nth(0), badgeX: 0.94, badgeY: 0.08 },
+    { number: 5, target: sidebarSections.nth(1), badgeX: 0.94, badgeY: 0.08 },
+    { number: 6, target: sidebarSections.nth(2), badgeX: 0.94, badgeY: 0.08 },
+    { number: 7, target: page.locator('aside[aria-label="Sidebar 1"]'), badgeX: 0.94, badgeY: 0.06 },
     { number: 8, target: page.locator(".inputbar"), badgeX: 0.78, badgeY: 0.5 },
     { number: 9, target: page.locator(".automation-bar"), badgeX: 0.79, badgeY: 0.5 },
   ];
@@ -209,7 +210,7 @@ test("render documentation screenshots from deterministic sample data", async ({
   await backend.events(sampleState);
   await backend.text(sampleOutput);
 
-  await expect(page.locator(".sidebar img")).toHaveCount(2);
+  await expect(page.locator('aside[aria-label="Sidebar 1"] img')).toHaveCount(2);
   await expect(page.getByText("A softly glowing golden plaque and a table are scattered about ahead of you.", { exact: true })).toBeVisible();
   await expect(page.getByTestId("chain-status-placeholder")).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
@@ -290,7 +291,7 @@ test("render documentation screenshots from deterministic sample data", async ({
 
   await page.getByTitle("Back to menu").click();
   await page.getByRole("dialog").getByRole("button", { name: "Variables", exact: true }).click();
-  await expect(page.getByLabel("Value for target")).toHaveValue("bandit");
+  await expect(page.getByRole("dialog", { name: "Variables" }).getByLabel("Value for target")).toHaveValue("bandit");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-variables.png"),
     animations: "disabled",
@@ -339,6 +340,186 @@ test("render documentation screenshots from deterministic sample data", async ({
   await expect(page.getByTestId("e2e-hint")).toContainText("<item|alias>");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-mode-hint.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+});
+
+test("render one, two, and three sidebar layout examples with the real controls", async ({ page, backend }) => {
+  test.slow();
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await backend.boot();
+  await backend.enterGame();
+  await backend.events(sampleState);
+  await backend.text(sampleOutput);
+  await page.evaluate(() => document.fonts.ready);
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
+
+  async function openLayout() {
+    const menu = page.getByRole("dialog", { name: "Menu" });
+    if (!(await menu.isVisible())) await page.keyboard.press("Escape");
+    await menu.getByRole("button", { name: "Layout", exact: true }).click();
+    return page.getByRole("dialog", { name: "Layout" });
+  }
+
+  async function saveLayout() {
+    await page.getByRole("dialog", { name: "Layout" }).locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Layout" })).toHaveCount(0);
+    await expect(page.getByTestId("e2e-toasts").locator(".toast")).toHaveCount(0, { timeout: 7_000 });
+  }
+
+  async function setSidebar(
+    dialog: ReturnType<Page["getByRole"]>,
+    id: number,
+    enabled: boolean,
+    side: "left" | "right",
+    width: number,
+  ) {
+    const group = dialog.getByRole("group", { name: `Sidebar ${id}` });
+    const checkbox = group.getByRole("checkbox", { name: `Sidebar ${id} enabled` });
+    if (enabled) await checkbox.check();
+    else await checkbox.uncheck();
+    await group.getByRole("combobox", { name: `Sidebar ${id} side` }).selectOption(side);
+    await group.getByRole("spinbutton", { name: `Sidebar ${id} width` }).fill(String(width));
+  }
+
+  async function place(
+    dialog: ReturnType<Page["getByRole"]>,
+    view: string,
+    componentID: string,
+    location: "main" | 1 | 2 | 3,
+    height: number,
+  ) {
+    await dialog.getByRole("button", { name: `Unplace ${view}` }).click();
+    const destination = location === "main"
+      ? dialog.locator(".main-destination")
+      : dialog.getByRole("group", { name: `Sidebar ${location}` });
+    const selectName = location === "main" ? "Component ID to add to main" : `Component ID to add to Sidebar ${location}`;
+    await destination.getByRole("combobox", { name: selectName }).selectOption(componentID);
+    await destination.getByRole("button", { name: "Add", exact: true }).click();
+    if (location !== "main") await destination.getByRole("spinbutton", { name: `${view} height` }).fill(String(height));
+  }
+
+  // One sidebar: navigation and status on the right, with automation views as tabs.
+  let dialog = await openLayout();
+  await setSidebar(dialog, 1, true, "right", 300);
+  await setSidebar(dialog, 2, false, "left", 230);
+  await setSidebar(dialog, 3, false, "right", 230);
+  await place(dialog, "Map", COMPONENT_IDS.map, 1, 250);
+  await place(dialog, "Compass", COMPONENT_IDS.exits, 1, 170);
+  await place(dialog, "Vitals", COMPONENT_IDS.vitals, 1, 150);
+  await place(dialog, "Action Sets", COMPONENT_IDS.actions, "main", 190);
+  await place(dialog, "Modes", COMPONENT_IDS.modes, "main", 210);
+  await place(dialog, "Variables", COMPONENT_IDS.variables, "main", 210);
+  await saveLayout();
+  await expect(page.locator('aside[aria-label="Sidebar 1"]')).toBeVisible();
+  await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(1);
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-layout-1-sidebar.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+
+  // Two sidebars: data and variables on the left, navigation and combat on the right.
+  dialog = await openLayout();
+  await setSidebar(dialog, 2, true, "left", 230);
+  await place(dialog, "Metrics", COMPONENT_IDS.metrics, 2, 210);
+  await place(dialog, "Variables", COMPONENT_IDS.variables, 2, 230);
+  await place(dialog, "Map", COMPONENT_IDS.map, 1, 180);
+  await place(dialog, "Compass", COMPONENT_IDS.exits, 1, 140);
+  await place(dialog, "Vitals", COMPONENT_IDS.vitals, 1, 120);
+  await place(dialog, "Action Sets", COMPONENT_IDS.actions, 1, 150);
+  await saveLayout();
+  await expect(page.locator('aside[aria-label="Sidebar 2"]')).toBeVisible();
+  await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(2);
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-layout-2-sidebars.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+
+  // Three sidebars: a second right-hand rail holds the automation controls.
+  dialog = await openLayout();
+  await setSidebar(dialog, 3, true, "right", 230);
+  await place(dialog, "Action Sets", COMPONENT_IDS.actions, 3, 210);
+  await place(dialog, "Modes", COMPONENT_IDS.modes, 3, 260);
+  await saveLayout();
+  await expect(page.locator('aside[aria-label="Sidebar 3"]')).toBeVisible();
+  await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(3);
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-layout-3-sidebars.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+});
+
+test("render a filtered Think and OOC custom view as a sidebar component", async ({ page, backend }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await backend.boot();
+  await backend.enterGame();
+  await backend.events(sampleState);
+  await backend.text(sampleOutput);
+
+  // Build and place the filtered view through the same Layout controls a user
+  // operates. This keeps the example coupled to the real custom-view editor.
+  await page.keyboard.press("Escape");
+  await page.getByRole("dialog", { name: "Menu" }).getByRole("button", { name: "Layout", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Layout" });
+
+  const sidebar1 = dialog.getByRole("group", { name: "Sidebar 1" });
+  await sidebar1.getByRole("spinbutton", { name: "Sidebar 1 width" }).fill("300");
+  const sidebar2 = dialog.getByRole("group", { name: "Sidebar 2" });
+  await sidebar2.getByRole("checkbox", { name: "Sidebar 2 enabled" }).check();
+  await sidebar2.getByRole("combobox", { name: "Sidebar 2 side" }).selectOption("left");
+  await sidebar2.getByRole("spinbutton", { name: "Sidebar 2 width" }).fill("360");
+
+  await sidebar1.getByRole("spinbutton", { name: "Map height" }).fill("250");
+  await sidebar1.getByRole("spinbutton", { name: "Compass height" }).fill("170");
+  await sidebar1.getByRole("spinbutton", { name: "Vitals height" }).fill("150");
+  for (const [view, id] of [["Action Sets", COMPONENT_IDS.actions], ["Modes", COMPONENT_IDS.modes], ["Variables", COMPONENT_IDS.variables]] as const) {
+    await dialog.getByRole("button", { name: `Unplace ${view}` }).click();
+    const main = dialog.locator(".main-destination");
+    await main.getByRole("combobox", { name: "Component ID to add to main" }).selectOption(id);
+    await main.getByRole("button", { name: "Add", exact: true }).click();
+  }
+
+  const addRow = dialog.locator(".add-row");
+  await addRow.getByPlaceholder("New filtered text component…").fill("Think / OOC");
+  await addRow.getByRole("button").click();
+
+  const editor = dialog.locator(".custom-editor");
+  await editor.getByRole("button", { name: "+ Add rule" }).click();
+  await editor.locator(".rule").nth(0).getByPlaceholder("pattern").fill("thinks aloud");
+  await editor.getByRole("button", { name: "+ Add rule" }).click();
+  await editor.locator(".rule").nth(1).getByPlaceholder("pattern").fill("You think aloud");
+  await editor.getByRole("button", { name: "+ Add rule" }).click();
+  await editor.locator(".rule").nth(2).getByPlaceholder("pattern").fill("?m OOC>");
+
+  const filteredID = (await editor.locator("code").textContent())!.trim();
+  await dialog.getByRole("button", { name: "Unplace Think / OOC" }).click();
+  await sidebar2.getByRole("combobox", { name: "Component ID to add to Sidebar 2" }).selectOption(filteredID);
+  await sidebar2.getByRole("button", { name: "Add", exact: true }).click();
+  await sidebar2.getByRole("spinbutton", { name: "Think / OOC height" }).fill("650");
+
+  await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("e2e-toasts").locator(".toast")).toHaveCount(0, { timeout: 7_000 });
+
+  await backend.text([
+    "<Apula thinks aloud: I wonder...>",
+    '<8:14 pm OOC> Constantine replies, "Indeed."',
+    "A distant bell rings somewhere beyond the courtyard.",
+  ]);
+
+  const filtered = page.locator('aside[aria-label="Sidebar 2"]');
+  await expect(filtered).toContainText("Think / OOC");
+  await expect(filtered).toContainText("<Apula thinks aloud: I wonder...>");
+  await expect(filtered).toContainText('<8:14 pm OOC> Constantine replies, "Indeed."');
+  await expect(filtered).not.toContainText("A distant bell rings");
+  await page.evaluate(() => document.fonts.ready);
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-layout-filtered-text-sidebar.png"),
     animations: "disabled",
     caret: "hide",
   });

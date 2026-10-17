@@ -9,6 +9,7 @@ type Projection struct {
 	historyLimit int
 	history      []appgui.WireEvent
 	conn         *appgui.WireEvent
+	character    *appgui.WireEvent
 	status       *appgui.WireEvent
 	bars         *appgui.WireEvent
 	minimap      *appgui.WireEvent
@@ -53,6 +54,9 @@ func (p *Projection) Apply(events []appgui.WireEvent) {
 		case appgui.KindStatus:
 			copy := ev
 			p.status = &copy
+		case appgui.KindCharacterProfile:
+			copy := ev
+			p.character = &copy
 		case appgui.KindBars:
 			p.mergeBars(ev)
 		case appgui.KindMinimap:
@@ -66,7 +70,7 @@ func (p *Projection) Apply(events []appgui.WireEvent) {
 }
 
 func (p *Projection) SnapshotEvents() []appgui.WireEvent {
-	out := make([]appgui.WireEvent, 0, len(p.history)+5)
+	out := make([]appgui.WireEvent, 0, len(p.history)+6)
 	if p.conn != nil {
 		out = append(out, *p.conn)
 	} else {
@@ -74,6 +78,9 @@ func (p *Projection) SnapshotEvents() []appgui.WireEvent {
 			Kind: appgui.KindConn,
 			Conn: &appgui.ConnPayload{State: "disconnected"},
 		})
+	}
+	if p.character != nil {
+		out = append(out, *p.character)
 	}
 	out = append(out, p.history...)
 	for _, latest := range []*appgui.WireEvent{p.status, p.bars, p.minimap, p.compass} {
@@ -86,6 +93,7 @@ func (p *Projection) SnapshotEvents() []appgui.WireEvent {
 
 func (p *Projection) resetSession() {
 	p.history = nil
+	p.character = nil
 	p.status = nil
 	p.bars = nil
 	p.minimap = nil

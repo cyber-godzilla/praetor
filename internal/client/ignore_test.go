@@ -71,6 +71,36 @@ func TestIgnoreFilter_CaseInsensitiveLookup(t *testing.T) {
 	}
 }
 
+func TestIgnoreFilter_WildcardsAndVariablesUseWholeNames(t *testing.T) {
+	f := NewIgnoreFilter()
+	f.SetVariables(map[string]string{"account": "Dark*"})
+	f.SetOOC([]string{"${account}"})
+	f.SetThink([]string{"Trav?"})
+
+	if _, _, hit := f.Match(`<8:14 pm OOC> DarkWing666 says, "hi"`); !hit {
+		t.Fatal("expanded OOC wildcard did not match")
+	}
+	if _, _, hit := f.Match(`<Travis thinks aloud: hi>`); hit {
+		t.Fatal("whole-name question wildcard matched a longer name")
+	}
+	if _, _, hit := f.Match(`<Travy thinks aloud: hi>`); !hit {
+		t.Fatal("question wildcard did not match one character")
+	}
+
+	f.SetVariables(map[string]string{"account": "Other*"})
+	if _, _, hit := f.Match(`<8:14 pm OOC> DarkWing666 says, "hi"`); hit {
+		t.Fatal("ignore pattern did not observe the live variable update")
+	}
+}
+
+func TestIgnoreFilter_UnresolvedVariableMatchesNothing(t *testing.T) {
+	f := NewIgnoreFilter()
+	f.SetOOC([]string{"${missing}"})
+	if _, _, hit := f.Match(`<8:14 pm OOC> missing says, "hi"`); hit {
+		t.Fatal("unresolved variable unexpectedly matched")
+	}
+}
+
 func TestIgnoreFilter_ListsSeparate(t *testing.T) {
 	// Same string is on the OOC list. A think-aloud from a character
 	// with that same name must NOT be matched.

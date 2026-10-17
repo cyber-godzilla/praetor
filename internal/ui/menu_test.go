@@ -44,3 +44,13 @@ func TestMenu_AlwaysShowsScriptDirectories(t *testing.T) {
 		}
 	}
 }
+
+func TestMenu_IncludesWoundHighlightSettings(t *testing.T) {
+	m := NewMenu(false, false, false, false, false, "", false)
+	for _, item := range m.items {
+		if item.label == "Wound Highlighting" {
+			return
+		}
+	}
+	t.Fatal("Display menu does not include Wound Highlighting")
+}

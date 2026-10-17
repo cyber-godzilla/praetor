@@ -2,18 +2,19 @@
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
 
-  const tabs = $derived(store.tabs.filter((t) => t.visible));
+  const tabs = $derived(store.mainTabs());
   const hideOnMobile = $derived(
     api.inWeb() && store.config?.UI?.MobileShowTabBar === false,
   );
 
   function select(name: string) {
-    store.selectTab(store.tabs.findIndex((t) => t.name === name));
+    const tab = tabs.find((t) => t.name === name);
+    if (tab) store.selectTabByID(tab.id);
   }
 </script>
 
 <div class="tabbar" class:hide-on-mobile={hideOnMobile}>
-  {#each tabs as tab (tab.name)}
+  {#each tabs as tab (tab.id)}
     <button
       class="tab"
       class:active={store.tabs[store.activeTab]?.name === tab.name}

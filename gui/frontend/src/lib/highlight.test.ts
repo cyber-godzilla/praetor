@@ -84,6 +84,21 @@ describe("applyHighlights", () => {
     const out = applyHighlights(segs, compileHighlights(rules(["x", "red"])));
     expect(out).toEqual(segs);
   });
+
+  it("expands live variables before finding shortest wildcard spans", () => {
+    const segs: Segment[] = [{ text: "ruby small ring and ruby huge ring" }];
+    const hl = compileHighlights(rules(["${loot}*ring", "gold"]), { loot: "ruby " });
+    const out = applyHighlights(segs, hl);
+    expect(out.filter((s) => s.bg === "#e8a838").map((s) => s.text)).toEqual([
+      "ruby small ring",
+      "ruby huge ring",
+    ]);
+  });
+
+  it("treats unresolved and empty expanded patterns as match-nothing", () => {
+    expect(compileHighlights(rules(["${missing}", "gold"]), {})).toHaveLength(0);
+    expect(compileHighlights(rules(["${empty}", "gold"]), { empty: "" })).toHaveLength(0);
+  });
 });
 
 describe("maskIPs", () => {

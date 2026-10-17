@@ -19,6 +19,7 @@
     busy = username;
     error = "";
     store.disconnectNotice = "";
+	store.loginUser = username;
     try {
       await api.connectStored(username);
       // The shared connected event can arrive before the HTTP operation

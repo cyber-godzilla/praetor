@@ -13,13 +13,16 @@
     if (!valid || saving) return; // guard invalid input and double-submit
     saving = true;
     const sets: ActionSet[] = [
-      ...(store.config?.UI?.ActionSets ?? []),
+      ...(store.characterProfile()?.ActionSets ?? []),
       { ID: newActionSetID(), Name: name.trim(), Buttons: [] },
     ];
     try {
       await api.setActionSets(sets);
-      if (store.config) store.config.UI.ActionSets = sets;
-      store.actionSetIndex = sets.length - 1; // show the new set
+      store.characterProfile()!.ActionSets = sets;
+      const created = sets[sets.length - 1];
+      store.selectedActionSetID = created.ID;
+      store.characterProfile()!.SelectedActionSetID = created.ID;
+      await api.setSelectedActionSetID(created.ID);
       store.openModal = null;
     } catch (e) {
       store.addToast("Save failed", String(e));

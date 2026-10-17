@@ -45,36 +45,45 @@ func toSegments(in []types.StyledSegment) []Segment {
 
 // Event kinds emitted to the frontend on the "praetor:events" channel.
 const (
-	KindText       = "text"       // game text line
-	KindSuppressed = "suppressed" // ignorelist-suppressed line (placeholder + original)
-	KindStatus     = "status"     // mode + display state + metrics
-	KindBars       = "bars"       // status bar values (health/fatigue/etc) + lighting
-	KindConn       = "conn"       // connection state change
-	KindNotify     = "notify"     // desktop notification mirror
-	KindError      = "error"      // error event
-	KindVariable   = "variable"   // saved input-variable change
-	KindOpenMenu   = "openMenu"   // client asks the UI to open a menu (wiki/maps/calc)
-	KindMinimap    = "minimap"    // minimap PNG (base64 data URI) — synthesized, not a core event
-	KindCompass    = "compass"    // compass PNG (base64 data URI) — synthesized
-	KindDebug      = "debug"      // raw SKOOT payload for the debug panel (debug mode only)
+	KindText             = "text"             // game text line
+	KindSuppressed       = "suppressed"       // ignorelist-suppressed line (placeholder + original)
+	KindStatus           = "status"           // mode + display state + metrics
+	KindBars             = "bars"             // status bar values (health/fatigue/etc) + lighting
+	KindConn             = "conn"             // connection state change
+	KindNotify           = "notify"           // desktop notification mirror
+	KindError            = "error"            // error event
+	KindVariable         = "variable"         // saved input-variable change
+	KindCharacterProfile = "characterProfile" // active character-profile change
+	KindOpenMenu         = "openMenu"         // client asks the UI to open a menu (wiki/maps/calc)
+	KindMinimap          = "minimap"          // minimap PNG (base64 data URI) — synthesized, not a core event
+	KindCompass          = "compass"          // compass PNG (base64 data URI) — synthesized
+	KindDebug            = "debug"            // raw SKOOT payload for the debug panel (debug mode only)
 )
 
 // WireEvent is a tagged union sent to the frontend. Exactly one of the
 // pointer fields is set according to Kind. Events are delivered in order in
 // batches to preserve text ordering while limiting IPC chatter.
 type WireEvent struct {
-	Kind       string           `json:"kind"`
-	Text       *TextPayload     `json:"text,omitempty"`
-	Suppressed *SuppressPayload `json:"suppressed,omitempty"`
-	Status     *StatusPayload   `json:"status,omitempty"`
-	Bars       *BarsPayload     `json:"bars,omitempty"`
-	Conn       *ConnPayload     `json:"conn,omitempty"`
-	Notify     *NotifyPayload   `json:"notify,omitempty"`
-	Error      *ErrorPayload    `json:"error,omitempty"`
-	Variable   *VariablePayload `json:"variable,omitempty"`
-	OpenMenu   string           `json:"openMenu,omitempty"`
-	Image      *ImagePayload    `json:"image,omitempty"`
-	Debug      *DebugPayload    `json:"debug,omitempty"`
+	Kind             string                   `json:"kind"`
+	Text             *TextPayload             `json:"text,omitempty"`
+	Suppressed       *SuppressPayload         `json:"suppressed,omitempty"`
+	Status           *StatusPayload           `json:"status,omitempty"`
+	Bars             *BarsPayload             `json:"bars,omitempty"`
+	Conn             *ConnPayload             `json:"conn,omitempty"`
+	Notify           *NotifyPayload           `json:"notify,omitempty"`
+	Error            *ErrorPayload            `json:"error,omitempty"`
+	Variable         *VariablePayload         `json:"variable,omitempty"`
+	CharacterProfile *CharacterProfilePayload `json:"characterProfile,omitempty"`
+	OpenMenu         string                   `json:"openMenu,omitempty"`
+	Image            *ImagePayload            `json:"image,omitempty"`
+	Debug            *DebugPayload            `json:"debug,omitempty"`
+}
+
+// CharacterProfilePayload synchronizes an automatic character switch into
+// every frontend attached to the shared game session.
+type CharacterProfilePayload struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // VariablePayload synchronizes a successful /set-variable command into every

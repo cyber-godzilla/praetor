@@ -1,9 +1,48 @@
 package variables
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"testing"
 )
+
+func TestConformanceFixture(t *testing.T) {
+	type testCase struct {
+		Name      string            `json:"name"`
+		Input     string            `json:"input"`
+		Values    map[string]string `json:"values"`
+		Output    string            `json:"output"`
+		Error     ErrorCode         `json:"error"`
+		ErrorName string            `json:"errorName"`
+	}
+	data, err := os.ReadFile("testdata/conformance.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []testCase
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range cases {
+		t.Run(test.Name, func(t *testing.T) {
+			got, err := Expand(test.Input, test.Values)
+			if test.Error == "" {
+				if err != nil || got != test.Output {
+					t.Fatalf("Expand = %q, %v; want %q, nil", got, err, test.Output)
+				}
+				return
+			}
+			var expansionErr *ExpansionError
+			if !errors.As(err, &expansionErr) {
+				t.Fatalf("error = %T %v, want *ExpansionError", err, err)
+			}
+			if expansionErr.Code != test.Error || expansionErr.Name != test.ErrorName {
+				t.Fatalf("ExpansionError = %+v, want code=%q name=%q", expansionErr, test.Error, test.ErrorName)
+			}
+		})
+	}
+}
 
 func TestExpandContract(t *testing.T) {
 	tests := []struct {

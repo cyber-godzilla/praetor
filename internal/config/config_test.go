@@ -511,6 +511,41 @@ func TestValidate_HighlightStyle(t *testing.T) {
 	}
 }
 
+func TestWoundHighlightDefaultsAndValidation(t *testing.T) {
+	cfg := Defaults()
+	if cfg.WoundHighlights.Enabled {
+		t.Fatal("wound highlighting must default off for existing users")
+	}
+	want := WoundHighlightConfig{
+		Cuts:      "red",
+		Bruises:   "purple",
+		Punctures: "blue",
+		Burns:     "orange",
+	}
+	if !reflect.DeepEqual(cfg.WoundHighlights, want) {
+		t.Fatalf("default wound settings = %+v, want %+v", cfg.WoundHighlights, want)
+	}
+
+	cfg.WoundHighlights = WoundHighlightConfig{
+		Enabled:   true,
+		Cuts:      "unknown",
+		Bruises:   "red",
+		Punctures: "",
+		Burns:     "blue",
+	}
+	cfg.Validate()
+	want = WoundHighlightConfig{
+		Enabled:   true,
+		Cuts:      "red",
+		Bruises:   "red",
+		Punctures: "blue",
+		Burns:     "blue",
+	}
+	if !reflect.DeepEqual(cfg.WoundHighlights, want) {
+		t.Fatalf("validated wound settings = %+v, want %+v", cfg.WoundHighlights, want)
+	}
+}
+
 func TestValidate_NotificationThresholds(t *testing.T) {
 	cfg := Defaults()
 	cfg.Notifications.Desktop.HealthBelow.Threshold = 150
@@ -541,16 +576,16 @@ func TestDefaults_ScriptNotificationsAreOptIn(t *testing.T) {
 }
 
 func TestDefaults_CommandVariablesEmpty(t *testing.T) {
-	vars := Defaults().Commands.Variables
+	vars := Defaults().DefaultCharacterProfile().Variables
 	if vars == nil || len(vars) != 0 {
-		t.Fatalf("Commands.Variables = %#v, want initialized empty map", vars)
+		t.Fatalf("Default profile Variables = %#v, want initialized empty map", vars)
 	}
 }
 
 func TestCommandVariablesRoundTripAndValidation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	cfg := Defaults()
-	cfg.Commands.Variables = map[string]string{
+	cfg.DefaultCharacterProfile().Variables = map[string]string{
 		"target":   "scarred bandit",
 		"weapon_2": "short sword; polished",
 		"bad-name": "dropped",
@@ -562,11 +597,12 @@ func TestCommandVariablesRoundTripAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(got.Commands.Variables) != 2 {
-		t.Fatalf("Commands.Variables = %#v, want two valid entries", got.Commands.Variables)
+	variables := got.DefaultCharacterProfile().Variables
+	if len(variables) != 2 {
+		t.Fatalf("Default profile Variables = %#v, want two valid entries", variables)
 	}
-	if got.Commands.Variables["target"] != "scarred bandit" || got.Commands.Variables["weapon_2"] != "short sword; polished" {
-		t.Fatalf("Commands.Variables = %#v", got.Commands.Variables)
+	if variables["target"] != "scarred bandit" || variables["weapon_2"] != "short sword; polished" {
+		t.Fatalf("Default profile Variables = %#v", variables)
 	}
 }
 
@@ -1003,7 +1039,7 @@ func TestConfigActionSetsRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "config.yaml")
 
 	cfg := Defaults()
-	cfg.UI.ActionSets = []ActionSet{
+	cfg.DefaultCharacterProfile().ActionSets = []ActionSet{
 		{Name: "Combat", Buttons: []ActionButton{
 			{Label: "Attack", Command: "attack"},
 			{Label: "Get all", Command: "get all"},
@@ -1017,10 +1053,11 @@ func TestConfigActionSetsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(got.UI.ActionSets) != 1 {
-		t.Fatalf("ActionSets len = %d, want 1", len(got.UI.ActionSets))
+	actionSets := got.DefaultCharacterProfile().ActionSets
+	if len(actionSets) != 1 {
+		t.Fatalf("ActionSets len = %d, want 1", len(actionSets))
 	}
-	set := got.UI.ActionSets[0]
+	set := actionSets[0]
 	if set.Name != "Combat" {
 		t.Errorf("Name = %q, want Combat", set.Name)
 	}
@@ -1055,25 +1092,28 @@ func TestLoadMigratesLegacyActionSetsToStableUniqueIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Load: %v", err)
 	}
-	if len(first.UI.ActionSets) != 2 || len(second.UI.ActionSets) != 2 {
-		t.Fatalf("ActionSets lengths = %d, %d; want 2", len(first.UI.ActionSets), len(second.UI.ActionSets))
+	firstSets := first.DefaultCharacterProfile().ActionSets
+	secondSets := second.DefaultCharacterProfile().ActionSets
+	if len(firstSets) != 2 || len(secondSets) != 2 {
+		t.Fatalf("ActionSets lengths = %d, %d; want 2", len(firstSets), len(secondSets))
 	}
-	if first.UI.ActionSets[0].ID == "" || first.UI.ActionSets[1].ID == "" {
-		t.Fatalf("legacy IDs were not assigned: %+v", first.UI.ActionSets)
+	if firstSets[0].ID == "" || firstSets[1].ID == "" {
+		t.Fatalf("legacy IDs were not assigned: %+v", firstSets)
 	}
-	if first.UI.ActionSets[0].ID == first.UI.ActionSets[1].ID {
-		t.Fatalf("legacy IDs are not unique: %+v", first.UI.ActionSets)
+	if firstSets[0].ID == firstSets[1].ID {
+		t.Fatalf("legacy IDs are not unique: %+v", firstSets)
 	}
-	for i := range first.UI.ActionSets {
-		if first.UI.ActionSets[i].ID != second.UI.ActionSets[i].ID {
-			t.Fatalf("legacy ID[%d] changed between loads: %q != %q", i, first.UI.ActionSets[i].ID, second.UI.ActionSets[i].ID)
+	for i := range firstSets {
+		if firstSets[i].ID != secondSets[i].ID {
+			t.Fatalf("legacy ID[%d] changed between loads: %q != %q", i, firstSets[i].ID, secondSets[i].ID)
 		}
 	}
 }
 
 func TestValidateRepairsMissingAndDuplicateActionSetIDs(t *testing.T) {
 	cfg := Defaults()
-	cfg.UI.ActionSets = []ActionSet{
+	profile := cfg.DefaultCharacterProfile()
+	profile.ActionSets = []ActionSet{
 		{ID: "kept", Name: "One"},
 		{ID: "kept", Name: "Two"},
 		{Name: "Three"},
@@ -1081,11 +1121,11 @@ func TestValidateRepairsMissingAndDuplicateActionSetIDs(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if cfg.UI.ActionSets[0].ID != "kept" {
-		t.Fatalf("first unique ID = %q, want kept", cfg.UI.ActionSets[0].ID)
+	if profile.ActionSets[0].ID != "kept" {
+		t.Fatalf("first unique ID = %q, want kept", profile.ActionSets[0].ID)
 	}
 	seen := map[string]bool{}
-	for i, set := range cfg.UI.ActionSets {
+	for i, set := range profile.ActionSets {
 		if set.ID == "" {
 			t.Fatalf("ActionSets[%d] has empty ID", i)
 		}
@@ -1100,12 +1140,13 @@ func TestActionSetIDSurvivesRenameAndReorderRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	cfg := Defaults()
-	cfg.UI.ActionSets = []ActionSet{
+	profile := cfg.DefaultCharacterProfile()
+	profile.ActionSets = []ActionSet{
 		{ID: "set-one", Name: "One"},
 		{ID: "set-two", Name: "Two"},
 	}
-	cfg.UI.ActionSets[0].Name = "Renamed"
-	cfg.UI.ActionSets[0], cfg.UI.ActionSets[1] = cfg.UI.ActionSets[1], cfg.UI.ActionSets[0]
+	profile.ActionSets[0].Name = "Renamed"
+	profile.ActionSets[0], profile.ActionSets[1] = profile.ActionSets[1], profile.ActionSets[0]
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -1114,8 +1155,9 @@ func TestActionSetIDSurvivesRenameAndReorderRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got.UI.ActionSets[0].ID != "set-two" || got.UI.ActionSets[1].ID != "set-one" {
-		t.Fatalf("IDs after rename/reorder = %+v", got.UI.ActionSets)
+	gotSets := got.DefaultCharacterProfile().ActionSets
+	if gotSets[0].ID != "set-two" || gotSets[1].ID != "set-one" {
+		t.Fatalf("IDs after rename/reorder = %+v", gotSets)
 	}
 }
 

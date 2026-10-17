@@ -18,16 +18,20 @@ import type {
   WireEvent,
   CredentialStoreStatus,
   ColorwordStyle,
+  CharacterProfileConfig,
 } from "./types";
 import { Kind } from "./types";
 import type { DisplayMode } from "./display";
+import { expandVariables } from "./variables";
+import { compileWildcard } from "./wildcard";
+import { BUILTIN_VIEWS, COMPONENT_IDS, mainComponentIDs } from "./layout";
 
 // Extra lines the scrollback buffer may hold above the configured cap before a
 // front-trim runs, so the O(n) keyed-each reconciliation amortizes over a burst.
 const TRIM_CHUNK = 256;
 
 export type Screen = "loading" | "account" | "login" | "connecting" | "game";
-export type TabKind = "all" | "custom" | "metrics" | "debug";
+export type TabKind = "all" | "custom" | "metrics" | "debug" | "map" | "exits" | "vitals" | "actions" | "modes" | "variables";
 
 // Initial state for the Notes modal when opened by a /notes command. null (the
 // menu path) means "open on the list view".
@@ -44,12 +48,13 @@ export interface Line {
 }
 
 interface CompiledRule {
-  regex: RegExp;
+  pattern: string;
   include: boolean;
   active: boolean;
 }
 
 export interface Tab {
+  id: string;
   name: string;
   kind: TabKind;
   visible: boolean;
@@ -65,34 +70,29 @@ export interface Toast {
   message: string;
 }
 
-// compileWildcard mirrors internal/ui/tabs.go compileWildcardPattern:
-// case-insensitive substring match with * and ? wildcards.
-function compileWildcard(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[.+^${}()|[\]\\]/g, "\\$&") // QuoteMeta (minus * and ?)
-    .replace(/\*/g, ".*")
-    .replace(/\?/g, ".");
-  try {
-    return new RegExp(escaped, "i");
-  } catch {
-    return new RegExp(pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-  }
-}
-
-function matchesTab(text: string, rules: CompiledRule[]): boolean {
+function matchesTab(text: string, rules: CompiledRule[], variables: Record<string, string>): boolean {
   let hasIncludes = false;
   let matched = false;
   for (const r of rules) {
     if (!r.active) continue;
     if (r.include) {
       hasIncludes = true;
-      if (r.regex.test(text)) matched = true;
-    } else if (r.regex.test(text)) {
+      if (matchesRule(r.pattern, text, variables)) matched = true;
+    } else if (matchesRule(r.pattern, text, variables)) {
       return false;
     }
   }
   if (!hasIncludes) return true;
   return matched;
+}
+
+function matchesRule(raw: string, text: string, variables: Record<string, string>): boolean {
+  try {
+    const expanded = expandVariables(raw.trim(), variables);
+    return expanded !== "" && compileWildcard(expanded, "substring").matches(text);
+  } catch {
+    return false;
+  }
 }
 
 function isExcludeOnly(rules: CompiledRule[]): boolean {
@@ -112,6 +112,7 @@ class AppStore {
     message: "Secure credential storage is not configured.",
   });
   config = $state<AppConfig | null>(null);
+  activeCharacterProfileID = $state("");
   modeNames = $state<string[]>([]);
   modeSpecs = $state<ModeSpec[]>([]);
   colorwordStyles = $state<ColorwordStyle[]>([]);
@@ -153,6 +154,8 @@ class AppStore {
   // It is never persisted or projected to another browser.
   mobileCommandInputActive = $state(false);
   displayMode = $state<DisplayMode>("sidebar");
+  viewsDrawerOpen = $state(false);
+  viewsDrawerSidebarID = $state("");
   // Collapsed state of the sidebar's accordion sections. Session-only (resets to
   // all-expanded on restart); held here rather than in Frame so it survives an
   // Alt+S display-mode unmount/remount.
@@ -164,10 +167,9 @@ class AppStore {
   // Character inferred from a right-clicked speech line. SpeechColorsModal
   // consumes this once and seeds a new rule when one does not already exist.
   speechColorPrefill = $state("");
-  // Current Actions-tab set index. Ephemeral (not persisted): lifted out of
-  // ActionsTab so the add-action modal can target the shown set and the
-  // add-set modal can select the newly created set.
-  actionSetIndex = $state(0);
+  // Stable persisted Action Set identity. Indexes change on rename/reorder and
+  // cannot safely survive the unified layout moving Actions between surfaces.
+  selectedActionSetID = $state("");
   toasts = $state<Toast[]>([]);
   authError = $state("");
   loginUser = $state("");
@@ -220,39 +222,73 @@ class AppStore {
     return this.config?.UI?.Scrollback ?? 5000;
   }
 
-  // rebuildTabs (re)creates the tab list from config, preserving existing
-  // line buffers by name where possible.
+  // rebuildTabs (re)creates the shared view-state registry from config,
+  // preserving output buffers by stable identity while views move surfaces.
   rebuildTabs(customTabs: CustomTabConfig[] | null | undefined) {
-    const prev = new Map(this.tabs.map((t) => [t.name, t.lines]));
+    const prev = new Map(this.tabs.map((t) => [t.id, t]));
+    const activeID = this.tabs[this.activeTab]?.id ?? COMPONENT_IDS.all;
     const tabs: Tab[] = [];
-    tabs.push({
-      name: "All",
-      kind: "all",
-      visible: true,
-      rules: [],
-      echoCommands: true,
-      lines: prev.get("All") ?? [],
-      unread: false,
-    });
     for (const ct of customTabs ?? []) {
       tabs.push({
+        id: ct.ID,
         name: ct.Name,
         kind: "custom",
         visible: ct.Visible,
         echoCommands: ct.EchoCommands,
         rules: (ct.Rules ?? []).map((r) => ({
-          regex: compileWildcard(r.Pattern),
+          pattern: r.Pattern,
           include: r.Include,
           active: r.Active,
         })),
-        lines: prev.get(ct.Name) ?? [],
-        unread: false,
+        lines: prev.get(ct.ID)?.lines ?? [],
+        unread: prev.get(ct.ID)?.unread ?? false,
       });
     }
-    tabs.push({ name: "Metrics", kind: "metrics", visible: true, rules: [], echoCommands: false, lines: [], unread: false });
-    tabs.push({ name: "Debug", kind: "debug", visible: this.debug, rules: [], echoCommands: false, lines: [], unread: false });
+    for (const view of BUILTIN_VIEWS) {
+      const kind = view.kind as TabKind;
+      const previous = prev.get(view.id);
+      tabs.push({
+        id: view.id,
+        name: view.name,
+        kind,
+        visible: view.kind !== "debug" || this.debug,
+        rules: [],
+        echoCommands: view.kind === "all",
+        lines: previous?.lines ?? [],
+        unread: previous?.unread ?? false,
+      });
+    }
     this.tabs = tabs;
-    if (this.activeTab >= tabs.length) this.activeTab = 0;
+    const mainIDs = this.mainViewIDs();
+    const keepID = mainIDs.includes(activeID) ? activeID : COMPONENT_IDS.all;
+    this.activeTab = Math.max(0, tabs.findIndex((tab) => tab.id === keepID));
+  }
+
+  mainViewIDs(): string[] {
+    const profile = this.displayProfile();
+    if (!profile) return this.tabs.filter((tab) => tab.visible).map((tab) => tab.id);
+    return mainComponentIDs(profile, this.characterProfile()?.CustomViews ?? [], this.debug);
+  }
+
+  characterProfile(): CharacterProfileConfig | null {
+    const profiles = this.config?.CharacterProfiles?.Profiles ?? [];
+    const id = this.activeCharacterProfileID || this.config?.CharacterProfiles?.DefaultID;
+    return profiles.find((profile) => profile.ID === id) ?? profiles[0] ?? null;
+  }
+
+  displayProfile() {
+    const profiles = this.config?.DisplayProfiles?.Profiles ?? [];
+    const id = this.config?.DisplayProfiles?.DefaultID;
+    return profiles.find((profile) => profile.ID === id) ?? profiles[0] ?? null;
+  }
+
+  mainTabs(): Tab[] {
+    const byID = new Map(this.tabs.map((tab) => [tab.id, tab]));
+    return this.mainViewIDs().map((id) => byID.get(id)).filter((tab): tab is Tab => !!tab);
+  }
+
+  viewByID(id: string): Tab | undefined {
+    return this.tabs.find((tab) => tab.id === id);
   }
 
   // appendLine adds a line to a tab, caps scrollback, and marks the tab unread
@@ -286,7 +322,7 @@ class AppStore {
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
         if (line.isEcho && !tab.echoCommands && isExcludeOnly(tab.rules)) continue;
-        if (matchesTab(p.text, tab.rules)) this.appendLine(tab, line, mark);
+        if (matchesTab(p.text, tab.rules, this.characterProfile()?.Variables ?? {})) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -305,7 +341,7 @@ class AppStore {
         this.appendLine(tab, line, mark);
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
-        if (matchesTab(p.originalText, tab.rules)) this.appendLine(tab, line, mark);
+        if (matchesTab(p.originalText, tab.rules, this.characterProfile()?.Variables ?? {})) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -329,6 +365,10 @@ class AppStore {
     if (index < 0 || index >= this.tabs.length) return;
     this.activeTab = index;
     this.tabs[index].unread = false;
+  }
+
+  selectTabByID(id: string) {
+    this.selectTab(this.tabs.findIndex((tab) => tab.id === id));
   }
 
   private applyBars(b: BarsPayload) {
@@ -366,9 +406,10 @@ class AppStore {
     this.expandAllSuppressed = false;
     this.mobileCommandInputActive = false;
     this.openModal = null;
+    this.viewsDrawerOpen = false;
     this.contextMenuOpen = false;
     this.speechColorPrefill = "";
-    this.actionSetIndex = 0;
+    this.selectedActionSetID = this.characterProfile()?.SelectedActionSetID ?? "";
     this.searchOpen = false;
     this.histSearchActive = false;
     this.notesInitial = null;
@@ -386,10 +427,16 @@ class AppStore {
   }
 
   installConfig(config: AppConfig) {
-    const oldTabs = this.config?.UI?.CustomTabs;
+    const oldTabs = this.characterProfile()?.CustomViews;
+    const oldLayout = this.displayProfile();
     this.config = config;
-    if (config.UI?.CustomTabs !== oldTabs) {
-      this.rebuildTabs(config.UI?.CustomTabs);
+    if (!config.CharacterProfiles.Profiles.some((profile) => profile.ID === this.activeCharacterProfileID)) {
+      this.activeCharacterProfileID = config.CharacterProfiles.DefaultID;
+    }
+    const profile = this.characterProfile();
+    this.selectedActionSetID = profile?.SelectedActionSetID ?? "";
+    if (profile?.CustomViews !== oldTabs || this.displayProfile() !== oldLayout) {
+      this.rebuildTabs(profile?.CustomViews);
     }
   }
 
@@ -444,7 +491,8 @@ class AppStore {
         ev.kind !== Kind.Conn &&
         ev.kind !== Kind.Notify &&
         ev.kind !== Kind.Error &&
-        ev.kind !== Kind.Variable
+        ev.kind !== Kind.Variable &&
+        ev.kind !== Kind.CharacterProfile
       ) {
         continue;
       }
@@ -474,12 +522,26 @@ class AppStore {
           if (ev.error) this.addToast("Error: " + ev.error.context, ev.error.error);
           break;
         case Kind.Variable:
-          if (ev.variable && this.config?.Commands) {
-            this.config.Commands.Variables = {
-              ...(this.config.Commands.Variables ?? {}),
+          if (ev.variable && this.characterProfile()) {
+            const profile = this.characterProfile()!;
+            profile.Variables = {
+              ...(profile.Variables ?? {}),
               [ev.variable.name]: ev.variable.value,
             };
             this.addToast("Variable saved", `${ev.variable.name} = ${ev.variable.value}`);
+          }
+          break;
+        case Kind.CharacterProfile:
+          if (ev.characterProfile) {
+            const profile = this.config?.CharacterProfiles?.Profiles?.find(
+              (candidate) => candidate.ID === ev.characterProfile!.id,
+            );
+            if (profile) {
+              this.activeCharacterProfileID = profile.ID;
+              this.selectedActionSetID = profile.SelectedActionSetID ?? "";
+              this.rebuildTabs(profile.CustomViews);
+              this.addToast("Character profile", `${profile.Name} is now active.`);
+            }
           }
           break;
         case Kind.Minimap:

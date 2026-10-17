@@ -87,13 +87,51 @@ commands:
   semicolon_delay_ms: 900         # Delay between ;; commands (100-10000)
   unbusy_delay_ms: 100            # Delay after && unbusy response (0-10000)
   high_priority: []               # Commands that jump to front of queue
-  variables:                      # Typed-input substitutions
-    target: scarred bandit
+character_profiles:
+  default_id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+  profiles:
+    - id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+      name: Default
+      variables:                  # Typed-input substitutions
+        target: scarred bandit
+      custom_views: []
+      action_sets: []
+    - id: 2a764b7a-4145-44d9-9574-3bc2f0fe29cd
+      name: Marcus
+      account: PlayerOne
+      character_number: 1
+      variables: {}
+      custom_views: []
+      action_sets: []
 ```
 
 High priority commands can be configured via Esc → Automation → High-Priority
 Commands. When a high-priority command is queued, it's inserted at the front
 (after other high-priority items) instead of the back.
+
+### Character profiles
+
+Character-scoped settings are grouped under UUID-addressed profiles. The global
+`Default` profile is the fallback and template. Variables, Custom Views, Action
+Sets, and the selected Action Set live in each profile. Existing
+`commands.variables`, `ui.custom_tabs`, `ui.action_sets`, and
+`ui.selected_action_set_id` values migrate into Default on first load and are
+then saved only in the canonical `character_profiles` section.
+
+Manage profiles with **Esc → Character Profiles**. A character profile has the
+account used to log in and the character number shown by the game's character
+picker. Character numbers must be positive and unique within an account; the
+same number may be used by another account. `play 1` selects account character
+1 immediately after the command is successfully sent. The two-command form,
+`play` followed by `1`, does the same; another intervening command cancels the
+pending selection. Matching is case-insensitive for `play` and account names.
+
+Default cannot be deleted and does not have an account or character number.
+New profiles inherit its variables, Custom Views, Action Sets, and selected
+Action Set. Inherited custom components receive new UUIDs so component identity
+does not collide between profiles. Display placement remains global until the
+next character-aware display-profile slice associates layouts with these
+profile IDs.
 
 ### PraetorScript
 
@@ -111,7 +149,39 @@ saved variable without opening the editor. Names follow the same rules as the
 editor: they begin with a letter or underscore and contain only letters,
 numbers, and underscores. The remainder of the command becomes the value, so
 spaces are supported; use `""` to save an empty value. The change is persisted
-and is available to subsequent input and Speech Color character patterns.
+and is available immediately to subsequent input and every variable-capable
+match or notification field.
+
+### Variables and wildcard patterns
+
+Highlights, Speech Color character patterns, Custom Tab rules, notification
+match patterns, and OOC/Think ignore-list entries all accept `${name}` and
+`${name:fallback}`. Notification titles and messages accept the same references.
+Expansion uses the current saved value at match or delivery time, is one pass,
+and never treats inserted text as commands or markup. Use `\${` for a literal
+`${`. An unresolved variable or an empty expanded match pattern matches nothing;
+an unresolved notification title or message suppresses that notification and
+shows a rate-limited in-app warning. A successfully resolved empty title uses
+`Alert`, and an empty message uses the matched game line.
+
+Those match fields share one case-insensitive wildcard language: `*` matches
+zero or more characters and `?` matches exactly one Unicode character. Use
+`\*`, `\?`, and `\\` for literal `*`, `?`, and `\`. All other regular-expression
+punctuation—including `^` and `$`—is literal. Highlights, Custom Views, and
+notifications search within one line; Speech Colors and ignore lists match a
+complete recognized name. Wildcards never cross a line boundary. Editors show
+the current resolved value and flag unresolved or empty patterns before saving.
+
+The two ignore lists use that whole-name form:
+
+```yaml
+ignorelist:
+  ooc: ["Spam*", "${muted_account}"]
+  think: ["Trav?"]
+```
+
+OOC entries match recognized account names; Think entries match recognized
+character names. They remain independent.
 
 Separate multiple typed commands with `;;` for fixed pacing or `&&` to wait for
 roundtime to end. For example, `stand&&climb wall;;look` sends `stand`, waits
@@ -208,14 +278,14 @@ commands, explicit waits, substring reactions, and repeats.
 
 ```yaml
 ui:
-  display_mode: sidebar           # TUI: sidebar | topbar | off; GUI: sidebar | off
+  display_mode: sidebar           # TUI only: sidebar | topbar | off
   default_tab: all                # Initial tab: all, metrics
   scrollback: 5000                # Lines of scrollback per tab
   sidebar_width: 40               # TUI sidebar width in columns
-  gui_sidebar_width: 260          # GUI sidebar width in pixels (180-600)
+  gui_sidebar_width: 260          # Legacy GUI width, migrated to Sidebar 1
   minimap_scale: 1.0              # Minimap zoom multiplier (0.5-3.0)
   minimap_height: 12              # TUI minimap height in terminal rows
-  gui_minimap_height: 160         # GUI map height in pixels (80-400)
+  gui_minimap_height: 160         # Legacy GUI map height, migrated once
   quick_cycle_modes:              # Modes cycled by Alt+M
     - disable
   color_words: false              # Color word highlighting
@@ -229,7 +299,21 @@ ui:
   mobile_hide_navigation_on_input: false # Web: hide map/compass while typing
   mobile_lowercase_first_letter: false   # Web: counter keyboard capitalization
   keep_input_on_send: false       # GUI: retain and select the last sent command
-  custom_tabs: []                 # User-defined tabs (managed via menu)
+display_profiles:
+  default_id: 0b40c7dd-fba7-44cb-83f7-f125f5bc98b3
+  profiles:
+    - id: 0b40c7dd-fba7-44cb-83f7-f125f5bc98b3
+      name: Default
+      sidebars_visible: true      # Global Alt+S state
+      main:                       # Ordered component placements
+        - {component_id: a1ebe82e-7f0d-4ba9-9e00-181d045e3e12} # All
+      sidebars:
+        - id: 5afa1264-4ce7-41d0-b7ea-2050e0d34b07
+          name: Sidebar 1
+          enabled: true
+          side: right
+          width: 260
+          components: []          # Ordered component placements
 ```
 
 The web Settings modal keeps desktop and mobile output sizes independent. The
@@ -245,36 +329,72 @@ right of the mobile status row.
 
 All other UI toggles are available via the Esc menu and persisted when you press Save.
 
+### Layout and sidebars
+
+The GUI and shared web client use **Esc → Layout** to place each built-in or
+filtered text component in an ordered main-tab or sidebar list. Sidebars and
+components have UUID identities; sidebars can be added without a fixed limit,
+named, reordered, enabled, placed left or right, and sized from 180–600 pixels.
+Drag and drop reorders or moves a component live, and each destination also has
+an **Add component by ID** picker. Placement changes save immediately. **All**
+has a fixed shared component UUID and always remains the first main tab.
+
+Every sidebar view has an independent 80–800 pixel expanded height and a
+persisted collapsed state. Drag a column's inner edge or a view's lower edge to
+resize it; double-clicking a column handle restores 260 pixels. The numeric
+Layout controls provide the keyboard-accessible resizing path.
+
+When the window becomes too narrow, Praetor temporarily removes outer
+sidebars in reverse profile order without changing the saved layout. The
+**Views** drawer keeps those sidebars reachable and is the normal sidebar surface on mobile. `Alt+S`
+hides or restores all enabled, nonempty sidebars and the drawer together.
+
+Existing `ui.gui_layout` configurations migrate into the global Default
+display profile, preserving sidebar order, placement, sizes, and collapse state.
+`gui_sidebar_width` becomes its width, `gui_minimap_height` becomes the Map
+view's height, and existing Custom Tabs become tab-placed Custom Views in the
+global Default character profile. The TUI
+continues to use `display_mode`, `sidebar_width`, and `minimap_height`; GUI
+layout edits do not rewrite those terminal settings.
+
 `input_spellcheck` controls the native spellchecker for the command textarea.
 On Linux, Praetor enables WebKitGTK spellchecking with the first usable locale
 from `LANGUAGE`, `LC_ALL`, `LC_MESSAGES`, or `LANG` (falling back to `en_US`).
 The Linux packages include the English Hunspell dictionary; source builds need
 a Hunspell/Enchant dictionary installed for the selected locale.
 
-### Custom Tabs
+### Custom Views
 
 ```yaml
-  custom_tabs:
-    - name: Combat
-      visible: true
-      echo_commands: false         # Route command echoes here (exclude-only tabs only)
-      rules:
-        - pattern: "Success:"
-          include: true
-          active: true
-        - pattern: "You are no longer busy"
-          include: true
-          active: true
+character_profiles:
+  profiles:
+    - name: Default
+      custom_views:
+        - id: 1fc95886-1541-4db4-8a49-d30391439c65
+          name: Combat
+          visible: true
+          echo_commands: false     # Route command echoes here (exclude-only views only)
+          rules:
+            - pattern: "Success:"
+              include: true
+              active: true
+            - pattern: "You are no longer busy"
+              include: true
+              active: true
 ```
 
 Each rule has:
-- `pattern` — wildcard pattern (`*` and `?` supported)
+
+- `pattern` — [shared variable-capable wildcard pattern](#variables-and-wildcard-patterns)
 - `include` — `true` to include matching lines, `false` to exclude matching lines
 - `active` — toggle the rule on/off
 
 `echo_commands` applies only when the tab has no active include rules (i.e. it is exclude-only, including zero-rule catch-all tabs). When false, command echoes are not routed to the tab even though other non-excluded text is.
 
-Managed via Esc → Custom Tabs.
+Managed together with built-in placement via **Esc → Layout → Filtered text
+components**. The legacy `custom_tabs` YAML key migrates once into the Default
+character profile's `custom_views`; every new filtered component receives a
+UUID that display profiles reference.
 
 ## Speech Colors
 
@@ -293,13 +413,9 @@ speech_colors:
     active: true
 ```
 
-`character` is a case-insensitive, whole-name pattern. It supports `*` for any
-run of characters, `?` for one character, and the same `${name}` or
-`${name:fallback}` references as command input. Variables are expanded from
-their current values whenever a line is matched, so editing a variable takes
-effect immediately. For example, `A * cloak`, `Apul?`, and `${speaker}` are all
-valid character patterns. An unknown variable without a fallback simply leaves
-that rule unmatched until the variable is defined.
+`character` is a case-insensitive, whole-name pattern using the
+[shared variable and wildcard rules](#variables-and-wildcard-patterns). For
+example, `A * cloak`, `Apul?`, and `${speaker}` are all valid.
 
 Each active rule colors the entire line when its character pattern matches. Set
 `include_think` and/or `include_ooc` to also color that character's think-aloud
@@ -322,7 +438,65 @@ highlights:
     active: true
 ```
 
-Case-insensitive substring matching. Highlighted text appears with colored background in the output. Managed via Esc → Highlights.
+Patterns use the [shared variable-capable wildcard syntax](#variables-and-wildcard-patterns).
+Every non-overlapping consumed span is highlighted, including matches across
+existing styled segments. Managed via Esc → Highlights.
+
+## Wound Highlighting
+
+```yaml
+wound_highlights:
+  enabled: false
+  cuts: red
+  bruises: purple
+  punctures: blue
+  burns: orange
+```
+
+Wound highlighting is opt-in and defaults off, including for existing users.
+Enable it and choose a color family for each category in **Settings** in the
+GUI/web client or **Esc → Wound Highlighting** in the TUI. Each family has five
+automatic foreground shades; severity levels 4 and 5 are also bold.
+
+Combat-result messages use the wiki-verified taxonomy:
+
+| Severity | Cuts | Bruises / fractures | Punctures / wounds | Burns |
+|----------|------|----------------------|--------------------|-------|
+| 1 | shallow cut | small bruise | faint wound | minor burn |
+| 2 | cut | bruise | puncture | burn |
+| 3 | deep cut | ugly bruise | deep puncture | moderate burn |
+| 4 | severe cut | major bruise | severe puncture | severe burn |
+| 5 | devastating cut | fracture | gaping wound | not yet verified |
+
+Character inspections use a separate vocabulary captured from retained game
+logs. These provisional severity positions preserve the apparent
+least-to-most-serious order; completing and correlating the catalogue is a
+[0.6.0 release blocker](release-0.6.0.md#wound-language-catalogue-blocking).
+
+| Provisional severity | Cuts | Bruises | Punctures | Burns |
+|----------------------|------|---------|-----------|-------|
+| 1 | is scratched | is bruised | is punctured | TBD |
+| 2 | is badly scratched | has a large bruise | is badly punctured | TBD |
+| 3 | is slashed | has a large black bruise | is pierced | TBD |
+| 4 | is slashed open | is badly bruised | TBD | TBD |
+| 5 | TBD | is completely black and blue | TBD | TBD |
+
+Matching is case-insensitive and colors the complete canonical wound phrase.
+Combat matching requires a singular indefinite noun phrase such as `a deep
+cut` or `an ugly bruise`. Character-inspection matching requires the observed
+`His|Her <body part> is ...` or `His|Her <body part> has a ...` grammar and a
+sentence-ending period. These constraints keep ambiguous text such as `cut the
+rope`, scratched equipment, and bruise-colored tattoos unchanged.
+
+Plurals, treatment modifiers, bleeding descriptions, unknown wound phrases,
+the unverified fifth-degree burn combat phrase, and incomplete inspection or
+healer vocabulary intentionally pass through unchanged until captured output
+establishes their exact grammar.
+
+Rendering precedence, from broadest to most specific, is: speech color,
+Colorwords, wound phrase, configured highlight, then active search match. Wound
+styling preserves the original text, segment boundaries, italics, and
+underlining.
 
 ## Notifications
 
@@ -355,6 +529,10 @@ preferences, and Do Not Disturb settings still take precedence.
 scripts' `notify()` calls to create desktop alerts and in-app notification
 toasts. Health, fatigue, and text-pattern notifications remain controlled by
 their own settings.
+
+Text `pattern` values use the [shared variable-capable wildcard syntax](#variables-and-wildcard-patterns).
+`title` and `message` are variable-capable output templates. Empty resolved
+values retain the defaults shown above.
 
 ## Logging
 

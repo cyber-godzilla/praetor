@@ -1,11 +1,12 @@
 package ui
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
+	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
 
 // TabKind identifies the type of tab.
@@ -20,6 +21,7 @@ const (
 
 // TabDef defines a tab in the dynamic tab system.
 type TabDef struct {
+	ID           string
 	Name         string
 	Kind         TabKind
 	Visible      bool
@@ -28,27 +30,12 @@ type TabDef struct {
 	Pane         OutputPane
 }
 
-// TabRule is a compiled match rule for custom tabs.
+// TabRule is a match rule for custom tabs. Patterns stay raw so variable
+// changes are observed at match time without rebuilding tabs.
 type TabRule struct {
 	Pattern string // original pattern with wildcards
-	Regex   *regexp.Regexp
-	Include bool // true = "does match" (include lines matching), false = "does not match" (include lines NOT matching)
+	Include bool   // true = "does match" (include lines matching), false = "does not match" (include lines NOT matching)
 	Active  bool
-}
-
-// compileWildcardPattern converts a wildcard pattern (* and ?) to a regexp.
-// Patterns are substring matches by default — no anchoring.
-// * matches any characters, ? matches a single character.
-func compileWildcardPattern(pattern string) *regexp.Regexp {
-	escaped := regexp.QuoteMeta(pattern)
-	escaped = strings.ReplaceAll(escaped, `\*`, `.*`)
-	escaped = strings.ReplaceAll(escaped, `\?`, `.`)
-	// No ^ or $ anchors — substring match.
-	re, err := regexp.Compile("(?i)" + escaped)
-	if err != nil {
-		return regexp.MustCompile("(?i)" + regexp.QuoteMeta(pattern))
-	}
-	return re
 }
 
 // BuildTabs creates the dynamic tab list from config.
@@ -69,12 +56,12 @@ func BuildTabs(scrollback int, debugMode bool, customTabs []config.CustomTabConf
 		for _, r := range ct.Rules {
 			rules = append(rules, TabRule{
 				Pattern: r.Pattern,
-				Regex:   compileWildcardPattern(r.Pattern),
 				Include: r.Include,
 				Active:  r.Active,
 			})
 		}
 		tabs = append(tabs, TabDef{
+			ID:           ct.ID,
 			Name:         ct.Name,
 			Kind:         TabKindCustom,
 			Visible:      ct.Visible,
@@ -103,7 +90,7 @@ func BuildTabs(scrollback int, debugMode bool, customTabs []config.CustomTabConf
 
 // MatchesTab returns true if the text should appear in a custom tab
 // based on its rules.
-func MatchesTab(text string, rules []TabRule) bool {
+func MatchesTab(text string, rules []TabRule, variables map[string]string) bool {
 	hasIncludes := false
 	matched := false
 
@@ -114,12 +101,12 @@ func MatchesTab(text string, rules []TabRule) bool {
 
 		if r.Include {
 			hasIncludes = true
-			if r.Regex.MatchString(text) {
+			if matchesTabPattern(r.Pattern, text, variables) {
 				matched = true
 			}
 		} else {
 			// "Does not match" — if text matches the exclusion pattern, reject.
-			if r.Regex.MatchString(text) {
+			if matchesTabPattern(r.Pattern, text, variables) {
 				return false
 			}
 		}
@@ -133,10 +120,19 @@ func MatchesTab(text string, rules []TabRule) bool {
 	return matched
 }
 
+func matchesTabPattern(raw, text string, variables map[string]string) bool {
+	expanded, err := sharedvars.Expand(strings.TrimSpace(raw), variables)
+	if err != nil || expanded == "" {
+		return false
+	}
+	pattern, err := wildcard.Compile(expanded, wildcard.Substring)
+	return err == nil && pattern.Match(text)
+}
+
 // RouteText sends styled segments to all matching custom tabs.
 // isEcho marks the text as a command echo (user-typed or script-sent).
 // Returns a bitmask of tab indices that received text.
-func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, isEcho bool) uint64 {
+func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, isEcho bool, variables map[string]string) uint64 {
 	var routed uint64
 	for i := range tabs {
 		switch tabs[i].Kind {
@@ -150,7 +146,7 @@ func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, 
 			if isEcho && !tabs[i].EchoCommands && isExcludeOnly(tabs[i].Rules) {
 				continue
 			}
-			if MatchesTab(plainText, tabs[i].Rules) {
+			if MatchesTab(plainText, tabs[i].Rules, variables) {
 				tabs[i].Pane.Append(segments)
 				routed |= 1 << uint(i)
 			}
@@ -165,7 +161,7 @@ func RouteText(tabs []TabDef, segments []types.StyledSegment, plainText string, 
 // matching uses the original plain text and the pane stores both
 // renditions so Alt+I can swap them in place. Echo gating does not apply
 // because suppressed lines are never command echoes.
-func RouteSuppressed(tabs []TabDef, placeholder, original []types.StyledSegment, originalText string) uint64 {
+func RouteSuppressed(tabs []TabDef, placeholder, original []types.StyledSegment, originalText string, variables map[string]string) uint64 {
 	var routed uint64
 	for i := range tabs {
 		switch tabs[i].Kind {
@@ -176,7 +172,7 @@ func RouteSuppressed(tabs []TabDef, placeholder, original []types.StyledSegment,
 			if !tabs[i].Visible {
 				continue
 			}
-			if MatchesTab(originalText, tabs[i].Rules) {
+			if MatchesTab(originalText, tabs[i].Rules, variables) {
 				tabs[i].Pane.AppendSuppressed(placeholder, original)
 				routed |= 1 << uint(i)
 			}
@@ -204,6 +200,7 @@ func TabsToConfig(tabs []TabDef) []config.CustomTabConfig {
 			continue
 		}
 		ct := config.CustomTabConfig{
+			ID:           t.ID,
 			Name:         t.Name,
 			Visible:      t.Visible,
 			EchoCommands: t.EchoCommands,

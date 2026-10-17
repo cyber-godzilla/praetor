@@ -4,6 +4,7 @@
   import * as api from "../../lib/bridge";
   import type { HighlightConfig } from "../../lib/types";
   import { STYLE_COLORS } from "../../lib/highlight";
+  import ExpansionPreview from "../ExpansionPreview.svelte";
 
   const STYLES = ["red", "gold", "green", "blue"];
   function preview(style: string): string {
@@ -55,7 +56,7 @@
 </script>
 
 <Modal title="Highlights" wide back onsave={save}>
-  <p class="hint dim">Case-insensitive substring matches, highlighted in the chosen color.</p>
+  <p class="hint dim">Case-insensitive substring matches. Use * and ? wildcards, \* or \? for literals, and {"${name}"} variables.</p>
   <div class="list">
     {#each items as item, i (i)}
       <div class="hl" class:off={!item.Active}>
@@ -66,7 +67,10 @@
             title="Move down" aria-label="Move down">▼</button>
         </span>
         <input type="checkbox" checked={item.Active} onchange={() => toggle(i)} title="Active" />
-        <span class="pat" style={preview(item.Style)}>{item.Pattern}</span>
+        <span class="patwrap">
+          <span class="pat" style={preview(item.Style)}>{item.Pattern}</span>
+          <ExpansionPreview value={item.Pattern} match />
+        </span>
         <button class="sm" onclick={() => cycleStyle(i)}>{item.Style}</button>
         <button class="danger sm" onclick={() => remove(i)}>✕</button>
       </div>
@@ -78,6 +82,7 @@
       onkeydown={(e) => e.key === "Enter" && add()} />
     <button onclick={add}>Add</button>
   </div>
+  <ExpansionPreview value={draft} match />
 </Modal>
 
 <style>
@@ -114,8 +119,9 @@
     line-height: 1.2;
     color: var(--fg-dim);
   }
+  .patwrap { flex: 1; min-width: 0; }
   .pat {
-    flex: 1;
+    display: block;
     padding: 4px 10px;
     border-radius: 4px;
     font-family: var(--mono);

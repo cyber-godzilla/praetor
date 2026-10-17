@@ -6,6 +6,10 @@ import { Kind, type WireEvent } from "./types";
 export const webFixtureEvents: WireEvent[] = [
   { kind: Kind.Conn, conn: { state: "connected" } },
   {
+    kind: Kind.CharacterProfile,
+    characterProfile: { id: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50", name: "Default" },
+  },
+  {
     kind: Kind.Text,
     text: {
       text: "A bronze lamp glows on a stone table.",

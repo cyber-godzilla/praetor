@@ -3,6 +3,8 @@
 // not touch the core event stream.
 
 import type { Segment, HighlightConfig } from "./types";
+import { expandVariables } from "./variables";
+import { compileWildcard, type WildcardPattern } from "./wildcard";
 
 // Style -> {background, foreground} for the four highlight styles. Single
 // source of truth, shared by the renderer and the highlights editor UI.
@@ -14,7 +16,8 @@ export const STYLE_COLORS: Record<string, { bg: string; fg: string }> = {
 };
 
 export interface CompiledHighlight {
-  pattern: string; // lowercased
+  pattern: string;
+  matcher?: WildcardPattern;
   bg: string;
   fg: string;
 }
@@ -38,12 +41,21 @@ export function foldAscii(s: string): string {
   return out;
 }
 
-export function compileHighlights(rules: HighlightConfig[] | null | undefined): CompiledHighlight[] {
-  return (rules ?? [])
-    .filter((r) => r.Active && r.Pattern)
-    .map((r) => {
+export function compileHighlights(
+  rules: HighlightConfig[] | null | undefined,
+  variables?: Record<string, string> | null,
+): CompiledHighlight[] {
+  return (rules ?? []).flatMap((r) => {
+      if (!r.Active || !r.Pattern) return [];
+      let pattern: string;
+      try {
+        pattern = expandVariables(r.Pattern, variables);
+      } catch {
+        return [];
+      }
+      if (!pattern) return [];
       const c = STYLE_COLORS[r.Style] ?? STYLE_COLORS.gold;
-      return { pattern: foldAscii(r.Pattern), bg: c.bg, fg: c.fg };
+      return [{ pattern, matcher: compileWildcard(pattern, "substring"), bg: c.bg, fg: c.fg }];
     });
 }
 
@@ -64,7 +76,7 @@ export function applyHighlights(segments: Segment[], highlights: CompiledHighlig
 
   // Segment texts concatenate to the original line by construction.
   const text = segments.map((s) => s.text).join("");
-  const spans = findHighlightSpans(foldAscii(text), highlights);
+  const spans = findHighlightSpans(text, highlights);
   if (spans.length === 0) return segments;
 
   const out: Segment[] = [];
@@ -96,20 +108,16 @@ export function applyHighlights(segments: Segment[], highlights: CompiledHighlig
   return out;
 }
 
-// findHighlightSpans returns non-overlapping match spans over the full (lowered)
-// line, in config-order precedence: an earlier-configured pattern's match wins
-// over a later one that would overlap it.
-function findHighlightSpans(lower: string, highlights: CompiledHighlight[]): HSpan[] {
+// findHighlightSpans returns non-overlapping wildcard match spans over the
+// original line. Earlier-configured patterns win overlaps.
+function findHighlightSpans(text: string, highlights: CompiledHighlight[]): HSpan[] {
   const accepted: HSpan[] = [];
   for (const hl of highlights) {
     if (!hl.pattern) continue;
-    let offset = 0;
-    for (;;) {
-      const idx = lower.indexOf(hl.pattern, offset);
-      if (idx === -1) break;
-      const start = idx;
-      const end = idx + hl.pattern.length;
-      offset = end;
+    const matches = hl.matcher
+      ? hl.matcher.findAll(text)
+      : literalSpans(text, hl.pattern);
+    for (const { start, end } of matches) {
       if (!accepted.some((s) => start < s.end && end > s.start)) {
         accepted.push({ start, end, fg: hl.fg, bg: hl.bg });
       }
@@ -117,6 +125,20 @@ function findHighlightSpans(lower: string, highlights: CompiledHighlight[]): HSp
   }
   accepted.sort((a, b) => a.start - b.start);
   return accepted;
+}
+
+function literalSpans(text: string, pattern: string): Array<{ start: number; end: number }> {
+  const lower = foldAscii(text);
+  const needle = foldAscii(pattern);
+  const spans: Array<{ start: number; end: number }> = [];
+  let offset = 0;
+  for (;;) {
+    const start = lower.indexOf(needle, offset);
+    if (start < 0) return spans;
+    const end = start + needle.length;
+    spans.push({ start, end });
+    offset = end;
+  }
 }
 
 function nextSpanOverlapping(spans: HSpan[], lo: number, hi: number): HSpan | null {

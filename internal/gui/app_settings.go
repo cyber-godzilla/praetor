@@ -250,6 +250,12 @@ func (a *GuiApp) SetDisplayMode(mode string) error {
 	return a.withConfig(func() { a.cfg().UI.DisplayMode = mode })
 }
 
+// SetGUISidebarsVisible persists the GUI/web global sidebar toggle without
+// rewriting the TUI's independent sidebar/topbar preference.
+func (a *GuiApp) SetGUISidebarsVisible(visible bool) error {
+	return a.withConfig(func() { a.cfg().DefaultDisplayProfile().SidebarsVisible = visible })
+}
+
 // SetNumpadNavigation persists the numpad-navigation mode (numlock/always/off).
 // The value is validated on the next load; the frontend applies it live.
 func (a *GuiApp) SetNumpadNavigation(mode string) error {
@@ -379,6 +385,23 @@ func (a *GuiApp) SetSpeechColors(rules []config.SpeechColorConfig) error {
 	return nil
 }
 
+// SetWoundHighlights persists and atomically publishes wound styling so the
+// event loop applies changes without a reconnect or restart.
+func (a *GuiApp) SetWoundHighlights(cfg config.WoundHighlightConfig) error {
+	valid := map[string]bool{"red": true, "purple": true, "blue": true, "orange": true}
+	for category, family := range map[string]string{
+		"cuts": cfg.Cuts, "bruises": cfg.Bruises, "punctures": cfg.Punctures, "burns": cfg.Burns,
+	} {
+		if !valid[family] {
+			return fmt.Errorf("invalid %s wound color family %q", category, family)
+		}
+	}
+	return a.withConfigApplied(
+		func() { a.cfg().WoundHighlights = cfg },
+		func() { a.woundHighlights.Store(cfg) },
+	)
+}
+
 // SetCustomTabs replaces the custom tab definitions.
 func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 	for _, tab := range tabs {
@@ -386,9 +409,44 @@ func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 			return fmt.Errorf("custom tab names must not be empty")
 		}
 	}
+	tabs = config.NormalizeCustomViewIDs(tabs)
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	a.cfg().UI.CustomTabs = tabs
+	a.activeCharacterProfileLocked().CustomViews = tabs
+	a.cfg().PlaceUnplacedCustomViewsInDefault()
+	if err := a.cfg().Validate(); err != nil {
+		return err
+	}
+	return a.save()
+}
+
+// SetViewLayout atomically replaces the unified GUI/web placement model and
+// its Custom View definitions. Editors stage both together so a placement can
+// never refer to a view that was only half-created or already deleted.
+func (a *GuiApp) SetViewLayout(layout config.DisplayProfileConfig, custom []config.CustomTabConfig) error {
+	seenNames := make(map[string]bool, len(custom))
+	for _, view := range custom {
+		name := strings.TrimSpace(view.Name)
+		if name == "" {
+			return fmt.Errorf("custom view names must not be empty")
+		}
+		key := strings.ToLower(name)
+		if seenNames[key] {
+			return fmt.Errorf("duplicate custom view name %q", name)
+		}
+		seenNames[key] = true
+	}
+	custom = config.NormalizeCustomViewIDs(custom)
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.activeCharacterProfileLocked().CustomViews = custom
+	current := a.cfg().DefaultDisplayProfile()
+	layout.ID = current.ID
+	layout.Name = current.Name
+	*current = layout
+	if err := a.cfg().Validate(); err != nil {
+		return err
+	}
 	return a.save()
 }
 
@@ -397,8 +455,38 @@ func (a *GuiApp) SetActionSets(sets []config.ActionSet) error {
 	sets = config.NormalizeActionSetIDs(sets)
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	a.cfg().UI.ActionSets = sets
+	profile := a.activeCharacterProfileLocked()
+	profile.ActionSets = sets
+	found := false
+	for _, set := range sets {
+		if set.ID == profile.SelectedActionSetID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		if len(sets) > 0 {
+			profile.SelectedActionSetID = sets[0].ID
+		} else {
+			profile.SelectedActionSetID = ""
+		}
+	}
 	return a.save()
+}
+
+// SetSelectedActionSetID persists the current Action Set by stable identity so
+// rename and reorder do not change the player's selection.
+func (a *GuiApp) SetSelectedActionSetID(id string) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	profile := a.activeCharacterProfileLocked()
+	for _, set := range profile.ActionSets {
+		if set.ID == id {
+			profile.SelectedActionSetID = id
+			return a.save()
+		}
+	}
+	return fmt.Errorf("unknown action set ID %q", id)
 }
 
 // SetQuickCycleModes replaces the Alt+M quick-cycle mode list.
@@ -438,9 +526,12 @@ func (a *GuiApp) SetInputVariables(variables map[string]string) error {
 		cloned[name] = value
 	}
 	return a.withConfigApplied(
-		func() { a.cfg().Commands.Variables = cloned },
+		func() { a.activeCharacterProfileLocked().Variables = cloned },
 		func() {
 			a.client().SetInputVariables(cloned)
+			if a.deps.DesktopNotify != nil {
+				a.deps.DesktopNotify.SetVariables(cloned)
+			}
 			a.inputVariables.Store(cloneStringMap(cloned))
 		},
 	)

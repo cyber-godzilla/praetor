@@ -6,6 +6,12 @@
 
   const DESKTOP_FONT_SIZES = [11, 12, 13, 14, 16, 18, 20, 24];
   const MOBILE_FONT_SIZES = [6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24];
+  const WOUND_FAMILIES = [
+    { value: "red", label: "Red" },
+    { value: "purple", label: "Purple" },
+    { value: "blue", label: "Blue" },
+    { value: "orange", label: "Orange" },
+  ];
 
   // Buffered draft: edit locally, apply on Save, discard on Cancel (like the
   // Highlights editor).
@@ -30,9 +36,12 @@
   let compassScale = $state(seed?.UI?.CompassScale ?? 1);
   let fontSize = $state(seed?.UI?.OutputFontSize || 14);
   let mobileFontSize = $state(seed?.UI?.MobileOutputFontSize || seed?.UI?.OutputFontSize || 14);
-  let guiSidebarWidth = $state(seed?.UI?.GUISidebarWidth || 260);
-  let guiMinimapHeight = $state(seed?.UI?.GUIMinimapHeight || 160);
   let numpadNav = $state(seed?.UI?.NumpadNavigation ?? "numlock");
+  let highlightWounds = $state(seed?.WoundHighlights?.Enabled ?? false);
+  let woundCuts = $state(seed?.WoundHighlights?.Cuts ?? "red");
+  let woundBruises = $state(seed?.WoundHighlights?.Bruises ?? "purple");
+  let woundPunctures = $state(seed?.WoundHighlights?.Punctures ?? "blue");
+  let woundBurns = $state(seed?.WoundHighlights?.Burns ?? "orange");
 
   async function save() {
     try {
@@ -60,8 +69,14 @@
       await api.setMinimapScale(minimapScale);
       await api.setCompassScale(compassScale);
       await api.setOutputFontSize(fontSize);
-      await api.setGUILayout(guiSidebarWidth, guiMinimapHeight);
       await api.setNumpadNavigation(numpadNav);
+      await api.setWoundHighlights({
+        Enabled: highlightWounds,
+        Cuts: woundCuts,
+        Bruises: woundBruises,
+        Punctures: woundPunctures,
+        Burns: woundBurns,
+      });
       if (store.config) {
         Object.assign(store.config.UI, {
           EchoTyped: echoTyped,
@@ -78,8 +93,6 @@
           MinimapScale: minimapScale,
           CompassScale: compassScale,
           OutputFontSize: fontSize,
-          GUISidebarWidth: guiSidebarWidth,
-          GUIMinimapHeight: guiMinimapHeight,
           NumpadNavigation: numpadNav,
         });
         store.config.Updates = { Check: updateCheck };
@@ -88,6 +101,13 @@
         store.config.Logging.Session.Path = logPath;
         store.config.Commands.SemicolonDelayMS = semicolonDelayMS;
         store.config.Commands.UnbusyDelayMS = unbusyDelayMS;
+        store.config.WoundHighlights = {
+          Enabled: highlightWounds,
+          Cuts: woundCuts,
+          Bruises: woundBruises,
+          Punctures: woundPunctures,
+          Burns: woundBurns,
+        };
       }
       store.addToast("Settings", "Saved");
       store.openModal = null;
@@ -102,6 +122,17 @@
     <label class="t"><span>Echo typed commands</span><input type="checkbox" bind:checked={echoTyped} /></label>
     <label class="t"><span>Echo script commands</span><input type="checkbox" bind:checked={echoScript} /></label>
     <label class="t"><span>Color words</span><input type="checkbox" bind:checked={colorWords} /></label>
+    <fieldset class="wound-settings">
+      <legend>Wound highlighting</legend>
+      <label class="t"><span>Highlight wounds</span><input type="checkbox" bind:checked={highlightWounds} /></label>
+      <div class="wound-grid" class:disabled={!highlightWounds}>
+        <label><span>Cuts</span><select bind:value={woundCuts} disabled={!highlightWounds}>{#each WOUND_FAMILIES as family}<option value={family.value}>{family.label}</option>{/each}</select></label>
+        <label><span>Bruises / fractures</span><select bind:value={woundBruises} disabled={!highlightWounds}>{#each WOUND_FAMILIES as family}<option value={family.value}>{family.label}</option>{/each}</select></label>
+        <label><span>Punctures / wounds</span><select bind:value={woundPunctures} disabled={!highlightWounds}>{#each WOUND_FAMILIES as family}<option value={family.value}>{family.label}</option>{/each}</select></label>
+        <label><span>Burns</span><select bind:value={woundBurns} disabled={!highlightWounds}>{#each WOUND_FAMILIES as family}<option value={family.value}>{family.label}</option>{/each}</select></label>
+      </div>
+      <p>Severity automatically selects a stronger shade; levels 4–5 are bold.</p>
+    </fieldset>
     <label class="t"><span>Hide IP addresses</span><input type="checkbox" bind:checked={hideIPs} /></label>
     <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
     <label class="t"><span>Retain Input After Send</span><input type="checkbox" bind:checked={keepInputOnSend} /></label>
@@ -124,14 +155,6 @@
     <div class="field">
       <span>Compass scale</span>
       <input type="number" min="0.5" max="3" step="0.1" bind:value={compassScale} />
-    </div>
-    <div class="field">
-      <span>GUI sidebar width (px)</span>
-      <input aria-label="GUI sidebar width" type="number" min="180" max="600" step="10" bind:value={guiSidebarWidth} />
-    </div>
-    <div class="field">
-      <span>GUI map height (px)</span>
-      <input aria-label="GUI map height" type="number" min="80" max="400" step="10" bind:value={guiMinimapHeight} />
     </div>
     <div class="field">
       <span>{api.inWeb() ? "Desktop output text size" : "Output text size"}</span>
@@ -198,6 +221,37 @@
     min-width: 0;
     padding: 0;
     border: 0;
+  }
+  .wound-settings {
+    margin: 8px 0;
+    padding: 8px;
+    border: 1px solid var(--border);
+  }
+  .wound-settings legend {
+    color: var(--fg-dim);
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .wound-settings p {
+    margin: 8px 4px 2px;
+    color: var(--fg-dim);
+    font-size: 12px;
+  }
+  .wound-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 12px;
+    padding: 8px 4px 2px;
+  }
+  .wound-grid.disabled {
+    opacity: 0.55;
+  }
+  .wound-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--fg-dim);
+    font-size: 12px;
   }
   .mobile-settings legend {
     padding: 0 4px 4px;

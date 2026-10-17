@@ -16,6 +16,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/cyber-godzilla/praetor/internal/wounds"
 )
 
 // GuiApp is the Wails-bound application facade. Its exported methods are
@@ -32,6 +33,10 @@ type GuiApp struct {
 	started          bool
 	closing          bool
 	kudosPromptShown bool
+	characterMu      sync.Mutex
+	connectedAccount string
+	activeProfileID  string
+	playSelectArmed  bool
 
 	// The intake loop must stay cheaper than the socket/core producer: it only
 	// appends to this queue and wakes the processing loop. Rendering, session
@@ -61,6 +66,9 @@ type GuiApp struct {
 	// speechColors stores an immutable []config.SpeechColorConfig snapshot for
 	// the per-line rendering path. SetSpeechColors replaces the whole value.
 	speechColors atomic.Value
+	// woundHighlights stores the live, immutable wound styling configuration.
+	// It is applied after colorwords and before user highlights in the frontend.
+	woundHighlights atomic.Value
 	// inputVariables stores the immutable variable snapshot used by speech-color
 	// character patterns. SetInputVariables replaces the whole value.
 	inputVariables atomic.Value
@@ -106,10 +114,19 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 		eventWake:           make(chan struct{}, 1),
 		eventStop:           make(chan struct{}),
 		eventLimit:          guiEventBacklogLimit(deps.Config.UI.Scrollback),
+		activeProfileID:     deps.Config.CharacterProfiles.DefaultID,
 	}
 	a.colorWords.Store(deps.Config.UI.ColorWords)
 	a.speechColors.Store(cloneSpeechColors(deps.Config.SpeechColors))
-	a.inputVariables.Store(cloneStringMap(deps.Config.Commands.Variables))
+	a.woundHighlights.Store(deps.Config.WoundHighlights)
+	defaultProfile := deps.Config.DefaultCharacterProfile()
+	a.inputVariables.Store(cloneStringMap(defaultProfile.Variables))
+	if deps.DesktopNotify != nil {
+		deps.DesktopNotify.SetVariables(defaultProfile.Variables)
+		deps.DesktopNotify.SetWarningSink(func(message string) {
+			a.notify("Notification rule", message)
+		})
+	}
 	if deps.Client != nil && deps.ConfigPath != "" {
 		deps.Client.SetInputVariableSaver(a.SetInputVariables)
 	}
@@ -421,12 +438,13 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 			// refreshed by the next Connected event, when the live queue can be
 			// snapshotted for the new session.
 			a.render.reset()
+			a.setConnectedAccount("")
 			disconnected = true
 		}
 
 		// A character's speech style supplies the base color for the whole line.
-		// Colorwords then override individual color phrases, and the frontend's
-		// configured highlights/search remain the final visual layers.
+		// Colorwords and wound phrases then override progressively smaller spans;
+		// the frontend's configured highlights/search remain the final layers.
 		ev = withSpeechColors(
 			ev,
 			a.speechColors.Load().([]config.SpeechColorConfig),
@@ -435,10 +453,16 @@ func (a *GuiApp) processBatch(batch []types.Event) {
 		if a.colorWords.Load() {
 			ev = withColorWords(ev)
 		}
+		ev = withWoundHighlights(ev, a.woundHighlights.Load().(config.WoundHighlightConfig))
 
 		// Convert the event itself (SKOOT bars, text, status, conn, etc.).
 		if w, ok := toWire(ev); ok {
 			wire = append(wire, w)
+		}
+		if _, connected := ev.(types.ConnectedEvent); connected {
+			if profile := a.activeCharacterPayload(); profile != nil {
+				wire = append(wire, WireEvent{Kind: KindCharacterProfile, CharacterProfile: profile})
+			}
 		}
 		if showNewUserWelcome {
 			// Append after the Connected wire event so the frontend has entered the
@@ -462,6 +486,22 @@ func withSpeechColors(ev types.Event, rules []config.SpeechColorConfig, variable
 		return e
 	case types.SuppressedGameTextEvent:
 		e.OriginalStyled = speechcolor.Apply(e.OriginalStyled, e.OriginalText, rules, variables)
+		return e
+	default:
+		return ev
+	}
+}
+
+func withWoundHighlights(ev types.Event, cfg config.WoundHighlightConfig) types.Event {
+	if !cfg.Enabled {
+		return ev
+	}
+	switch e := ev.(type) {
+	case types.GameTextEvent:
+		e.Styled = wounds.Apply(e.Styled, cfg)
+		return e
+	case types.SuppressedGameTextEvent:
+		e.OriginalStyled = wounds.Apply(e.OriginalStyled, cfg)
 		return e
 	default:
 		return ev
@@ -529,15 +569,16 @@ func withColorWords(ev types.Event) types.Event {
 // InitState is the snapshot the frontend fetches on load to render the initial
 // screen (account select vs. login) and seed its settings.
 type InitState struct {
-	Version         string                   `json:"version"`
-	Debug           bool                     `json:"debug"`
-	Accounts        []string                 `json:"accounts"`
-	CredentialStore CredentialStoreStatus    `json:"credentialStore"`
-	HasModes        bool                     `json:"hasModes"`
-	ModeNames       []string                 `json:"modeNames"`
-	ModeSpecs       []engine.ModeSpec        `json:"modeSpecs"`
-	ColorwordStyles []colorwords.StyleOption `json:"colorwordStyles"`
-	Config          *config.Config           `json:"config"`
+	Version                  string                   `json:"version"`
+	Debug                    bool                     `json:"debug"`
+	Accounts                 []string                 `json:"accounts"`
+	CredentialStore          CredentialStoreStatus    `json:"credentialStore"`
+	HasModes                 bool                     `json:"hasModes"`
+	ModeNames                []string                 `json:"modeNames"`
+	ModeSpecs                []engine.ModeSpec        `json:"modeSpecs"`
+	ColorwordStyles          []colorwords.StyleOption `json:"colorwordStyles"`
+	ActiveCharacterProfileID string                   `json:"activeCharacterProfileId"`
+	Config                   *config.Config           `json:"config"`
 }
 
 // GetInitState returns the initial application state.
@@ -548,15 +589,16 @@ func (a *GuiApp) GetInitState() InitState {
 	configSnapshot := cloneConfig(a.cfg())
 	a.configMu.RUnlock()
 	return InitState{
-		Version:         a.deps.Version,
-		Debug:           a.deps.Debug,
-		Accounts:        accountState.Accounts,
-		CredentialStore: accountState.CredentialStore,
-		HasModes:        len(modes) > 0,
-		ModeNames:       modes,
-		ModeSpecs:       a.client().Engine.ModeSpecs(),
-		ColorwordStyles: colorwords.Catalog(),
-		Config:          configSnapshot,
+		Version:                  a.deps.Version,
+		Debug:                    a.deps.Debug,
+		Accounts:                 accountState.Accounts,
+		CredentialStore:          accountState.CredentialStore,
+		HasModes:                 len(modes) > 0,
+		ModeNames:                modes,
+		ModeSpecs:                a.client().Engine.ModeSpecs(),
+		ColorwordStyles:          colorwords.Catalog(),
+		ActiveCharacterProfileID: a.ActiveCharacterProfileID(),
+		Config:                   configSnapshot,
 	}
 }
 
@@ -679,7 +721,9 @@ func (a *GuiApp) ConnectNew(username, password string, store bool) (ConnectResul
 	if err := a.client().Login(username, password); err != nil {
 		return result, err
 	}
+	a.setConnectedAccount(username)
 	if err := a.connectAndRun(); err != nil {
+		a.setConnectedAccount("")
 		return result, err
 	}
 	result.Connected = true
@@ -724,7 +768,12 @@ func (a *GuiApp) ConnectStored(username string) error {
 	if err := a.client().Login(username, pass); err != nil {
 		return err
 	}
-	return a.connectAndRun()
+	a.setConnectedAccount(username)
+	if err := a.connectAndRun(); err != nil {
+		a.setConnectedAccount("")
+		return err
+	}
+	return nil
 }
 
 // connectAndRun opens the WebSocket and launches the blocking Run loop in a
@@ -755,6 +804,7 @@ func (a *GuiApp) connectAndRun() error {
 // session. The resulting disconnected event (empty reason) drives the frontend
 // back to the bootup screen. Safe to call when not connected.
 func (a *GuiApp) Disconnect() {
+	a.setConnectedAccount("")
 	a.client().Disconnect()
 }
 
@@ -823,7 +873,11 @@ func (a *GuiApp) SendInput(input string) error {
 	if a.sendActive() {
 		return fmt.Errorf("a /send is in flight — wait for it to finish or press Alt+X before starting another input sequence")
 	}
-	return a.send(input, true)
+	if err := a.send(input, true); err != nil {
+		return err
+	}
+	a.observeCharacterSelection(input)
+	return nil
 }
 
 // InputChainActive reports whether typed input still has commands, timers, or

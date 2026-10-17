@@ -30,14 +30,19 @@ const (
 
 // TabEditor manages custom tabs — create, edit, delete, toggle visibility.
 type TabEditor struct {
-	tabs     []config.CustomTabConfig
-	cursor   int
-	mode     tabEditorMode
-	editIdx  int    // index of tab being edited
-	editCur  int    // cursor within the edit screen
-	inputBuf string // text input buffer
-	width    int
-	height   int
+	tabs      []config.CustomTabConfig
+	cursor    int
+	mode      tabEditorMode
+	editIdx   int    // index of tab being edited
+	editCur   int    // cursor within the edit screen
+	inputBuf  string // text input buffer
+	width     int
+	height    int
+	variables map[string]string
+}
+
+func (te *TabEditor) SetVariables(values map[string]string) {
+	te.variables = clonePreviewVariables(values)
 }
 
 func NewTabEditor(tabs []config.CustomTabConfig) TabEditor {
@@ -69,7 +74,7 @@ func (te TabEditor) updateList(msg tea.KeyMsg) (TabEditor, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEscape:
 		return te, func() tea.Msg {
-			return TabEditorCloseMsg{Tabs: te.tabs}
+			return TabEditorCloseMsg{Tabs: config.NormalizeCustomViewIDs(te.tabs)}
 		}
 	case tea.KeyUp:
 		if te.cursor > 0 {
@@ -302,7 +307,6 @@ func (te TabEditor) viewList() string {
 			b.WriteByte('\n')
 		}
 	}
-
 	return lipgloss.Place(te.width, te.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
 }
@@ -381,6 +385,13 @@ func (te TabEditor) viewEdit() string {
 			}
 			b.WriteByte('\n')
 		}
+	}
+	previewPattern := te.inputBuf
+	if te.mode != temAddRule && te.editCur < len(tab.Rules) {
+		previewPattern = tab.Rules[te.editCur].Pattern
+	}
+	if preview := expansionPreview(previewPattern, te.variables, true); preview != "" {
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(colorDim).Render(preview))
 	}
 
 	return lipgloss.Place(te.width, te.height, lipgloss.Center, lipgloss.Center,

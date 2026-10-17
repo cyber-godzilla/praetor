@@ -3,6 +3,7 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
   import type { DesktopNotificationsConfig, NotifyPatternConfig } from "../../lib/types";
+  import ExpansionPreview from "../ExpansionPreview.svelte";
 
   const src = store.config?.Notifications?.Desktop;
   let cfg = $state<DesktopNotificationsConfig>({
@@ -70,9 +71,18 @@
   {#each cfg.Patterns ?? [] as p, i (i)}
     <div class="pat">
       <input type="checkbox" bind:checked={p.Enabled} title="Enabled" />
-      <input type="text" bind:value={p.Pattern} placeholder="match text" />
-      <input type="text" bind:value={p.Title} placeholder="title (optional)" />
-      <input class="message" type="text" bind:value={p.Message} placeholder="message (optional)" />
+      <span class="field">
+        <input type="text" bind:value={p.Pattern} placeholder="match text (* ? and ${name})" />
+        <ExpansionPreview value={p.Pattern} match />
+      </span>
+      <span class="field">
+        <input type="text" bind:value={p.Title} placeholder="title (optional, supports ${name})" />
+        <ExpansionPreview value={p.Title} />
+      </span>
+      <span class="field message">
+        <input type="text" bind:value={p.Message} placeholder="message (optional, supports ${name})" />
+        <ExpansionPreview value={p.Message} />
+      </span>
       <button class="danger sm" onclick={() => removePattern(i)}>✕</button>
     </div>
   {/each}
@@ -124,7 +134,10 @@
     gap: 6px;
     margin-bottom: 6px;
   }
+  .field { min-width: 0; }
   .pat input[type="text"] {
+    width: 100%;
+    box-sizing: border-box;
     min-width: 0;
   }
   .pat .message {

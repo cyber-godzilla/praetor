@@ -6,6 +6,7 @@
   import type { ColorwordStyle, SpeechColorConfig } from "../../lib/types";
   import { safeColor } from "../../lib/color";
   import { groupColorwordStyles, searchColorwordStyles } from "../../lib/colorword-search";
+  import ExpansionPreview from "../ExpansionPreview.svelte";
 
   const prefill = store.speechColorPrefill.trim();
   const initialItems = (store.config?.SpeechColors ?? []).map((rule) => ({
@@ -223,14 +224,17 @@
           onchange={() => toggle(index)}
           aria-label={`Enable speech color for ${item.Character || "new character"}`}
         />
-        <input
-          type="text"
-          bind:value={item.Character}
-          data-character-index={index}
-          placeholder="Name, wildcard, or ${name}"
-          aria-label="Character pattern"
-          oninput={() => (error = "")}
-        />
+        <span class="character-pattern">
+          <input
+            type="text"
+            bind:value={item.Character}
+            data-character-index={index}
+            placeholder="Name, wildcard, or ${name}"
+            aria-label="Character pattern"
+            oninput={() => (error = "")}
+          />
+          <ExpansionPreview value={item.Character} match />
+        </span>
         <button
           class="style-choice"
           type="button"
@@ -351,6 +355,7 @@
   .rule { padding: 7px; border: 1px solid var(--border); background: color-mix(in srgb, var(--bg-input) 65%, transparent); }
   .rule.off { opacity: .55; }
   .rule input[type="text"] { min-width: 0; width: 100%; box-sizing: border-box; }
+  .character-pattern { min-width: 0; }
   .style-choice { min-width: 0; display: grid; grid-template-columns: 22px minmax(60px, 1fr) auto auto; align-items: center; gap: 8px; padding: 5px 8px; text-align: left; background: var(--bg-input); }
   .channels { display: flex; gap: 5px; }
   .channels label { display: flex; align-items: center; gap: 4px; min-width: 0; color: var(--fg-dim); font-size: 10px; cursor: pointer; }

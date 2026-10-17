@@ -144,6 +144,7 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		sessLog, _ = client.NewSessionLogger(false, logDir)
 	}
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	desktopNotify.SetVariables(cfg.DefaultCharacterProfile().Variables)
 
 	notesStore := notes.New(filepath.Join(configDir, "notes"))
 

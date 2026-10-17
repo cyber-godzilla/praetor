@@ -21,7 +21,34 @@ export class FixtureTransport implements PraetorTransport {
         },
         hasModes: true,
         modeNames: ["fixture"],
-        config: { UI: { DisplayMode: "sidebar", Scrollback: 5000, CustomTabs: [] } } as unknown as AppConfig,
+        activeCharacterProfileId: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50",
+        config: {
+          CharacterProfiles: {
+            DefaultID: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50",
+            Profiles: [{
+              ID: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50",
+              Name: "Default",
+              Variables: {},
+              CustomViews: [],
+              ActionSets: [],
+              SelectedActionSetID: "",
+            }],
+          },
+          DisplayProfiles: {
+            DefaultID: "0b40c7dd-fba7-44cb-83f7-f125f5bc98b3",
+            Profiles: [{
+              ID: "0b40c7dd-fba7-44cb-83f7-f125f5bc98b3",
+              Name: "Default",
+              SidebarsVisible: true,
+              Main: [{ ComponentID: "a1ebe82e-7f0d-4ba9-9e00-181d045e3e12", SidebarHeight: 0, Collapsed: false }],
+              Sidebars: [],
+            }],
+          },
+          UI: {
+            DisplayMode: "sidebar",
+            Scrollback: 5000,
+          },
+        } as unknown as AppConfig,
       } as T;
     }
     return fallback;

@@ -3,21 +3,30 @@
   import * as api from "../../lib/bridge";
   import { cycleIndex } from "../../lib/actions";
 
-  const sets = $derived(store.config?.UI?.ActionSets ?? []);
-  // Clamp the shown index defensively for the current render; the $effect below
-  // corrects the stored value after sets shrink.
-  const current = $derived(sets.length ? sets[Math.min(store.actionSetIndex, sets.length - 1)] : undefined);
+  const sets = $derived(store.characterProfile()?.ActionSets ?? []);
+  const current = $derived(sets.find((set) => set.ID === store.selectedActionSetID) ?? sets[0]);
   const canCycle = $derived(sets.length > 1);
 
-  // Keep the shared index in range when sets are deleted/reordered in the editor.
+  // Repair a missing legacy/deleted selection without coupling it to list order.
   $effect(() => {
-    const max = Math.max(0, sets.length - 1);
-    if (store.actionSetIndex > max) store.actionSetIndex = max;
+    const fallback = sets[0]?.ID ?? "";
+    if (!sets.some((set) => set.ID === store.selectedActionSetID)) {
+      store.selectedActionSetID = fallback;
+    }
   });
 
-  function cycle(delta: number) {
+  async function cycle(delta: number) {
     if (!canCycle) return;
-    store.actionSetIndex = cycleIndex(store.actionSetIndex, delta, sets.length);
+    const currentIndex = Math.max(0, sets.findIndex((set) => set.ID === current?.ID));
+    const next = sets[cycleIndex(currentIndex, delta, sets.length)];
+    if (!next) return;
+    store.selectedActionSetID = next.ID;
+    store.characterProfile()!.SelectedActionSetID = next.ID;
+    try {
+      await api.setSelectedActionSetID(next.ID);
+    } catch (e) {
+      store.addToast("Action Set", String(e));
+    }
   }
   async function fire(cmd: string) {
     try {
@@ -29,11 +38,11 @@
 </script>
 
 <div class="toolbar">
-  <button class="nav" onclick={() => cycle(-1)} disabled={!canCycle} title="Previous set" aria-label="Previous set" tabindex="-1">‹</button>
+  <button class="nav" onclick={() => void cycle(-1)} disabled={!canCycle} title="Previous set" aria-label="Previous set" tabindex="-1">‹</button>
   <button class="cur" onclick={() => (store.openModal = "actionsets")} title="Manage action sets" tabindex="-1">
     {current?.Name ?? "No sets"}
   </button>
-  <button class="nav" onclick={() => cycle(1)} disabled={!canCycle} title="Next set" aria-label="Next set" tabindex="-1">›</button>
+  <button class="nav" onclick={() => void cycle(1)} disabled={!canCycle} title="Next set" aria-label="Next set" tabindex="-1">›</button>
   <button class="add" onclick={() => (store.openModal = "actionset-add")} title="Add action set" aria-label="Add action set" tabindex="-1">+</button>
 </div>
 

@@ -20,6 +20,7 @@ export const Kind = {
   Notify: "notify",
   Error: "error",
   Variable: "variable",
+  CharacterProfile: "characterProfile",
   Command: "command",
   OpenMenu: "openMenu",
   Minimap: "minimap",
@@ -116,6 +117,7 @@ export interface WireEvent {
   notify?: NotifyPayload;
   error?: ErrorPayload;
   variable?: VariablePayload;
+  characterProfile?: CharacterProfilePayload;
   command?: string;
   openMenu?: string;
   image?: ImagePayload;
@@ -127,6 +129,11 @@ export interface VariablePayload {
   value: string;
 }
 
+export interface CharacterProfilePayload {
+  id: string;
+  name: string;
+}
+
 // ---------------------------------------------------------------------------
 // Config types (mirror internal/config; JSON keys are Go field names -> PascalCase)
 // ---------------------------------------------------------------------------
@@ -135,6 +142,14 @@ export interface HighlightConfig {
   Pattern: string;
   Style: string; // red | gold | green | blue
   Active: boolean;
+}
+
+export interface WoundHighlightConfig {
+  Enabled: boolean;
+  Cuts: string;
+  Bruises: string;
+  Punctures: string;
+  Burns: string;
 }
 
 export interface SpeechColorConfig {
@@ -160,10 +175,39 @@ export interface TabRuleConfig {
 }
 
 export interface CustomTabConfig {
+  ID: string;
   Name: string;
   Visible: boolean;
   EchoCommands: boolean;
   Rules: TabRuleConfig[];
+}
+
+export interface DisplayComponentConfig {
+  ComponentID: string;
+  SidebarHeight: number;
+  Collapsed: boolean;
+}
+
+export interface DisplaySidebarConfig {
+  ID: string;
+  Name: string;
+  Enabled: boolean;
+  Side: "left" | "right";
+  Width: number;
+  Components: DisplayComponentConfig[];
+}
+
+export interface DisplayProfileConfig {
+  ID: string;
+  Name: string;
+  SidebarsVisible: boolean;
+  Main: DisplayComponentConfig[];
+  Sidebars: DisplaySidebarConfig[];
+}
+
+export interface DisplayProfilesConfig {
+  DefaultID: string;
+  Profiles: DisplayProfileConfig[];
 }
 
 export interface ActionButton {
@@ -207,6 +251,29 @@ export interface KudosConfig {
   Queue: KudosQueueEntry[] | null;
 }
 
+export interface CharacterProfileConfig {
+  ID: string;
+  Name: string;
+  Account?: string;
+  CharacterNumber?: number;
+  Variables: Record<string, string> | null;
+  CustomViews: CustomTabConfig[] | null;
+  ActionSets: ActionSet[] | null;
+  SelectedActionSetID: string;
+}
+
+export interface CharacterProfileIdentity {
+  ID: string;
+  Name: string;
+  Account: string;
+  CharacterNumber: number;
+}
+
+export interface CharacterProfilesConfig {
+  DefaultID: string;
+  Profiles: CharacterProfileConfig[];
+}
+
 export interface UIConfig {
   DisplayMode: string;
   DefaultTab: string;
@@ -234,8 +301,6 @@ export interface UIConfig {
   MobileLowercaseFirstLetter: boolean;
   KeepInputOnSend: boolean;
   NumpadNavigation: string; // "numlock" | "always" | "off"
-  CustomTabs: CustomTabConfig[] | null;
-  ActionSets: ActionSet[] | null;
 }
 
 export interface AppConfig {
@@ -244,12 +309,14 @@ export interface AppConfig {
     SemicolonDelayMS: number;
     UnbusyDelayMS: number;
     HighPriority: string[] | null;
-    Variables: Record<string, string> | null;
     [k: string]: unknown;
   };
+  CharacterProfiles: CharacterProfilesConfig;
+  DisplayProfiles: DisplayProfilesConfig;
   Scripts: string[] | null;
   UI: UIConfig;
   Highlights: HighlightConfig[] | null;
+  WoundHighlights: WoundHighlightConfig;
   SpeechColors: SpeechColorConfig[] | null;
   Kudos: KudosConfig;
   Ignorelist: { OOC: string[] | null; Think: string[] | null };
@@ -295,6 +362,7 @@ export interface InitState {
   modeNames: string[] | null;
   modeSpecs: ModeSpec[] | null;
   colorwordStyles: ColorwordStyle[] | null;
+  activeCharacterProfileId: string;
   config: AppConfig;
 }
 

@@ -5,15 +5,50 @@
   import { numpadCommand } from "../lib/numpad";
   import StatusBar from "./StatusBar.svelte";
   import TabBar from "./TabBar.svelte";
-  import OutputPane from "./OutputPane.svelte";
-  import MetricsPanel from "./MetricsPanel.svelte";
+  import ViewContent from "./ViewContent.svelte";
   import InputLine from "./InputLine.svelte";
-  import Sidebar from "./Sidebar.svelte";
+  import SidebarColumn from "./SidebarColumn.svelte";
+  import ViewsDrawer from "./ViewsDrawer.svelte";
   import MobileDock from "./MobileDock.svelte";
   import { nextDisplayMode } from "../lib/display";
+  import { orderedSidebarIDs, responsiveSidebarIDs, sidebarComponentIDs } from "../lib/layout";
+
+  let bodyEl: HTMLDivElement;
+  let bodyWidth = $state(0);
+  let layoutSave: Promise<void> = Promise.resolve();
+
+  const layout = $derived(store.displayProfile());
+  const customViews = $derived(store.characterProfile()?.CustomViews ?? []);
+  const configuredSidebarIDs = $derived.by(() => {
+    if (!layout) return [];
+    return layout.Sidebars
+      .filter((sidebar) => sidebar.Enabled && sidebarComponentIDs(sidebar, customViews, store.debug).length > 0)
+      .map((sidebar) => sidebar.ID);
+  });
+  const canvasSidebarIDs = $derived(
+    store.displayMode === "sidebar" && layout && bodyWidth >= 900
+      ? responsiveSidebarIDs(layout.Sidebars, configuredSidebarIDs, bodyWidth, 480)
+      : [],
+  );
+  const leftSidebarIDs = $derived(
+    layout ? orderedSidebarIDs(layout.Sidebars, "left").filter((id) => canvasSidebarIDs.includes(id)) : [],
+  );
+  const rightSidebarIDs = $derived(
+    layout ? orderedSidebarIDs(layout.Sidebars, "right").filter((id) => canvasSidebarIDs.includes(id)) : [],
+  );
+  const drawerAvailable = $derived(
+    store.displayMode === "sidebar" && configuredSidebarIDs.some((id) => !canvasSidebarIDs.includes(id)),
+  );
+
+  function saveLayout() {
+    if (!layout) return;
+    layoutSave = layoutSave
+      .then(() => api.setViewLayout(layout, store.characterProfile()?.CustomViews ?? []))
+      .catch((error) => store.addToast("Layout save failed", String(error)));
+  }
 
   function visibleTabs() {
-    return store.tabs.filter((t) => t.visible);
+    return store.mainTabs();
   }
 
   function cycleTab(dir: number) {
@@ -44,9 +79,9 @@
   function cycleDisplay() {
     const mode = nextDisplayMode(store.displayMode);
     store.displayMode = mode;
-    if (store.config?.UI) store.config.UI.DisplayMode = mode;
+    if (layout) layout.SidebarsVisible = mode === "sidebar";
     displaySave = displaySave
-      .then(() => api.setDisplayMode(mode))
+      .then(() => api.setGUISidebarsVisible(mode === "sidebar"))
       .catch((e) => store.addToast("Settings error", String(e)));
   }
 
@@ -97,7 +132,7 @@
       e.preventDefault();
       e.stopPropagation();
       const t = store.tabs[store.activeTab];
-      if (t && t.kind !== "metrics") {
+      if (t && (t.kind === "all" || t.kind === "custom" || t.kind === "debug")) {
         store.searchOpen = true;
         store.searchFocusRequest++;
       }
@@ -188,7 +223,14 @@
   // of cycling tabs. Capturing lets preventDefault win before traversal.
   onMount(() => {
     window.addEventListener("keydown", onKeydown, true);
-    return () => window.removeEventListener("keydown", onKeydown, true);
+    const observer = new ResizeObserver((entries) => {
+      bodyWidth = Math.round(entries[0]?.contentRect.width ?? bodyEl?.clientWidth ?? window.innerWidth);
+    });
+    if (bodyEl) observer.observe(bodyEl);
+    return () => {
+      window.removeEventListener("keydown", onKeydown, true);
+      observer.disconnect();
+    };
   });
 </script>
 
@@ -201,22 +243,33 @@
       Commands are paused until current state is restored.
     </div>
   {/if}
-  <div class="body">
+  <div class="body" bind:this={bodyEl}>
+    {#if layout}
+      {#each leftSidebarIDs as id (id)}
+        {@const sidebar = layout.Sidebars.find((item) => item.ID === id)}
+        {#if sidebar}<SidebarColumn {sidebar} onsave={saveLayout} />{/if}
+      {/each}
+    {/if}
     <div class="main">
-      {#if activeTab?.kind === "metrics"}
-        <MetricsPanel />
-      {:else if activeTab?.kind === "debug"}
-        <OutputPane tab={activeTab} />
-      {:else if activeTab}
-        <OutputPane tab={activeTab} />
-      {/if}
+      {#if activeTab}<ViewContent id={activeTab.id} presentation="tab" />{/if}
       <InputLine />
     </div>
+    {#if layout}
+      {#each rightSidebarIDs as id (id)}
+        {@const sidebar = layout.Sidebars.find((item) => item.ID === id)}
+        {#if sidebar}<SidebarColumn {sidebar} onsave={saveLayout} />{/if}
+      {/each}
+    {/if}
     {#if store.displayMode === "sidebar"}
-      <Sidebar />
       <MobileDock />
     {/if}
+    {#if drawerAvailable}
+      <button class="views-button" onclick={() => (store.viewsDrawerOpen = true)}>Views</button>
+    {/if}
   </div>
+  {#if store.viewsDrawerOpen && drawerAvailable}
+    <ViewsDrawer sidebarIDs={configuredSidebarIDs} onsave={saveLayout} />
+  {/if}
 </div>
 
 <style>
@@ -230,7 +283,9 @@
     flex: 1;
     display: flex;
     min-height: 0;
+    position: relative;
   }
+  .views-button { position: absolute; z-index: 15; top: 8px; right: 8px; padding: 6px 10px; color: var(--accent); background: var(--bg-elevated); }
   .main {
     flex: 1;
     display: flex;

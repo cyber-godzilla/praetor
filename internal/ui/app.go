@@ -18,6 +18,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	"github.com/cyber-godzilla/praetor/internal/wounds"
 	"github.com/mattn/go-runewidth"
 )
 
@@ -31,6 +32,10 @@ import (
 type EventMsg struct {
 	Events []types.Event
 }
+
+// NotificationWarningMsg surfaces a rate-limited notification-rule diagnostic
+// inside the TUI instead of sending a broken external notification.
+type NotificationWarningMsg struct{ Message string }
 
 // KudosLoginPromptMsg fires the once-per-process inline notice when the
 // user has queued kudos. Wrapper sends this after the first SKOOT map
@@ -134,6 +139,7 @@ const (
 	stateMenu                                 // overlay menu
 	stateModePicker                           // editing quick-cycle mode list
 	stateHighlights                           // editing highlight patterns
+	stateWoundSettings                        // wound highlight toggle and families
 	stateHelp                                 // help screen
 	stateTabEditor                            // custom tab editor
 	statePersistentData                       // persistent data viewer
@@ -203,6 +209,8 @@ type App struct {
 	modePicker       ModePicker
 	highlightsMgr    HighlightsManager
 	highlights       []config.HighlightConfig
+	woundSettings    WoundSettingsScreen
+	woundConfig      config.WoundHighlightConfig
 	speechColors     []config.SpeechColorConfig
 	inputVariables   map[string]string
 	help             HelpScreen
@@ -257,7 +265,7 @@ type tabBarCache struct {
 // defaultTab should be one of "all", "combat", "social", "metrics".
 // accounts is the list of stored usernames; if non-empty, the app starts
 // on the account selection screen; otherwise it starts on the login screen.
-func NewApp(displayMode string, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, speechColors []config.SpeechColorConfig, inputVariables map[string]string, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
+func NewApp(displayMode string, defaultTab string, scrollback int, accounts []string, sidebarWidth int, minimapScale float64, minimapHeight int, quickCycleModes []string, highlights []config.HighlightConfig, woundConfig config.WoundHighlightConfig, speechColors []config.SpeechColorConfig, inputVariables map[string]string, debugMode bool, colorWords bool, customTabs []config.CustomTabConfig, version string, hideIPs bool, echoTyped bool, echoScript bool, gameLogs bool, logPath string, scriptDirs []string, priorityCmds []string, ignoreOOC []string, ignoreThink []string, notifyCfg config.DesktopNotificationsConfig, graphicsMode graphics.Mode) App {
 	tabs := BuildTabs(scrollback, debugMode, customTabs)
 	tab := 0 // default to All
 
@@ -294,6 +302,7 @@ func NewApp(displayMode string, defaultTab string, scrollback int, accounts []st
 		menu:           NewMenu(colorWords, echoTyped, echoScript, hideIPs, gameLogs, logPath, false),
 		quickCycle:     NewQuickCycle(quickCycleModes),
 		highlights:     highlights,
+		woundConfig:    woundConfig,
 		speechColors:   speechColors,
 		inputVariables: inputVariables,
 		colorWords:     colorWords,
@@ -410,6 +419,10 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a.updateModePicker(msg)
 		case stateHighlights:
 			return a.updateHighlights(msg)
+		case stateWoundSettings:
+			var cmd tea.Cmd
+			a.woundSettings, cmd = a.woundSettings.Update(msg)
+			return a, cmd
 		case stateHelp:
 			return a.updateHelp(msg)
 		case stateTabEditor:
@@ -515,8 +528,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MenuHighlightsMsg:
 		a.highlightsMgr = NewHighlightsManager(a.highlights)
+		a.highlightsMgr.SetVariables(a.inputVariables)
 		a.highlightsMgr.SetSize(a.width, a.height)
 		a.state = stateHighlights
+		return a, nil
+
+	case MenuWoundHighlightsMsg:
+		a.woundSettings = NewWoundSettingsScreen(a.woundConfig)
+		a.woundSettings.SetSize(a.width, a.height)
+		a.state = stateWoundSettings
 		return a, nil
 
 	case HelpCloseMsg:
@@ -532,6 +552,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case HighlightsCloseMsg:
 		a.highlights = msg.Highlights
+		a.state = stateMenu
+		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
+		a.menu.SetSize(a.width, a.height)
+		return a, nil
+
+	case WoundSettingsCloseMsg:
+		if msg.Changed {
+			a.woundConfig = msg.Config
+		}
 		a.state = stateMenu
 		a.menu = NewMenu(a.colorWords, a.echoTyped, a.echoScript, a.hideIPs, a.gameLogs, a.logPath, a.modesAvailable)
 		a.menu.SetSize(a.width, a.height)
@@ -601,6 +630,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MenuIgnorelistOOCMsg:
 		a.ignorelistScreen = NewIgnorelistScreen(IgnorelistKindOOC, a.ignoreOOCList)
+		a.ignorelistScreen.SetVariables(a.inputVariables)
 		a.ignorelistScreen.SetSize(a.width, a.height)
 		a.state = stateIgnorelistOOC
 		return a, nil
@@ -616,6 +646,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MenuIgnorelistThinkMsg:
 		a.ignorelistScreen = NewIgnorelistScreen(IgnorelistKindThink, a.ignoreThinkList)
+		a.ignorelistScreen.SetVariables(a.inputVariables)
 		a.ignorelistScreen.SetSize(a.width, a.height)
 		a.state = stateIgnorelistThink
 		return a, nil
@@ -647,8 +678,19 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.ShowKudosLoginPrompt(msg.Count)
 		return a, nil
 
+	case NotificationWarningMsg:
+		if len(a.tabs) > 0 {
+			a.tabs[0].Pane.Append([]types.StyledSegment{{
+				Text:   "Notification warning: " + msg.Message,
+				Color:  "#e8a838",
+				Italic: true,
+			}})
+		}
+		return a, nil
+
 	case MenuNotificationSettingsMsg:
 		a.notificationSettings = NewNotificationSettingsScreen(a.notificationSettingsCfg)
+		a.notificationSettings.SetVariables(a.inputVariables)
 		a.notificationSettings.SetSize(a.width, a.height)
 		a.state = stateNotificationSettings
 		return a, nil
@@ -695,6 +737,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MenuTabsMsg:
 		a.tabEditor = NewTabEditor(TabsToConfig(a.tabs))
+		a.tabEditor.SetVariables(a.inputVariables)
 		a.tabEditor.SetSize(a.width, a.height)
 		a.state = stateTabEditor
 		return a, nil
@@ -1131,13 +1174,14 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			if a.colorWords {
 				styled = colorwords.ApplyColorWords(styled)
 			}
-			styled = applyHighlights(styled, a.highlights)
+			styled = wounds.Apply(styled, a.woundConfig)
+			styled = applyHighlights(styled, a.highlights, a.inputVariables)
 			if a.hideIPs {
 				styled = maskIPs(styled)
 			}
 
 			// Route text to All + matching custom tabs.
-			routed := RouteText(a.tabs, styled, ev.Text, ev.IsEcho)
+			routed := RouteText(a.tabs, styled, ev.Text, ev.IsEcho, a.inputVariables)
 			// Only count non-empty text for unread markers.
 			if ev.Text != "" {
 				routedTabs |= routed
@@ -1151,7 +1195,8 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			if a.colorWords {
 				styled = colorwords.ApplyColorWords(styled)
 			}
-			styled = applyHighlights(styled, a.highlights)
+			styled = wounds.Apply(styled, a.woundConfig)
+			styled = applyHighlights(styled, a.highlights, a.inputVariables)
 			if a.hideIPs {
 				styled = maskIPs(styled)
 			}
@@ -1160,7 +1205,7 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			// ORIGINAL text so custom tab filters see the real content;
 			// the pane stores both placeholder and original so Alt+I
 			// can swap renditions in place.
-			routed := RouteSuppressed(a.tabs, ev.PlaceholderStyled, styled, ev.OriginalText)
+			routed := RouteSuppressed(a.tabs, ev.PlaceholderStyled, styled, ev.OriginalText, a.inputVariables)
 			if ev.OriginalText != "" {
 				routedTabs |= routed
 			}
@@ -1206,6 +1251,10 @@ func (a App) handleEvent(msg EventMsg) (tea.Model, tea.Cmd) {
 			}
 			variables[ev.Name] = ev.Value
 			a.inputVariables = variables
+			a.highlightsMgr.SetVariables(variables)
+			a.tabEditor.SetVariables(variables)
+			a.ignorelistScreen.SetVariables(variables)
+			a.notificationSettings.SetVariables(variables)
 			a.tabs[0].Pane.Append([]types.StyledSegment{{
 				Text:   fmt.Sprintf("Variable %s saved as %q.", ev.Name, ev.Value),
 				Color:  "#e8a838",
@@ -1481,6 +1530,7 @@ func (a *App) recalcLayout() {
 	a.rbCalcScreen.SetSize(a.width, a.height)
 	a.kudosMenu.SetSize(a.width, a.height)
 	a.highlightsMgr.SetSize(a.width, a.height)
+	a.woundSettings.SetSize(a.width, a.height)
 	a.tabEditor.SetSize(a.width, a.height)
 	a.help.SetSize(a.width, a.height)
 }
@@ -1517,6 +1567,8 @@ func (a App) View() string {
 		return a.graphicsClear() + a.modePicker.View()
 	case stateHighlights:
 		return a.graphicsClear() + a.highlightsMgr.View()
+	case stateWoundSettings:
+		return a.graphicsClear() + a.woundSettings.View()
 	case stateHelp:
 		return a.graphicsClear() + a.help.View()
 	case stateTabEditor:

@@ -3,6 +3,8 @@
   import type { MetricSession } from "../lib/types";
   import { fmtDur, currentElapsedMs } from "../lib/metrics";
 
+  let { compact = false }: { compact?: boolean } = $props();
+
   const current = $derived<MetricSession | undefined>(store.status?.current);
   const history = $derived<MetricSession[]>(store.status?.history ?? []);
 
@@ -20,7 +22,7 @@
   });
 </script>
 
-<div class="metrics">
+<div class="metrics" class:compact>
   {#if current}
     <div class="card">
       <div class="chead">
@@ -70,6 +72,10 @@
     flex-direction: column;
     gap: 12px;
   }
+  .metrics.compact { padding: 4px; gap: 8px; }
+  .compact .card { padding: 8px; }
+  .compact .entries { gap: 10px; }
+  .compact .entry .v { font-size: 17px; }
   .card {
     background: var(--bg-panel);
     border: 1px solid var(--border);

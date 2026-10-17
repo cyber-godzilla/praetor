@@ -133,6 +133,17 @@ return M
 	}
 }
 
+func TestGetInitStateCarriesDefaultCharacterProfileIdentity(t *testing.T) {
+	a := newModeSpecApp(t, nil)
+	init := a.GetInitState()
+	if init.ActiveCharacterProfileID != init.Config.CharacterProfiles.DefaultID {
+		t.Fatalf("active character profile = %q, default = %q", init.ActiveCharacterProfileID, init.Config.CharacterProfiles.DefaultID)
+	}
+	if !config.ValidUUID(init.ActiveCharacterProfileID) {
+		t.Fatalf("active character profile %q is not a UUID", init.ActiveCharacterProfileID)
+	}
+}
+
 func TestModeSpecs_BindingAgreesWithInitState(t *testing.T) {
 	// The binding exists so the frontend can refresh after a script reload; it
 	// must not drift from what the initial payload reported.

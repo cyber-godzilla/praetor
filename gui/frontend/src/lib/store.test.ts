@@ -8,9 +8,32 @@ function conn(state: "connected" | "disconnected", reason?: string): WireEvent[]
   return [{ kind: Kind.Conn, conn: { state, reason } }];
 }
 
+const defaultProfileID = "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50";
+
+function testConfig(variables: Record<string, string> = {}, scrollback = 5000) {
+  return {
+    Commands: {},
+    CharacterProfiles: {
+      DefaultID: defaultProfileID,
+      Profiles: [{
+        ID: defaultProfileID,
+        Name: "Default",
+        Variables: variables,
+        CustomViews: [],
+        ActionSets: [],
+        SelectedActionSetID: "",
+      }],
+    },
+    UI: { Scrollback: scrollback },
+  } as any;
+}
+
+const marcusProfileID = "2a764b7a-4145-44d9-9574-3bc2f0fe29cd";
+
 describe("store connection routing", () => {
   beforeEach(() => {
-    store.config = { UI: { Scrollback: 5000 } } as any;
+    store.config = testConfig();
+    store.activeCharacterProfileID = defaultProfileID;
     store.debug = false;
     store.rebuildTabs([]);
     store.accounts = [];
@@ -86,9 +109,60 @@ describe("store connection routing", () => {
   });
 
   it("applies saved variable changes to the local config", () => {
-    store.config = { UI: { Scrollback: 5000 }, Commands: { Variables: {} } } as any;
+    store.config = testConfig();
     store.apply([{ kind: Kind.Variable, variable: { name: "speaker", value: "Apula" } }]);
-    expect(store.config?.Commands.Variables).toEqual({ speaker: "Apula" });
+    expect(store.characterProfile()?.Variables).toEqual({ speaker: "Apula" });
+  });
+
+  it("switches character-scoped state when the game selects a profile", () => {
+    store.config = testConfig({ target: "default" });
+    store.config!.CharacterProfiles.Profiles.push({
+      ID: marcusProfileID,
+      Name: "Marcus",
+      Account: "playerone",
+      CharacterNumber: 1,
+      Variables: { target: "bandit" },
+      CustomViews: [{ ID: "marcus-view", Name: "Marcus chat", Visible: true, EchoCommands: false, Rules: [] }],
+      ActionSets: [{ ID: "marcus-actions", Name: "Marcus actions", Buttons: [] }],
+      SelectedActionSetID: "marcus-actions",
+    });
+    store.apply(conn("connected"));
+
+    store.apply([{
+      kind: Kind.CharacterProfile,
+      characterProfile: { id: marcusProfileID, name: "Marcus" },
+    }]);
+
+    expect(store.activeCharacterProfileID).toBe(marcusProfileID);
+    expect(store.characterProfile()?.Variables).toEqual({ target: "bandit" });
+    expect(store.selectedActionSetID).toBe("marcus-actions");
+    expect(store.tabs.some((tab) => tab.id === "marcus-view")).toBe(true);
+  });
+
+  it("routes custom views using live variables and shared wildcard escapes", () => {
+    store.config = testConfig({ target: "Apula" });
+    store.rebuildTabs([{ Name: "Loot", Visible: true, EchoCommands: true, Rules: [
+      { Pattern: "${target} dropped \\*", Include: true, Active: true },
+    ] }] as any);
+    store.apply(conn("connected"));
+    store.apply([{ kind: Kind.Text, text: { text: "Apula dropped *", segments: [{ text: "Apula dropped *" }], isEcho: false, timestamp: 0 } }]);
+    expect(store.tabs.find((tab) => tab.name === "Loot")?.lines).toHaveLength(1);
+
+    store.characterProfile()!.Variables!.target = "Constantine";
+    store.apply([{ kind: Kind.Text, text: { text: "Apula dropped *", segments: [{ text: "Apula dropped *" }], isEcho: false, timestamp: 0 } }]);
+    expect(store.tabs.find((tab) => tab.name === "Loot")?.lines).toHaveLength(1);
+  });
+
+  it("preserves a Custom View buffer across rename and placement rebuild", () => {
+    store.config = testConfig();
+    store.rebuildTabs([{ ID: "custom-chat", Name: "Chat", Visible: true, EchoCommands: false, Rules: [] }]);
+    store.apply(conn("connected"));
+    store.apply([{ kind: Kind.Text, text: { text: "hello", segments: [{ text: "hello" }], isEcho: false, timestamp: 0 } }]);
+
+    store.rebuildTabs([{ ID: "custom-chat", Name: "Renamed", Visible: true, EchoCommands: false, Rules: [] }]);
+    const view = store.viewByID("custom-chat");
+    expect(view?.name).toBe("Renamed");
+    expect(view?.lines.map((line) => line.segments[0].text)).toEqual(["hello"]);
   });
 
   it("installs the complete web fixture atomically and idempotently", () => {
@@ -111,7 +185,7 @@ describe("store connection routing", () => {
   });
 
   it("caps scrollback with a batched front-trim (never far above cap, newest kept)", () => {
-    store.config = { UI: { Scrollback: 50 } } as any;
+    store.config = testConfig({}, 50);
     store.rebuildTabs([]);
     store.apply(conn("connected"));
 

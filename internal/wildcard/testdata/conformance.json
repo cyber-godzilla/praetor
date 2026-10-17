@@ -1,0 +1,20 @@
+[
+  {"name":"literal substring","pattern":"gold ring","text":"You see a gold ring here.","scope":"substring","match":true,"spans":["gold ring"]},
+  {"name":"case insensitive","pattern":"GOLD","text":"a gold ring","scope":"substring","match":true,"spans":["gold"]},
+  {"name":"regex punctuation is literal","pattern":"price (10.5)+","text":"The price (10.5)+ is exact.","scope":"substring","match":true,"spans":["price (10.5)+"]},
+  {"name":"anchors are literal","pattern":"^ready$","text":"status ^ready$ now","scope":"substring","match":true,"spans":["^ready$"]},
+  {"name":"star matches zero","pattern":"gold*ring","text":"goldring","scope":"substring","match":true,"spans":["goldring"]},
+  {"name":"star is shortest","pattern":"a*b","text":"a12b34b","scope":"substring","match":true,"spans":["a12b"]},
+  {"name":"question matches one Unicode character","pattern":"c?t","text":"a c🐈t naps","scope":"substring","match":true,"spans":["c🐈t"]},
+  {"name":"question requires a character","pattern":"c?t","text":"ct","scope":"substring","match":false,"spans":[]},
+  {"name":"escaped star","pattern":"file\\*name","text":"file*name and fileXname","scope":"substring","match":true,"spans":["file*name"]},
+  {"name":"escaped question","pattern":"who\\?","text":"who? whoX","scope":"substring","match":true,"spans":["who?"]},
+  {"name":"escaped backslash","pattern":"path\\\\name","text":"path\\name","scope":"substring","match":true,"spans":["path\\name"]},
+  {"name":"whole name success","pattern":"A * cloak","text":"A man in a hooded cloak","scope":"whole","match":true,"spans":["A man in a hooded cloak"]},
+  {"name":"whole name rejects substring","pattern":"Apula","text":"Lady Apula","scope":"whole","match":false,"spans":[]},
+  {"name":"multiple nonoverlapping","pattern":"gem?","text":"gem1 gem2 gemX","scope":"substring","match":true,"spans":["gem1","gem2","gemX"]},
+  {"name":"only star highlights line","pattern":"*","text":"complete line","scope":"substring","match":true,"spans":["complete line"]},
+  {"name":"only star empty line has no span","pattern":"*","text":"","scope":"substring","match":true,"spans":[]},
+  {"name":"empty pattern matches nothing","pattern":"","text":"anything","scope":"substring","match":false,"spans":[]},
+  {"name":"wildcard does not cross newline","pattern":"one*two","text":"one\ntwo","scope":"substring","match":false,"spans":[]}
+]

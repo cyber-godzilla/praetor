@@ -9,7 +9,7 @@
     return { ID: s.ID, Name: s.Name, Buttons: (s.Buttons ?? []).map((b) => ({ ...b })) };
   }
 
-  let sets = $state<ActionSet[]>((store.config?.UI?.ActionSets ?? []).map(clone));
+  let sets = $state<ActionSet[]>((store.characterProfile()?.ActionSets ?? []).map(clone));
   let sel = $state(0);
   let newSetName = $state("");
   let saving = $state(false);
@@ -60,10 +60,12 @@
     }));
     try {
       await api.setActionSets(cleaned);
-      store.config!.UI.ActionSets = cleaned;
+      store.characterProfile()!.ActionSets = cleaned;
       // Deletes/reorders here can leave the sidebar's index pointing at a
       // different set; reset it so it can't mis-target.
-      store.actionSetIndex = 0;
+      const selected = cleaned.find((set) => set.ID === store.selectedActionSetID) ?? cleaned[0];
+      store.selectedActionSetID = selected?.ID ?? "";
+      store.characterProfile()!.SelectedActionSetID = selected?.ID ?? "";
       store.addToast("Action sets", "Saved");
       store.openModal = null;
     } catch (e) {

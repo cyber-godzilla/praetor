@@ -391,6 +391,57 @@ func TestSpeechColorThenColorWordsPrecedence(t *testing.T) {
 	}
 }
 
+func TestWithWoundHighlightsStylesGameAndSuppressedText(t *testing.T) {
+	cfg := config.WoundHighlightConfig{
+		Enabled: true, Cuts: "red", Bruises: "purple", Punctures: "blue", Burns: "orange",
+	}
+	ev := types.GameTextEvent{
+		Text:   "She has a severe cut on her arm.",
+		Styled: []types.StyledSegment{{Text: "She has a severe cut on her arm."}},
+	}
+	out := withWoundHighlights(ev, cfg).(types.GameTextEvent)
+	if !containsStyledText(out.Styled, "severe cut", "#ef4444", true) {
+		t.Fatalf("wound-highlighted game text = %+v", out.Styled)
+	}
+
+	inspection := types.GameTextEvent{
+		Text: "His right arm is badly scratched. His right shoulder has a large bruise.",
+		Styled: []types.StyledSegment{{
+			Text: "His right arm is badly scratched. His right shoulder has a large bruise.",
+		}},
+	}
+	inspectionOut := withWoundHighlights(inspection, cfg).(types.GameTextEvent)
+	if !containsStyledText(inspectionOut.Styled, "badly scratched", "#b91c1c", false) {
+		t.Fatalf("cut inspection text = %+v", inspectionOut.Styled)
+	}
+	if !containsStyledText(inspectionOut.Styled, "large bruise", "#7e22ce", false) {
+		t.Fatalf("bruise inspection text = %+v", inspectionOut.Styled)
+	}
+
+	suppressed := types.SuppressedGameTextEvent{
+		OriginalText:   "He has a faint wound on his hand.",
+		OriginalStyled: []types.StyledSegment{{Text: "He has a faint wound on his hand."}},
+	}
+	suppressedOut := withWoundHighlights(suppressed, cfg).(types.SuppressedGameTextEvent)
+	if !containsStyledText(suppressedOut.OriginalStyled, "faint wound", "#1e3a8a", false) {
+		t.Fatalf("wound-highlighted suppressed text = %+v", suppressedOut.OriginalStyled)
+	}
+
+	if _, ok := withWoundHighlights(types.ConnectedEvent{}, cfg).(types.ConnectedEvent); !ok {
+		t.Fatal("non-text event did not pass through")
+	}
+}
+
+func containsStyledText(segments []types.StyledSegment, text, color string, bold bool) bool {
+	var joined string
+	for _, segment := range segments {
+		if segment.Color == color && segment.Bold == bold {
+			joined += segment.Text
+		}
+	}
+	return joined == text
+}
+
 func TestToWireIncludesRecognizedSpeechSpeaker(t *testing.T) {
 	wire, ok := toWire(types.GameTextEvent{
 		Text:   `A man in a hooded cloak murmurs, "Leave."`,
@@ -559,9 +610,13 @@ func TestProcessBatch_FirstConnectionShowsNewUserWelcomeOnce(t *testing.T) {
 		if !ok {
 			continue
 		}
-		for i, w := range batch {
+		seenConnected := false
+		for _, w := range batch {
+			if w.Kind == KindConn && w.Conn != nil && w.Conn.State == "connected" {
+				seenConnected = true
+			}
 			if w.Kind == KindOpenMenu && w.OpenMenu == "new-user" {
-				if i == 0 || batch[i-1].Kind != KindConn || batch[i-1].Conn == nil || batch[i-1].Conn.State != "connected" {
+				if !seenConnected {
 					t.Error("new-user modal request must follow the connected event in the same batch")
 				}
 			}
@@ -618,16 +673,18 @@ func TestSetActionSets(t *testing.T) {
 	}
 
 	// In-memory config updated.
-	if len(deps.Config.UI.ActionSets) != 1 || deps.Config.UI.ActionSets[0].Name != "Combat" {
-		t.Fatalf("in-memory config not updated: %+v", deps.Config.UI.ActionSets)
+	actionSets := deps.Config.DefaultCharacterProfile().ActionSets
+	if len(actionSets) != 1 || actionSets[0].Name != "Combat" {
+		t.Fatalf("in-memory config not updated: %+v", actionSets)
 	}
 	// Persisted to disk.
 	got, err := config.Load(deps.ConfigPath)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
 	}
-	if len(got.UI.ActionSets) != 1 || got.UI.ActionSets[0].Buttons[0].Command != "attack" {
-		t.Fatalf("persisted config wrong: %+v", got.UI.ActionSets)
+	persistedSets := got.DefaultCharacterProfile().ActionSets
+	if len(persistedSets) != 1 || persistedSets[0].Buttons[0].Command != "attack" {
+		t.Fatalf("persisted config wrong: %+v", persistedSets)
 	}
 }
 
@@ -649,14 +706,15 @@ func TestSetActionSetsNormalizesIdentityBeforePersisting(t *testing.T) {
 	}
 
 	seen := map[string]bool{}
-	for i, set := range deps.Config.UI.ActionSets {
+	actionSets := deps.Config.DefaultCharacterProfile().ActionSets
+	for i, set := range actionSets {
 		if set.ID == "" || seen[set.ID] {
-			t.Fatalf("ActionSets[%d] has invalid normalized ID %q: %+v", i, set.ID, deps.Config.UI.ActionSets)
+			t.Fatalf("ActionSets[%d] has invalid normalized ID %q: %+v", i, set.ID, actionSets)
 		}
 		seen[set.ID] = true
 	}
-	if deps.Config.UI.ActionSets[0].ID != "existing" {
-		t.Fatalf("existing unique ID changed to %q", deps.Config.UI.ActionSets[0].ID)
+	if actionSets[0].ID != "existing" {
+		t.Fatalf("existing unique ID changed to %q", actionSets[0].ID)
 	}
 }
 
@@ -699,14 +757,14 @@ func TestMobileWebSettingsPersist(t *testing.T) {
 func TestGetConfigReturnsDeepSnapshot(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Scripts = []string{"one"}
-	cfg.UI.CustomTabs = []config.CustomTabConfig{{Name: "Original"}}
+	cfg.DefaultCharacterProfile().CustomViews = []config.CustomTabConfig{{Name: "Original"}}
 	app := NewGuiApp(&Deps{Config: cfg}, &captureEmitter{})
 
 	snapshot := app.GetConfig()
 	snapshot.Scripts[0] = "changed"
-	snapshot.UI.CustomTabs[0].Name = "Changed"
+	snapshot.DefaultCharacterProfile().CustomViews[0].Name = "Changed"
 
-	if cfg.Scripts[0] != "one" || cfg.UI.CustomTabs[0].Name != "Original" {
+	if cfg.Scripts[0] != "one" || cfg.DefaultCharacterProfile().CustomViews[0].Name != "Original" {
 		t.Fatalf("GetConfig returned mutable config storage: %#v", cfg)
 	}
 }

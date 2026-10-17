@@ -9,6 +9,8 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
+	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
 
 // Highlight style definitions: red, gold, green, blue.
@@ -37,6 +39,11 @@ type HighlightsManager struct {
 	editBuf    string // buffer for new pattern input
 	width      int
 	height     int
+	variables  map[string]string
+}
+
+func (hm *HighlightsManager) SetVariables(values map[string]string) {
+	hm.variables = clonePreviewVariables(values)
 }
 
 func NewHighlightsManager(highlights []config.HighlightConfig) HighlightsManager {
@@ -245,6 +252,13 @@ func (hm HighlightsManager) View() string {
 			b.WriteByte('\n')
 		}
 	}
+	previewPattern := hm.editBuf
+	if !hm.editing && hm.cursor < len(hm.highlights) {
+		previewPattern = hm.highlights[hm.cursor].Pattern
+	}
+	if preview := expansionPreview(previewPattern, hm.variables, true); preview != "" {
+		b.WriteString("\n" + lipgloss.NewStyle().Foreground(colorDim).Render(preview))
+	}
 
 	return lipgloss.Place(hm.width, hm.height, lipgloss.Center, lipgloss.Center,
 		boxStyle.Render(b.String()))
@@ -260,7 +274,7 @@ type highlightSpan struct {
 // a pattern spanning a colorword/style boundary — "gold ring", where colorwords
 // puts "gold" in its own segment — never matched, silently breaking the
 // feature's core loot use case.
-func applyHighlights(segments []types.StyledSegment, highlights []config.HighlightConfig) []types.StyledSegment {
+func applyHighlights(segments []types.StyledSegment, highlights []config.HighlightConfig, variables map[string]string) []types.StyledSegment {
 	// Collect active highlights.
 	var active []config.HighlightConfig
 	for _, h := range highlights {
@@ -279,7 +293,7 @@ func applyHighlights(segments []types.StyledSegment, highlights []config.Highlig
 	}
 	text := full.String()
 
-	spans := findHighlightSpans(textutil.ToLowerASCII(text), active)
+	spans := findHighlightSpans(text, active, variables)
 	if len(spans) == 0 {
 		return segments
 	}
@@ -326,30 +340,23 @@ func applyHighlights(segments []types.StyledSegment, highlights []config.Highlig
 	return result
 }
 
-// findHighlightSpans returns non-overlapping match spans over the (length-
-// preserving folded) full line. Precedence is config order: an earlier-
-// configured pattern's match wins over a later pattern that would overlap it.
-// The ASCII fold keeps byte offsets valid against the original text (a fold that
-// changed byte length would slice out of range or tear a rune — see
-// internal/textutil.ToLowerASCII).
-func findHighlightSpans(lower string, highlights []config.HighlightConfig) []highlightSpan {
+// findHighlightSpans returns non-overlapping wildcard match spans over the
+// original UTF-8 line. Precedence is config order: an earlier-configured
+// pattern's match wins over a later pattern that would overlap it.
+func findHighlightSpans(text string, highlights []config.HighlightConfig, variables map[string]string) []highlightSpan {
 	var accepted []highlightSpan
 	for _, h := range highlights {
-		pattern := textutil.ToLowerASCII(h.Pattern)
-		if pattern == "" {
+		expanded, err := sharedvars.Expand(h.Pattern, variables)
+		if err != nil || expanded == "" {
 			continue
 		}
-		offset := 0
-		for {
-			idx := strings.Index(lower[offset:], pattern)
-			if idx < 0 {
-				break
-			}
-			start := offset + idx
-			end := start + len(pattern)
-			offset = end
-			if !overlapsAny(accepted, start, end) {
-				accepted = append(accepted, highlightSpan{start, end, h.Style})
+		pattern, err := wildcard.Compile(expanded, wildcard.Substring)
+		if err != nil {
+			continue
+		}
+		for _, span := range pattern.FindAll(text) {
+			if !overlapsAny(accepted, span.Start, span.End) {
+				accepted = append(accepted, highlightSpan{span.Start, span.End, h.Style})
 			}
 		}
 	}

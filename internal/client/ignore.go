@@ -4,6 +4,9 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
+	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
 
 // IgnoreChannel identifies which channel matched in IgnoreFilter.Match.
@@ -32,8 +35,9 @@ func (c IgnoreChannel) String() string {
 // are independent — an entry on one does not affect the other.
 type IgnoreFilter struct {
 	mu     sync.RWMutex
-	ooc    map[string]struct{}
-	think  map[string]struct{}
+	ooc    []string
+	think  []string
+	values map[string]string
 	oocRe  *regexp.Regexp
 	thnkRe *regexp.Regexp
 }
@@ -41,41 +45,36 @@ type IgnoreFilter struct {
 // NewIgnoreFilter returns an empty filter with the regexes compiled.
 func NewIgnoreFilter() *IgnoreFilter {
 	return &IgnoreFilter{
-		ooc:    map[string]struct{}{},
-		think:  map[string]struct{}{},
+		values: map[string]string{},
 		oocRe:  regexp.MustCompile(`^<\d{1,2}:\d{2}\s*[apAP][mM]\s+OOC>\s+([A-Za-z][A-Za-z0-9'\-]*)\b`),
 		thnkRe: regexp.MustCompile(`^<([A-Za-z][A-Za-z0-9'\-]*)\s+thinks aloud:`),
 	}
 }
 
-// SetOOC replaces the OOC ignorelist with the given account names.
-// Names are stored lowercased for case-insensitive lookup.
+// SetOOC replaces the OOC ignorelist with whole-name wildcard patterns.
 func (f *IgnoreFilter) SetOOC(names []string) {
-	m := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		m[strings.ToLower(n)] = struct{}{}
-	}
 	f.mu.Lock()
-	f.ooc = m
+	f.ooc = cleanPatterns(names)
 	f.mu.Unlock()
 }
 
-// SetThink replaces the Think ignorelist with the given character names.
+// SetThink replaces the Think ignorelist with whole-name wildcard patterns.
 func (f *IgnoreFilter) SetThink(names []string) {
-	m := make(map[string]struct{}, len(names))
-	for _, n := range names {
-		n = strings.TrimSpace(n)
-		if n == "" {
-			continue
-		}
-		m[strings.ToLower(n)] = struct{}{}
+	f.mu.Lock()
+	f.think = cleanPatterns(names)
+	f.mu.Unlock()
+}
+
+// SetVariables replaces the live variable snapshot used when matching list
+// entries. Patterns are expanded at match time so edits take effect without
+// rebuilding the lists.
+func (f *IgnoreFilter) SetVariables(values map[string]string) {
+	cloned := make(map[string]string, len(values))
+	for name, value := range values {
+		cloned[name] = value
 	}
 	f.mu.Lock()
-	f.think = m
+	f.values = cloned
 	f.mu.Unlock()
 }
 
@@ -87,17 +86,41 @@ func (f *IgnoreFilter) Match(text string) (IgnoreChannel, string, bool) {
 	defer f.mu.RUnlock()
 	if len(f.ooc) > 0 {
 		if m := f.oocRe.FindStringSubmatch(text); len(m) == 2 {
-			if _, hit := f.ooc[strings.ToLower(m[1])]; hit {
+			if matchesIgnorePattern(f.ooc, m[1], f.values) {
 				return IgnoreChannelOOC, m[1], true
 			}
 		}
 	}
 	if len(f.think) > 0 {
 		if m := f.thnkRe.FindStringSubmatch(text); len(m) == 2 {
-			if _, hit := f.think[strings.ToLower(m[1])]; hit {
+			if matchesIgnorePattern(f.think, m[1], f.values) {
 				return IgnoreChannelThink, m[1], true
 			}
 		}
 	}
 	return IgnoreChannelNone, "", false
+}
+
+func cleanPatterns(names []string) []string {
+	patterns := make([]string, 0, len(names))
+	for _, name := range names {
+		if name = strings.TrimSpace(name); name != "" {
+			patterns = append(patterns, name)
+		}
+	}
+	return patterns
+}
+
+func matchesIgnorePattern(patterns []string, name string, values map[string]string) bool {
+	for _, raw := range patterns {
+		expanded, err := sharedvars.Expand(raw, values)
+		if err != nil || expanded == "" {
+			continue
+		}
+		pattern, err := wildcard.Compile(expanded, wildcard.Whole)
+		if err == nil && pattern.Match(name) {
+			return true
+		}
+	}
+	return false
 }

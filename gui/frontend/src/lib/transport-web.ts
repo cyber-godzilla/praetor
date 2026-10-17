@@ -765,19 +765,24 @@ export const settingsOperations: Record<string, string> = {
   SetSessionLogging: "session-logging",
   SetLogPath: "log-path",
   SetDisplayMode: "display-mode",
+  SetGUISidebarsVisible: "gui-sidebars-visible",
   SetNumpadNavigation: "numpad-navigation",
   SetMinimapScale: "minimap-scale",
   SetCompassScale: "compass-scale",
   SetOutputFontSize: "output-font-size",
   SetGUILayout: "gui-layout",
+  SetViewLayout: "view-layout",
+  SetSelectedActionSetID: "selected-action-set",
   SetCRTEffects: "crt-effects",
   SetHighlights: "highlights",
   SetSpeechColors: "speech-colors",
+  SetWoundHighlights: "wound-highlights",
   SetCustomTabs: "custom-tabs",
   SetActionSets: "action-sets",
   SetQuickCycleModes: "quick-cycle-modes",
   SetHighPriority: "high-priority",
   SetInputVariables: "input-variables",
+  SetCharacterProfiles: "character-profiles",
   SetIgnoreOOC: "ignore-ooc",
   SetIgnoreThink: "ignore-think",
   SetNotifications: "notifications",
@@ -845,6 +850,9 @@ function settingPayload(method: string, args: any[]): unknown {
   }
   if (method === "SetGUILayout") {
     return { sidebarWidth: args[0], minimapHeight: args[1] };
+  }
+  if (method === "SetViewLayout") {
+    return { layout: args[0], customViews: args[1] };
   }
   return args[0];
 }
