@@ -172,6 +172,7 @@ export interface ActionButton {
 }
 
 export interface ActionSet {
+  ID: string;
   Name: string;
   Buttons: ActionButton[] | null;
 }

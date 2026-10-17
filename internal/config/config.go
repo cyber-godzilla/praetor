@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/cyber-godzilla/praetor/internal/atomicfile"
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
+	"github.com/cyber-godzilla/praetor/internal/variables"
 	"gopkg.in/yaml.v3"
 )
 
@@ -328,6 +330,7 @@ type TabRuleConfig struct {
 // ActionSet is a named group of quick-action buttons shown in the sidebar
 // Actions tab. Users manage sets/buttons via the Action Sets editor.
 type ActionSet struct {
+	ID      string         `yaml:"id"`
 	Name    string         `yaml:"name"`
 	Buttons []ActionButton `yaml:"buttons"`
 }
@@ -717,6 +720,7 @@ func (c *Config) Validate() error {
 	default:
 		c.UI.NumpadNavigation = "numlock"
 	}
+	c.UI.ActionSets = NormalizeActionSetIDs(c.UI.ActionSets)
 
 	// Highlights
 	validStyles := map[string]bool{"red": true, "gold": true, "green": true, "blue": true}
@@ -780,18 +784,45 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// NormalizeActionSetIDs returns a shallow copy that preserves the first
+// occurrence of every non-empty ID and deterministically repairs legacy,
+// missing, or duplicate IDs. The deterministic fallback keeps a legacy config
+// stable across repeated loads even before the application next saves the
+// migrated representation.
+func NormalizeActionSetIDs(sets []ActionSet) []ActionSet {
+	normalized := append([]ActionSet(nil), sets...)
+	seen := make(map[string]bool, len(normalized))
+	for i := range normalized {
+		id := strings.TrimSpace(normalized[i].ID)
+		if id != "" && !seen[id] {
+			normalized[i].ID = id
+			seen[id] = true
+			continue
+		}
+		for attempt := 0; ; attempt++ {
+			id = actionSetMigrationID(normalized[i], i, attempt)
+			if !seen[id] {
+				normalized[i].ID = id
+				seen[id] = true
+				break
+			}
+		}
+	}
+	return normalized
+}
+
+func actionSetMigrationID(set ActionSet, index, attempt int) string {
+	hash := sha256.New()
+	fmt.Fprintf(hash, "praetor-action-set\x00%d\x00%d\x00%s\x00", index, attempt, set.Name)
+	for _, button := range set.Buttons {
+		fmt.Fprintf(hash, "%s\x00%s\x00", button.Label, button.Command)
+	}
+	return fmt.Sprintf("action-%x", hash.Sum(nil)[:12])
+}
+
 // ValidVariableName reports whether name can be referenced as ${name} or as the
 // name portion of ${name:fallback}. Keeping the grammar identifier-like makes references
 // unambiguous and portable across the GUI, YAML, and future clients.
 func ValidVariableName(name string) bool {
-	if name == "" {
-		return false
-	}
-	for i, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
-			continue
-		}
-		return false
-	}
-	return true
+	return variables.ValidName(name)
 }

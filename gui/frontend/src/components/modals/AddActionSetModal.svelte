@@ -3,6 +3,7 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
   import type { ActionSet } from "../../lib/types";
+  import { newActionSetID } from "../../lib/actions";
 
   let name = $state("");
   let saving = $state(false);
@@ -13,7 +14,7 @@
     saving = true;
     const sets: ActionSet[] = [
       ...(store.config?.UI?.ActionSets ?? []),
-      { Name: name.trim(), Buttons: [] },
+      { ID: newActionSetID(), Name: name.trim(), Buttons: [] },
     ];
     try {
       await api.setActionSets(sets);

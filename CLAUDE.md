@@ -42,6 +42,7 @@ praetor/
 │   ├── types/                       # Shared event types
 │   ├── ui/                          # Bubbletea TUI components (secondary shell)
 │   ├── update/                      # GitHub-releases update check (GUI startup toast)
+│   ├── variables/                   # Shared non-recursive saved-variable expansion contract
 │   ├── version/                     # Embedded VERSION file — single version source of truth
 │   └── wiki/                        # TEC wiki bookmark + map-page lookups
 ├── packaging/                       # Release assets (deb/rpm, homebrew, chocolatey, .desktop)

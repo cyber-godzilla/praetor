@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
 )
 
 // MaxCommands limits one typed line so an accidental paste cannot enqueue an
@@ -696,38 +697,5 @@ func consumeQuoted(input string) (value, rest string, err error) {
 // This separate operation is used for multi-line input and /send files, where
 // variables are supported but ;; and && must remain ordinary text.
 func ExpandVariables(input string, variables map[string]string) (string, error) {
-	var out strings.Builder
-	out.Grow(len(input))
-	for i := 0; i < len(input); i++ {
-		if input[i] == '\\' && i+2 < len(input) && input[i+1] == '$' &&
-			(input[i+2] == '{' || input[i+2] == '(') {
-			out.WriteByte('$')
-			out.WriteByte(input[i+2])
-			i += 2
-			continue
-		}
-		if input[i] != '$' || i+1 >= len(input) || input[i+1] != '{' {
-			out.WriteByte(input[i])
-			continue
-		}
-		end := strings.IndexByte(input[i+2:], '}')
-		if end < 0 {
-			return "", fmt.Errorf("unterminated variable reference at character %d", i+1)
-		}
-		end += i + 2
-		reference := input[i+2 : end]
-		name, fallback, hasFallback := strings.Cut(reference, ":")
-		if !config.ValidVariableName(name) {
-			return "", fmt.Errorf("invalid variable reference %q", name)
-		}
-		value, ok := variables[name]
-		if (!ok || value == "") && hasFallback {
-			value = fallback
-		} else if !ok {
-			return "", fmt.Errorf("unknown variable %q", name)
-		}
-		out.WriteString(value)
-		i = end
-	}
-	return out.String(), nil
+	return sharedvars.Expand(input, variables)
 }

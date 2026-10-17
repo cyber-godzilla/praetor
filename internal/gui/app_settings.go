@@ -394,6 +394,7 @@ func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 
 // SetActionSets replaces the sidebar quick-action sets.
 func (a *GuiApp) SetActionSets(sets []config.ActionSet) error {
+	sets = config.NormalizeActionSetIDs(sets)
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
 	a.cfg().UI.ActionSets = sets

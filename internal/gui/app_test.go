@@ -631,6 +631,35 @@ func TestSetActionSets(t *testing.T) {
 	}
 }
 
+func TestSetActionSetsNormalizesIdentityBeforePersisting(t *testing.T) {
+	dir := t.TempDir()
+	deps := &Deps{
+		Config:     config.Defaults(),
+		ConfigPath: filepath.Join(dir, "config.yaml"),
+	}
+	a := NewGuiApp(deps, &captureEmitter{})
+
+	sets := []config.ActionSet{
+		{ID: "existing", Name: "One"},
+		{ID: "existing", Name: "Two"},
+		{Name: "Three"},
+	}
+	if err := a.SetActionSets(sets); err != nil {
+		t.Fatalf("SetActionSets: %v", err)
+	}
+
+	seen := map[string]bool{}
+	for i, set := range deps.Config.UI.ActionSets {
+		if set.ID == "" || seen[set.ID] {
+			t.Fatalf("ActionSets[%d] has invalid normalized ID %q: %+v", i, set.ID, deps.Config.UI.ActionSets)
+		}
+		seen[set.ID] = true
+	}
+	if deps.Config.UI.ActionSets[0].ID != "existing" {
+		t.Fatalf("existing unique ID changed to %q", deps.Config.UI.ActionSets[0].ID)
+	}
+}
+
 func TestMobileWebSettingsPersist(t *testing.T) {
 	dir := t.TempDir()
 	deps := &Deps{

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cycleIndex } from "./actions";
+import { cycleIndex, newActionSetID } from "./actions";
 
 describe("cycleIndex", () => {
   it("advances forward", () => expect(cycleIndex(0, 1, 3)).toBe(1));
@@ -7,4 +7,14 @@ describe("cycleIndex", () => {
   it("wraps backward past the start", () => expect(cycleIndex(0, -1, 3)).toBe(2));
   it("stays put with a single item", () => expect(cycleIndex(0, 1, 1)).toBe(0));
   it("returns 0 for an empty list", () => expect(cycleIndex(0, -1, 0)).toBe(0));
+});
+
+describe("newActionSetID", () => {
+  it("creates non-empty unique opaque IDs", () => {
+    const first = newActionSetID();
+    const second = newActionSetID();
+    expect(first).toMatch(/^action-[a-zA-Z0-9-]+$/);
+    expect(second).toMatch(/^action-[a-zA-Z0-9-]+$/);
+    expect(second).not.toBe(first);
+  });
 });

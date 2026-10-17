@@ -1031,6 +1031,94 @@ func TestConfigActionSetsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadMigratesLegacyActionSetsToStableUniqueIDs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	legacy := []byte(`ui:
+  action_sets:
+    - name: Combat
+      buttons:
+        - label: Attack
+          command: attack
+    - name: Travel
+      buttons: []
+`)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	first, err := Load(path)
+	if err != nil {
+		t.Fatalf("first Load: %v", err)
+	}
+	second, err := Load(path)
+	if err != nil {
+		t.Fatalf("second Load: %v", err)
+	}
+	if len(first.UI.ActionSets) != 2 || len(second.UI.ActionSets) != 2 {
+		t.Fatalf("ActionSets lengths = %d, %d; want 2", len(first.UI.ActionSets), len(second.UI.ActionSets))
+	}
+	if first.UI.ActionSets[0].ID == "" || first.UI.ActionSets[1].ID == "" {
+		t.Fatalf("legacy IDs were not assigned: %+v", first.UI.ActionSets)
+	}
+	if first.UI.ActionSets[0].ID == first.UI.ActionSets[1].ID {
+		t.Fatalf("legacy IDs are not unique: %+v", first.UI.ActionSets)
+	}
+	for i := range first.UI.ActionSets {
+		if first.UI.ActionSets[i].ID != second.UI.ActionSets[i].ID {
+			t.Fatalf("legacy ID[%d] changed between loads: %q != %q", i, first.UI.ActionSets[i].ID, second.UI.ActionSets[i].ID)
+		}
+	}
+}
+
+func TestValidateRepairsMissingAndDuplicateActionSetIDs(t *testing.T) {
+	cfg := Defaults()
+	cfg.UI.ActionSets = []ActionSet{
+		{ID: "kept", Name: "One"},
+		{ID: "kept", Name: "Two"},
+		{Name: "Three"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if cfg.UI.ActionSets[0].ID != "kept" {
+		t.Fatalf("first unique ID = %q, want kept", cfg.UI.ActionSets[0].ID)
+	}
+	seen := map[string]bool{}
+	for i, set := range cfg.UI.ActionSets {
+		if set.ID == "" {
+			t.Fatalf("ActionSets[%d] has empty ID", i)
+		}
+		if seen[set.ID] {
+			t.Fatalf("ActionSets[%d] retains duplicate ID %q", i, set.ID)
+		}
+		seen[set.ID] = true
+	}
+}
+
+func TestActionSetIDSurvivesRenameAndReorderRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	cfg := Defaults()
+	cfg.UI.ActionSets = []ActionSet{
+		{ID: "set-one", Name: "One"},
+		{ID: "set-two", Name: "Two"},
+	}
+	cfg.UI.ActionSets[0].Name = "Renamed"
+	cfg.UI.ActionSets[0], cfg.UI.ActionSets[1] = cfg.UI.ActionSets[1], cfg.UI.ActionSets[0]
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.UI.ActionSets[0].ID != "set-two" || got.UI.ActionSets[1].ID != "set-one" {
+		t.Fatalf("IDs after rename/reorder = %+v", got.UI.ActionSets)
+	}
+}
+
 // TestSaveLoadListsRoundTrip guards cross-session persistence of the
 // StringList-backed settings edited from the GUI/TUI menus: the ignore lists,
 // high-priority commands, and script directories must survive Save -> Load

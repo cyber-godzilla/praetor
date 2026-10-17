@@ -3,9 +3,10 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
   import type { ActionSet } from "../../lib/types";
+  import { newActionSetID } from "../../lib/actions";
 
   function clone(s: ActionSet): ActionSet {
-    return { Name: s.Name, Buttons: (s.Buttons ?? []).map((b) => ({ ...b })) };
+    return { ID: s.ID, Name: s.Name, Buttons: (s.Buttons ?? []).map((b) => ({ ...b })) };
   }
 
   let sets = $state<ActionSet[]>((store.config?.UI?.ActionSets ?? []).map(clone));
@@ -18,7 +19,7 @@
   function addSet() {
     const n = newSetName.trim();
     if (!n) return;
-    sets = [...sets, { Name: n, Buttons: [] }];
+    sets = [...sets, { ID: newActionSetID(), Name: n, Buttons: [] }];
     sel = sets.length - 1;
     newSetName = "";
   }
@@ -53,6 +54,7 @@
     // Drop fully-blank buttons so they don't render as empty tiles that send an
     // empty command.
     const cleaned = sets.map((s) => ({
+      ID: s.ID,
       Name: s.Name,
       Buttons: (s.Buttons ?? []).filter((b) => b.Label.trim() !== "" || b.Command.trim() !== ""),
     }));

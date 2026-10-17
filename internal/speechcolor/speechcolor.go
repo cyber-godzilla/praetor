@@ -10,9 +10,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
-	"github.com/cyber-godzilla/praetor/internal/commandinput"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/types"
+	sharedvars "github.com/cyber-godzilla/praetor/internal/variables"
 )
 
 var characterPatternCache sync.Map // map[string]*regexp.Regexp
@@ -63,7 +63,7 @@ func Apply(segments []types.StyledSegment, text string, rules []config.SpeechCol
 }
 
 func matchesCharacter(pattern, speaker string, variables map[string]string) bool {
-	expanded, err := commandinput.ExpandVariables(strings.TrimSpace(pattern), variables)
+	expanded, err := sharedvars.Expand(strings.TrimSpace(pattern), variables)
 	if err != nil || expanded == "" {
 		return false
 	}
