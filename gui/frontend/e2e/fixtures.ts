@@ -39,6 +39,7 @@ export function makeConfig(): AppConfig {
     Commands: { SemicolonDelayMS: 900, UnbusyDelayMS: 100, HighPriority: [] },
     CharacterProfiles: {
       DefaultID: DEFAULT_CHARACTER_PROFILE_ID,
+      AutoSwitch: true,
       Profiles: [{
         ID: DEFAULT_CHARACTER_PROFILE_ID,
         Name: "Default",
@@ -77,6 +78,7 @@ export function makeConfig(): AppConfig {
           { ComponentID: COMPONENT_IDS.metrics, SidebarHeight: 0, Collapsed: false },
           { ComponentID: COMPONENT_IDS.debug, SidebarHeight: 0, Collapsed: false },
         ],
+        Bench: [],
         Sidebars: [
           {
             ID: "5afa1264-4ce7-41d0-b7ea-2050e0d34b07", Name: "Sidebar 1", Enabled: true, Side: "right", Width: 260,
@@ -144,6 +146,14 @@ export function makeConfig(): AppConfig {
         FatigueBelow: { Enabled: false, Threshold: 10 },
         Patterns: [],
       },
+	  Discord: {
+		Enabled: false,
+		WebhookURL: "",
+		Health: false,
+		Fatigue: false,
+		Patterns: false,
+		Scripts: false,
+	  },
     },
     Logging: { App: { Retain: false }, Session: { Enabled: false, Path: "" } },
     Updates: { Check: false },

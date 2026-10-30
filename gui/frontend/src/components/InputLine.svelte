@@ -784,6 +784,46 @@
     }
   }
 
+  function onWindowClick(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (store.characterPickerOpen && !target?.closest(".character-picker") && !target?.closest(".character-chip")) {
+      store.characterPickerOpen = false;
+    }
+    refocusFromClick(e);
+  }
+
+  function onWindowKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && store.characterPickerOpen) {
+      store.characterPickerOpen = false;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  async function chooseCharacter(profileID: string) {
+    if (profileID === store.activeCharacterProfileID) {
+      store.characterPickerOpen = false;
+      return;
+    }
+    try {
+      await api.switchCharacterProfile(profileID, false);
+      store.characterPickerOpen = false;
+    } catch (e) {
+      const message = String(e);
+      if (message.includes("Lua mode") && confirm(`${message}\n\nStop the mode and switch characters?`)) {
+        try {
+          await api.switchCharacterProfile(profileID, true);
+          store.characterPickerOpen = false;
+          return;
+        } catch (retry) {
+          store.addToast("Character switch blocked", String(retry));
+          return;
+        }
+      }
+      store.addToast("Character switch blocked", message);
+    }
+  }
+
   // Sticky focus: WebKitGTK moves focus on Tab/Shift+Tab (and clicks on
   // controls) at the GTK level, which DOM preventDefault/tabindex can't fully
   // stop — so whenever the input loses focus in the game view, snap it right
@@ -834,7 +874,8 @@
 
 <svelte:window
   onfocus={onWindowFocus}
-  onclick={refocusFromClick}
+  onclick={onWindowClick}
+  onkeydown={onWindowKeydown}
   onpointerdown={onPointerDown}
   onpointerup={onPointerUp}
   onpointercancel={onPointerCancel}
@@ -929,6 +970,33 @@
       >
         {store.mode && store.mode !== "disable" ? store.mode : "disable"}
       </button>
+      <div class="character-control">
+        {#if store.characterPickerOpen}
+          <div class="character-picker" role="menu" aria-label="Choose character profile">
+            <div class="picker-title">Character</div>
+            {#each store.config?.CharacterProfiles?.Profiles ?? [] as profile (profile.ID)}
+              <button
+                class:active={profile.ID === store.activeCharacterProfileID}
+                onclick={() => void chooseCharacter(profile.ID)}
+                role="menuitemradio"
+                aria-checked={profile.ID === store.activeCharacterProfileID}
+              >
+                <span>{profile.Name}</span>
+                {#if profile.ID !== store.config?.CharacterProfiles?.DefaultID}<small>{profile.Account} · {profile.CharacterNumber}</small>{/if}
+              </button>
+            {/each}
+            <button class="manage" onclick={() => { store.characterPickerOpen = false; store.newCharacterProfileRequest += 1; store.openModal = "character-profiles"; }}>+ New profile…</button>
+            <button class="manage" onclick={() => { store.characterPickerOpen = false; store.openModal = "character-profiles"; }}>Manage profiles…</button>
+          </div>
+        {/if}
+        <button
+          class="character-chip"
+          class:active={store.characterProfile()?.ID !== store.config?.CharacterProfiles?.DefaultID}
+          title="Switch character profile (/character)"
+          onclick={() => (store.characterPickerOpen = !store.characterPickerOpen)}
+          tabindex="-1"
+        >{store.characterProfile()?.Name ?? "Default"} ▴</button>
+      </div>
     </div>
   </div>
 </div>
@@ -982,6 +1050,41 @@
     align-items: center;
     gap: 8px;
   }
+  .character-control { position: relative; }
+  .character-chip {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 12px var(--mono);
+    color: var(--fg-dim);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 10px;
+  }
+  .character-chip.active { color: var(--accent); border-color: var(--accent-dim); }
+  .character-picker {
+    position: absolute;
+    z-index: 80;
+    right: 0;
+    bottom: calc(100% + 7px);
+    width: min(280px, 80vw);
+    max-height: 50vh;
+    overflow-y: auto;
+    padding: 6px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    box-shadow: 0 8px 28px #0009;
+  }
+  .picker-title { padding: 5px 7px; color: var(--fg-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .8px; }
+  .character-picker button { width: 100%; display: flex; justify-content: space-between; gap: 10px; padding: 7px 9px; text-align: left; }
+  .character-picker button:is(:hover, :focus-visible) { background: var(--bg-hover); }
+  .character-picker button:is(:hover, :focus-visible) small { color: inherit; }
+  .character-picker button.active { color: var(--accent); border-color: var(--accent-dim); }
+  .character-picker small { color: var(--fg-dim); }
+  .character-picker .manage { margin-top: 5px; border-top-color: var(--border); }
   .prompt {
     padding-top: 3px;
     color: var(--accent);

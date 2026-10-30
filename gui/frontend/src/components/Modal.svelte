@@ -2,6 +2,7 @@
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
   import { store } from "../lib/store.svelte";
+  import { MENU_SECTIONS, menuParent, menuRouteLabel } from "../lib/menu";
 
   let modalEl: HTMLDivElement;
 
@@ -30,6 +31,10 @@
     footer?: Snippet;
   } = $props();
 
+  const parentRoute = $derived(back ? (menuParent(store.openModal) ?? "menu") : null);
+  const parentLabel = $derived(menuRouteLabel(parentRoute));
+  const inMenuShell = $derived(!!parentRoute?.startsWith("menu-"));
+
   // Every submenu (anything with a Back button, a Save action, or custom footer
   // actions) gets the same footer control set: [custom actions] · Close · Save.
   // Close discards — submenus buffer their edits, so closing without saving
@@ -41,6 +46,7 @@
     if (guard && !guard()) return;
     onclose?.();
     store.openModal = null;
+    store.modalEscapeTarget = null;
   }
 
   // The footer "Close" discards edits and returns to the parent menu for a
@@ -48,7 +54,7 @@
   function closeToParent() {
     if (guard && !guard()) return;
     onclose?.();
-    store.openModal = back ? "menu" : null;
+    store.openModal = parentRoute;
   }
 
   async function doSave() {
@@ -58,13 +64,13 @@
   function goBack() {
     if (guard && !guard()) return;
     onclose?.();
-    store.openModal = "menu";
+    store.openModal = parentRoute;
   }
 
   onMount(() => {
     // Tell the single Esc handler (in GameView) where Esc should go from this
     // modal: back to the menu for submenus, or fully closed otherwise.
-    store.modalEscapeTarget = back ? "menu" : null;
+    store.modalEscapeTarget = parentRoute;
 
     // Move focus into the modal on open so keystrokes don't leak into the (still
     // focused) game input behind the backdrop. Prefer a text field; otherwise
@@ -80,18 +86,31 @@
      the ✕ button, the Back button, or Esc (handled once in GameView). This
      prevents stray outside clicks from dismissing a submenu mid-interaction. -->
 <div class="backdrop" role="presentation">
-  <div class="modal" class:wide class:extra-wide={extraWide} bind:this={modalEl} role="dialog" aria-label={title} aria-modal="true" tabindex="-1">
+  <div class="modal" class:wide class:extra-wide={extraWide} class:menu-shell={inMenuShell} bind:this={modalEl} role="dialog" aria-label={title} aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}
-          <button class="back" onclick={goBack} title="Back to menu">‹ Menu</button>
+          <button class="back" onclick={goBack} title={`Back to ${parentLabel}`}>‹ {parentLabel}</button>
         {/if}
         <span class="mtitle">{title}</span>
       </div>
       <button class="x" onclick={close} aria-label="Close">✕</button>
     </div>
-    <div class="mbody">
-      {@render children()}
+    <div class="modal-content" class:with-nav={inMenuShell}>
+      {#if inMenuShell}
+        <nav class="editor-nav" aria-label="Praetor settings">
+          <button class="menu-home" onclick={() => (store.openModal = "menu")}>‹ Menu</button>
+          {#each MENU_SECTIONS as section (section.id)}
+            <button
+              class:active={parentRoute === `menu-${section.id}`}
+              onclick={() => (store.openModal = `menu-${section.id}`)}
+            >{section.label}</button>
+          {/each}
+        </nav>
+      {/if}
+      <div class="mbody">
+        {@render children()}
+      </div>
     </div>
     {#if hasFooter}
       <div class="mfoot">
@@ -129,6 +148,7 @@
   .modal.extra-wide {
     width: 1040px;
   }
+  .modal.menu-shell { width: 1040px; }
   .mhead {
     display: flex;
     align-items: center;
@@ -169,7 +189,37 @@
     color: var(--fg);
     background: var(--bg-elevated);
   }
+  .modal-content {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .modal-content.with-nav {
+    display: grid;
+    grid-template-columns: 210px minmax(0, 1fr);
+    flex: 1;
+  }
+  .editor-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border);
+    background: var(--bg-elevated);
+  }
+  .editor-nav button {
+    text-align: left;
+    background: transparent;
+    border-color: transparent;
+  }
+  .editor-nav button.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--bg-panel);
+  }
+  .editor-nav .menu-home { margin-bottom: 8px; color: var(--fg-dim); }
   .mbody {
+    min-width: 0;
     padding: 12px;
     overflow: auto;
   }
@@ -186,13 +236,16 @@
       align-items: flex-end;
     }
     .modal,
-    .modal.wide {
+    .modal.wide,
+    .modal.extra-wide {
       width: 100%;
       max-width: 100%;
       max-height: calc(100dvh - env(safe-area-inset-top));
       border-inline: none;
       border-bottom: none;
     }
+    .modal-content.with-nav { display: block; }
+    .editor-nav { display: none; }
     .mhead {
       min-height: 48px;
       padding-inline: 10px;

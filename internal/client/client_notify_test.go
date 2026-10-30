@@ -175,6 +175,52 @@ func TestDesktopNotifier_NilSinkDoesNotDeliverNatively(t *testing.T) {
 	dn.CheckHealth(20)
 }
 
+func TestDesktopNotifierAppliesPerRuleFocusSoundAndDelivery(t *testing.T) {
+	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{
+		HealthBelow: config.ThresholdConfig{
+			Enabled: true, Threshold: 25, When: config.NotificationWhenUnfocused,
+			Sound: true, Delivery: config.NotificationDeliveryDesktop,
+		},
+		FatigueBelow: config.ThresholdConfig{
+			Enabled: true, Threshold: 10, Delivery: config.NotificationDeliveryNeither,
+		},
+	})
+	type delivered struct {
+		title   string
+		options NotificationOptions
+	}
+	got := make(chan delivered, 1)
+	dn.SetSink(NotificationOptionsSinkFunc(func(title, _ string, options NotificationOptions) {
+		got <- delivered{title: title, options: options}
+	}))
+
+	dn.SetFocused(true)
+	dn.CheckHealth(20)
+	select {
+	case value := <-got:
+		t.Fatalf("focused-only suppression delivered %+v", value)
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	dn.SetFocused(false)
+	dn.CheckHealth(20)
+	select {
+	case value := <-got:
+		if value.title != "Health Warning" || !value.options.Sound || !value.options.OnlyWhenUnfocused {
+			t.Fatalf("delivery = %+v", value)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("unfocused health notification was not delivered")
+	}
+
+	dn.CheckFatigue(5)
+	select {
+	case value := <-got:
+		t.Fatalf("neither delivery emitted %+v", value)
+	case <-time.After(20 * time.Millisecond):
+	}
+}
+
 func TestDesktopNotifier_ExpandsLiveVariablesInRulesAndTemplates(t *testing.T) {
 	dn := NewDesktopNotifier(config.DesktopNotificationsConfig{Patterns: []config.NotifyPatternConfig{{
 		Pattern: `${target} dropped \*`,

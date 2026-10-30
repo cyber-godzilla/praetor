@@ -3,17 +3,18 @@
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
   import type { HighlightConfig } from "../../lib/types";
-  import { STYLE_COLORS } from "../../lib/highlight";
+  import { highlightStyleColors } from "../../lib/highlight";
   import ExpansionPreview from "../ExpansionPreview.svelte";
+  import ColorwordStylePicker from "../ColorwordStylePicker.svelte";
 
-  const STYLES = ["red", "gold", "green", "blue"];
   function preview(style: string): string {
-    const c = STYLE_COLORS[style] ?? STYLE_COLORS.gold;
+    const c = highlightStyleColors(style, store.colorwordStyles);
     return `background:${c.bg};color:${c.fg}`;
   }
 
+  const profile = store.characterProfile();
   let items = $state<HighlightConfig[]>(
-    (store.config?.Highlights ?? []).map((h) => ({ ...h })),
+    (profile?.Highlights ?? store.config?.Highlights ?? []).map((h) => ({ ...h })),
   );
   let draft = $state("");
 
@@ -35,10 +36,6 @@
   function remove(i: number) {
     items = items.filter((_, idx) => idx !== i);
   }
-  function cycleStyle(i: number) {
-    const cur = STYLES.indexOf(items[i].Style);
-    items[i].Style = STYLES[(cur + 1) % STYLES.length];
-  }
   function toggle(i: number) {
     items[i].Active = !items[i].Active;
   }
@@ -46,7 +43,7 @@
   async function save() {
     try {
       await api.setHighlights(items);
-      store.config!.Highlights = items;
+      if (profile) profile.Highlights = items;
       store.addToast("Highlights", "Saved");
       store.openModal = null;
     } catch (e) {
@@ -56,6 +53,7 @@
 </script>
 
 <Modal title="Highlights" wide back onsave={save}>
+  <p class="profile-scope">Editing highlights for <strong>{profile?.Name ?? "Default"}</strong>.</p>
   <p class="hint dim">Case-insensitive substring matches. Use * and ? wildcards, \* or \? for literals, and {"${name}"} variables.</p>
   <div class="list">
     {#each items as item, i (i)}
@@ -71,7 +69,7 @@
           <span class="pat" style={preview(item.Style)}>{item.Pattern}</span>
           <ExpansionPreview value={item.Pattern} match />
         </span>
-        <button class="sm" onclick={() => cycleStyle(i)}>{item.Style}</button>
+        <span class="style-picker"><ColorwordStylePicker bind:value={item.Style} ariaLabel={`Choose highlight color for ${item.Pattern}`} /></span>
         <button class="danger sm" onclick={() => remove(i)}>✕</button>
       </div>
     {/each}
@@ -90,6 +88,7 @@
     margin: 0 0 12px;
     font-size: 12px;
   }
+  .profile-scope { margin: 0 0 4px; color: var(--accent); font-size: 12px; }
   .list {
     display: flex;
     flex-direction: column;
@@ -120,6 +119,7 @@
     color: var(--fg-dim);
   }
   .patwrap { flex: 1; min-width: 0; }
+  .style-picker { width: 210px; min-width: 160px; }
   .pat {
     display: block;
     padding: 4px 10px;
@@ -138,5 +138,9 @@
   }
   .add input {
     flex: 1;
+  }
+  @media (max-width: 700px) {
+    .hl { flex-wrap: wrap; }
+    .style-picker { width: calc(100% - 70px); margin-left: 38px; }
   }
 </style>

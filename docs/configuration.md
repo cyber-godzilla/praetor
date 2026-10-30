@@ -69,13 +69,45 @@ scripts:
   - ~/.config/praetor/scripts
   - ~/my-custom-scripts
   - $HOME/git/community-scripts
+
+managed_scripts:
+  - id: 3d4bb90a-b9fb-4d82-8e1b-0f51bdd58e1a
+    name: praetor-scripts
+    url: https://github.com/cyber-godzilla/praetor-scripts.git
+    enabled: false
+    trust: restricted
+    check_on_startup: true
+    tracking: tag
+    ref: v0.2.4
+    installed_commit: 0123456789abcdef
+    installed_version: v0.2.4
 ```
 
-List of directories to load Lua scripts from. Each directory is added to Lua's `package.path` (for `require()`) and scanned for mode files.
+List of trusted local directories to load Lua scripts from. Local directories
+share the legacy Lua state and `package.path`, and are scanned for mode files.
 
 Supports `~` and `$ENV_VAR` expansion. If empty, defaults to `~/.config/praetor/scripts/`.
 
-Manageable via Esc → Script Directories.
+Manage local directories and anonymously readable HTTPS Git repositories via
+Esc → **Script Manager**. `praetor-scripts` is offered as the suggested
+managed source. Managed repositories follow the highest stable semantic-version
+tag, falling back to the remote default branch when no stable tag exists.
+Startup checks are notification-only. Clicking **Check for updates** applies an
+available update in one transaction: Praetor verifies that no Lua mode is
+active, temporarily unloads the source, installs and reloads the new checkout,
+then restores the source's previous enabled state. A failed update rolls back
+the checkout and runtime.
+
+Managed sources install disabled and Restricted. Enabling one adds its managed
+checkout to the runtime in an isolated Lua state. Restricted sources can use
+Praetor's automation APIs plus the base, table, string, math, and coroutine
+libraries, and can `require()` Lua modules only from their own checkout. They
+cannot access `os`, `io`, `debug`, `package`, dynamic loaders, or modules from
+another source. Marking a source Trusted restores the full legacy Lua standard
+library and is an explicit security decision. Local directories retain their
+existing Trusted behavior. Praetor owns and may replace or remove only the
+checkout under its managed-scripts storage for a managed source; it never
+modifies configured local directories.
 
 ## Commands
 
@@ -89,9 +121,11 @@ commands:
   high_priority: []               # Commands that jump to front of queue
 character_profiles:
   default_id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+  auto_switch: true               # Follow successful play/sleep commands
   profiles:
     - id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
       name: Default
+      variables_mode: independent
       variables:                  # Typed-input substitutions
         target: scarred bandit
       custom_views: []
@@ -100,9 +134,14 @@ character_profiles:
       name: Marcus
       account: PlayerOne
       character_number: 1
-      variables: {}
+      variables_mode: independent
+      variables:                  # Copied from Default when this profile was created
+        target: scarred bandit
       custom_views: []
+      action_sets_mode: inherit    # inherit | customize
       action_sets: []
+      quick_cycle_mode: inherit
+      priority_commands_mode: inherit
 ```
 
 High priority commands can be configured via Esc → Automation → High-Priority
@@ -112,8 +151,9 @@ Commands. When a high-priority command is queued, it's inserted at the front
 ### Character profiles
 
 Character-scoped settings are grouped under UUID-addressed profiles. The global
-`Default` profile is the fallback and template. Variables, Custom Views, Action
-Sets, and the selected Action Set live in each profile. Existing
+`Default` profile is the fallback and creation template. Variables, Custom Views, Action
+Sets, the selected Action Set, Quick Cycle, high-priority commands, display
+placement, and Lua persistent data follow the active profile. Existing
 `commands.variables`, `ui.custom_tabs`, `ui.action_sets`, and
 `ui.selected_action_set_id` values migrate into Default on first load and are
 then saved only in the canonical `character_profiles` section.
@@ -125,13 +165,35 @@ same number may be used by another account. `play 1` selects account character
 1 immediately after the command is successfully sent. The two-command form,
 `play` followed by `1`, does the same; another intervening command cancels the
 pending selection. Matching is case-insensitive for `play` and account names.
+An exact `sleep` command returns to Default after it is successfully sent.
+Detection observes each expanded game command at successful dispatch, so these
+transitions also work inside `;;` / `&&` PraetorScript chains and commands sent
+through Lua's `praetor_script()`. Because the game command cannot be recalled,
+an automatic character transition stops an active Lua mode before applying the
+new profile.
+Automatic handling of both `play` and `sleep` can be disabled in the profile
+manager or with `character_profiles.auto_switch: false`.
+
+Use the character chip at the right of the automation bar to switch manually.
+`/character` opens the same picker; `/character "Marcus Aurelius"` selects by
+case-insensitive name, and `/character global` returns to Default. Profile
+names are unique case-insensitively, and `Default` and `Global` are reserved.
+An active `/play` blocks switching. Slash-command switches also refuse while a
+Lua mode is active; the visual picker can offer to stop that mode first.
 
 Default cannot be deleted and does not have an account or character number.
-New profiles inherit its variables, Custom Views, Action Sets, and selected
-Action Set. Inherited custom components receive new UUIDs so component identity
-does not collide between profiles. Display placement remains global until the
-next character-aware display-profile slice associates layouts with these
-profile IDs.
+New profiles receive a snapshot copy of Default's variable list. After creation,
+each profile owns its complete list independently: adding, editing, or deleting
+a variable affects only that profile, and later Default edits do not propagate.
+New profiles live-inherit Action Sets, Quick Cycle, and high-priority commands.
+They can switch any collection to Customize, where an empty list is meaningful.
+Action Sets can be shared by stable ID (edits
+propagate), or copied to a new ID (independent); removing a shared set removes
+only that profile's reference unless **Delete everywhere** is confirmed.
+Inherited custom components receive new UUIDs so component identity does not
+collide between profiles. Each character also receives its own display profile
+and Lua persistence namespace. The active character remains session-only and
+starts at Default after login or restart.
 
 ### PraetorScript
 
@@ -151,6 +213,12 @@ numbers, and underscores. The remainder of the command becomes the value, so
 spaces are supported; use `""` to save an empty value. The change is persisted
 and is available immediately to subsequent input and every variable-capable
 match or notification field.
+
+Lua modes use `variables.get(name)` and `variables.set(name, value)` to share
+the same character-scoped values. Script preferences and resumable workflow
+inputs belong here; private reaction steps stay in transient `state`, while
+`state.persist` is reserved for accumulated long-term records such as maps and
+statistics.
 
 ### Variables and wildcard patterns
 
@@ -205,11 +273,16 @@ $(wait 2.5)                                      # pause for seconds
 $(wait-for "The latch clicks")                   # wait for a future matching line
 $(wait-for "The gate opens" timeout 30)          # cancel the chain after 30 seconds
 $(wait-for "open" cancel-on "locked" timeout 30)
+$(wait-for my.health >= 75 timeout 30)            # wait for a live character value
+$(wait-for "safe" cancel-on my.health <= 25)      # values can cancel text waits
 $(notify "Training complete")                    # notify, then continue
 $(notify "Training" "Complete")                  # custom title and message
+$(notify "Vitals" "Health: ${my.health}")        # interpolate at this step
 $(set-var target "scarred bandit")               # save target = scarred bandit
+$(set-var recorded_health ${my.health})           # copy a live value
 $(add-var attempts 1)                             # save attempts = attempts + 1
 $(repeat "climb wall" until "You reach the top")
+$(repeat "rest" until my.fatigue <= 20)
 $(repeat "climb wall" until "You reach the top" cancel-on "You fall")
 $(repeat "climb wall" until "You reach the top" max 10)
 $(repeat "search" count 5)
@@ -238,12 +311,34 @@ The cancellation text and timeout stop the entire chain instead of advancing
 it. A timeout must be positive. Without either clause, the wait remains active
 until it matches or the user presses Stop.
 
+PraetorScript exposes the latest game-reported character values through the
+read-only `my.health`, `my.fatigue`, `my.encumbrance`, and `my.satiation`
+names. `wait-for`, repeat `until`, and `cancel-on` accept an unquoted live
+condition using `==`, `!=`, `<`, `<=`, `>`, or `>=`. Text matchers remain
+quoted, so either side of a wait or repeat may independently use text or a live
+condition. A value that the game has not reported yet makes a condition false.
+`wait-for` checks the latest value immediately and after every relevant game
+status update. Repeat retains do-until behavior: it sends the command once, then tests
+the live success or cancellation condition.
+
+Use `${my.health}` and the corresponding names anywhere `${name}` expansion is
+accepted within a PraetorScript input. Unlike saved variables, `my.*`
+references resolve when their individual step executes, so a command or
+notification after a wait sees the latest value. `${my.health:unknown}` supplies
+a fallback before the first report. The namespace is read-only:
+`$(set-var my.health 50)` is invalid, while
+`$(set-var recorded_health ${my.health})` copies the current value into an
+ordinary saved variable. This live namespace is deliberately not enabled in
+highlight, Speech Color, Custom View, ignore-list, or configured notification
+patterns.
+
 `repeat` requires a game command (not a local `/` command), sends it
 immediately, then reacts after each recognized unbusy response and the
 configured unbusy delay. The `until "text"` form sends the command again until
-its case-sensitive success substring appears; that success advances the
-surrounding chain. `max N` counts the initial send as attempt 1 and cancels the
-chain rather than sending attempt N+1. Without `max`, retries remain unbounded.
+its case-sensitive success substring appears; `until my.field OP number` uses
+the live condition instead. Success advances the surrounding chain. `max N`
+counts the initial send as attempt 1 and cancels the chain rather than sending
+attempt N+1. Without `max`, retries remain unbounded.
 
 The `count N` form sends the command exactly N times. The initial send is count
 1, and each remaining send follows an unbusy response and the configured
@@ -252,15 +347,17 @@ the surrounding chain. Count may use a variable or fallback, such as
 `count ${tries:5}`. It is intentionally distinct from `until ... max N`: reaching
 an exact count completes normally, while reaching `max` without success cancels
 the chain as an error. Either repeat form may use `cancel-on "text"`, which
-stops the whole chain without advancing. Matching is case-sensitive substring matching. Text
+stops the whole chain without advancing; `cancel-on` also accepts a live
+condition. Matching is case-sensitive substring matching. Text
 arguments may contain separators because quoted strings are parsed before the
 outer chain. Escape a quote or backslash inside them as `\"` or `\\`. Use
 `\$(` to send a literal `$(`. Variables work in directive arguments and, like
 the rest of the line, are validated before anything is sent.
 
 Variables are read afresh every time either is invoked, so edits take effect
-immediately. Variables also apply to multiline input and `/send` files, but
-those paths do not interpret command-chain separators. Other sidebar buttons,
+immediately. Saved variables also apply to multiline input and `/send` files,
+but those paths do not interpret command-chain separators or late-bound
+`my.*` values. Other sidebar buttons,
 numpad movement, Lua scripts, and `/play` playback bypass typed-input
 processing. A single line is limited to 100 commands across both separator
 types and control steps. Pending chains are discarded on disconnect. In the
@@ -307,6 +404,7 @@ display_profiles:
       sidebars_visible: true      # Global Alt+S state
       main:                       # Ordered component placements
         - {component_id: a1ebe82e-7f0d-4ba9-9e00-181d045e3e12} # All
+      bench: []                   # Ordered components not currently displayed
       sidebars:
         - id: 5afa1264-4ce7-41d0-b7ea-2050e0d34b07
           name: Sidebar 1
@@ -314,6 +412,8 @@ display_profiles:
           side: right
           width: 260
           components: []          # Ordered component placements
+    # Character layouts are inherited automatically and carry:
+    # character_profile_id: <the character profile UUID>
 ```
 
 The web Settings modal keeps desktop and mobile output sizes independent. The
@@ -331,29 +431,51 @@ All other UI toggles are available via the Esc menu and persisted when you press
 
 ### Layout and sidebars
 
-The GUI and shared web client use **Esc → Layout** to place each built-in or
-filtered text component in an ordered main-tab or sidebar list. Sidebars and
-components have UUID identities; sidebars can be added without a fixed limit,
+The GUI and shared web client call displayable items **views** because the same
+item can appear as a main tab or a sidebar section. Use **Esc → Layout** to
+place each built-in or filtered text view in an ordered main-tab or sidebar
+list. Views retain UUID configuration identities; sidebars can be added without a fixed limit,
 named, reordered, enabled, placed left or right, and sized from 180–600 pixels.
-Drag and drop reorders or moves a component live, and each destination also has
-an **Add component by ID** picker. Placement changes save immediately. **All**
-has a fixed shared component UUID and always remains the first main tab.
+Drag and drop reorders or moves a view live; every destination is an
+ordered drop target. Placement changes save immediately. View UUIDs
+remain an internal configuration identity and are not shown in the editor.
+**All** always remains the first main tab.
+
+The searchable **Bench** lists only built-in and filtered text views that
+are not currently displayed. Drag a view from the Bench into Main or a
+sidebar, or drag a placed view back to the Bench. Deleting a sidebar moves
+its ordered view list to the Bench without moving anything into the
+gameplay area or discarding sidebar height and collapse state. On wide screens
+the Bench stays in a compact, independently scrolling column to the right of
+the placement controls; it stacks below them on narrow screens. Every Bench
+and placement card shows an explicit functional type, such as **Filtered
+text**, **Status bars**, or **Action controls**, so views can be identified
+without exposing UUIDs.
 
 Every sidebar view has an independent 80–800 pixel expanded height and a
 persisted collapsed state. Drag a column's inner edge or a view's lower edge to
 resize it; double-clicking a column handle restores 260 pixels. The numeric
 Layout controls provide the keyboard-accessible resizing path.
 
-When the window becomes too narrow, Praetor temporarily removes outer
-sidebars in reverse profile order without changing the saved layout. The
-**Views** drawer keeps those sidebars reachable and is the normal sidebar surface on mobile. `Alt+S`
+When the window becomes too narrow, Praetor temporarily collapses outer
+sidebars in reverse profile order without changing the saved layout. A
+collapsed sidebar remains on its configured side as a 30-pixel title rail; its
+views are not rendered until its explicit **Expand** control is selected. Every
+expanded sidebar likewise has an explicit **Collapse** control. Manual state is
+saved with the character's layout, while width-driven collapse remains
+temporary. The user receives a toast when an automatic collapse happens. The
+**Views** drawer remains the normal sidebar surface on mobile. `Alt+S`
 hides or restores all enabled, nonempty sidebars and the drawer together.
 
 Existing `ui.gui_layout` configurations migrate into the global Default
 display profile, preserving sidebar order, placement, sizes, and collapse state.
 `gui_sidebar_width` becomes its width, `gui_minimap_height` becomes the Map
 view's height, and existing Custom Tabs become tab-placed Custom Views in the
-global Default character profile. The TUI
+global Default character profile. Each non-default character receives an
+independent layout inherited from the global Default. Inherited filtered-text
+placements are remapped to that character's component UUIDs, while built-in
+component UUIDs remain shared. Switching characters therefore switches both
+content and placement without dropping tabs. The TUI
 continues to use `display_mode`, `sidebar_width`, and `minimap_height`; GUI
 layout edits do not rewrite those terminal settings.
 
@@ -391,9 +513,10 @@ Each rule has:
 
 `echo_commands` applies only when the tab has no active include rules (i.e. it is exclude-only, including zero-rule catch-all tabs). When false, command echoes are not routed to the tab even though other non-excluded text is.
 
-Managed together with built-in placement via **Esc → Layout → Filtered text
-components**. The legacy `custom_tabs` YAML key migrates once into the Default
-character profile's `custom_views`; every new filtered component receives a
+Create and configure these under **Esc → View Library → Filtered text views**.
+New views begin on the **Layout** Bench, where they can be placed as main tabs
+or sidebar sections. The legacy `custom_tabs` YAML key migrates once into the
+Default character profile's `custom_views`; every new filtered view receives a
 UUID that display profiles reference.
 
 ## Speech Colors
@@ -470,8 +593,9 @@ Combat-result messages use the wiki-verified taxonomy:
 
 Character inspections use a separate vocabulary captured from retained game
 logs. These provisional severity positions preserve the apparent
-least-to-most-serious order; completing and correlating the catalogue is a
-[0.6.0 release blocker](release-0.6.0.md#wound-language-catalogue-blocking).
+least-to-most-serious order. The verified subset is accepted for 0.6.0;
+completing and correlating the catalogue remains
+[follow-up work](release-0.6.0.md#wound-language-catalogue-provisional-accepted-for-060).
 
 | Provisional severity | Cuts | Bruises | Punctures | Burns |
 |----------------------|------|---------|-----------|-------|
@@ -516,6 +640,13 @@ notifications:
         title: "Loot Alert"
         message: ""               # Empty = use matched text
         enabled: true
+  discord:
+    enabled: false
+    webhook_url: ""               # Official HTTPS Discord webhook URL
+    health: false
+    fatigue: false
+    patterns: false
+    scripts: false
 ```
 
 Desktop notifications use the system's native notification mechanism
@@ -533,6 +664,19 @@ their own settings.
 Text `pattern` values use the [shared variable-capable wildcard syntax](#variables-and-wildcard-patterns).
 `title` and `message` are variable-capable output templates. Empty resolved
 values retain the defaults shown above.
+
+Discord delivery is optional and disabled by default. Paste an official Discord
+webhook URL in **Notifications**, select the categories to forward, and use
+**Save and send test** to verify it. Discord receives the same already-matched
+health, fatigue, and text-pattern alerts as the local destination; `scripts`
+forwards Lua `notify()` calls when **Allow Script Notifications** is also on.
+Delivery runs asynchronously with a five-second timeout and cannot block game
+processing. Messages suppress Discord mentions, so game text containing
+`@everyone`, `@here`, or a role name cannot ping a server.
+
+The webhook field is password-masked, its URL is excluded from errors and
+logs, and saving one restricts `config.yaml` to the current OS user. Treat the
+URL as a credential: anyone who obtains it can post to its Discord channel.
 
 ## Logging
 

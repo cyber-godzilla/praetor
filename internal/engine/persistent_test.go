@@ -100,6 +100,25 @@ func TestPersistentStore_MultiUser(t *testing.T) {
 	}
 }
 
+func TestDeletePersistentNamespacePreservesOtherNamespaces(t *testing.T) {
+	dir := t.TempDir()
+	if err := NewPersistentStore(dir, "one").Save(map[string]interface{}{"value": "one"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewPersistentStore(dir, "two").Save(map[string]interface{}{"value": "two"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeletePersistentNamespace(dir, "one"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := NewPersistentStore(dir, "one").Load(); err != nil || len(got) != 0 {
+		t.Fatalf("deleted namespace = %#v, %v", got, err)
+	}
+	if got, err := NewPersistentStore(dir, "two").Load(); err != nil || got["value"] != "two" {
+		t.Fatalf("preserved namespace = %#v, %v", got, err)
+	}
+}
+
 func TestPersistentStore_Debounce(t *testing.T) {
 	dir := t.TempDir()
 	store := NewPersistentStore(dir, "TestUser")

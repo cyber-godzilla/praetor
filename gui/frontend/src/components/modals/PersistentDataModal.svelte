@@ -7,12 +7,15 @@
   let keys = $state<PersistentKeyInfo[]>([]);
   let selected = $state<Set<string>>(new Set());
   let notice = $state("");
+  const profileName = $derived(store.characterProfile()?.Name ?? "Default");
 
   async function refresh() {
     keys = await api.getPersistentData();
   }
   $effect(() => {
-    refresh();
+    selected = new Set();
+    notice = "";
+    if (profileName) void refresh();
   });
 
   function toggle(k: string) {
@@ -35,7 +38,7 @@
   async function clearSel() {
     const sel = selectedKeys();
     if (sel.length === 0) return;
-    if (!window.confirm(`Permanently clear ${sel.length} selected persistent Lua key(s) for the shared client?`)) return;
+    if (!window.confirm(`Permanently clear ${sel.length} selected long-term Lua value(s) for ${profileName}?`)) return;
     try {
       await api.clearPersistentData(sel);
       selected = new Set();
@@ -47,7 +50,10 @@
   }
 </script>
 
-<Modal title="Persistent Lua Data" wide back>
+<Modal title={`Persistent Lua Data — ${profileName}`} wide back>
+  <p class="scope-hint">
+    Long-term records collected by scripts for this character. Script settings and resumable inputs belong in Variables.
+  </p>
   {#if notice}<p class="notice dim">{notice}</p>{/if}
   <div class="list">
     {#each keys as k (k.key)}
@@ -58,7 +64,7 @@
         <span class="dim">{k.valueSummary}</span>
       </label>
     {/each}
-    {#if keys.length === 0}<div class="dim empty">No persisted keys.</div>{/if}
+    {#if keys.length === 0}<div class="dim empty">No long-term script data for {profileName}.</div>{/if}
   </div>
   {#snippet footer()}
     <button onclick={exportSel} disabled={selected.size === 0}>Export selected</button>
@@ -70,6 +76,12 @@
   .notice {
     margin: 0 0 12px;
     font-size: 12px;
+  }
+  .scope-hint {
+    margin: 0 0 12px;
+    color: var(--fg-dim);
+    font-size: 12px;
+    line-height: 1.45;
   }
   .list {
     display: flex;

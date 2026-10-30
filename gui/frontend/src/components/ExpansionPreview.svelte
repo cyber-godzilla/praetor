@@ -7,7 +7,7 @@
   const preview = $derived.by(() => {
     if (!value.includes("${") && !value.includes("\\${")) return null;
     try {
-      const resolved = expandVariables(value, store.characterProfile()?.Variables);
+      const resolved = expandVariables(value, store.resolvedVariables());
       return {
         error: false,
         text: match && resolved === "" ? "Resolves empty — matches nothing" : `Resolves to: ${resolved || "(empty)"}`,

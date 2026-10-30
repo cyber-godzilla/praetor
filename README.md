@@ -13,7 +13,7 @@ Praetor's primary application is a **native desktop GUI** (the `praetor` app, bu
 - **Colorwords** — automatic color highlighting of color words in game text (200+ colors, adjectives, suffixes, rainbow)
 - **Speech Colors** — assign any Colorword style to a character name, wildcard, or variable so matching speech—and optionally think/OOC lines—is identifiable at a glance
 - **String Highlighting** — configurable pattern highlighting for rare loot detection
-- **Desktop Notifications** — alerts for health/fatigue thresholds and custom pattern matches
+- **Desktop, Browser, and Discord Notifications** — alerts for health/fatigue thresholds, custom pattern matches, and opt-in Lua notifications
 - **Metrics Dashboard** — session tracking for kills, actions, and custom metrics with history
 - **Persistent State** — Lua scripts can persist data across sessions (e.g., armor absorption tracking)
 - **Multi-Account** — system-keyring or encrypted-service storage with account selection
@@ -252,7 +252,7 @@ Nothing opens automatically; choose a link in the popup to open it.
 | `/set <label> <val>` | Set a state value |
 | `/set-variable <name> <val>` | Save a command variable (alias `/set-var`) |
 | `/wiki [term]` | Open a TEC wiki bookmark (bare `/wiki` lists them) |
-| `/maps [term]` | Open a TEC map page (bare `/maps` lists them) |
+| `/maps [term]` | Open a TEC map page (alias `/map`; bare command lists them) |
 | `/calc` | Rank-bonus & training-cost calculator (alias `/rb`) |
 | `/kudos [name] [msg]` | Manage kudos favorites / queued messages |
 | `/notes` | Freeform notepad — add / open / delete / list (GUI) |

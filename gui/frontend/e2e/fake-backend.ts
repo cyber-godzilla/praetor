@@ -71,6 +71,12 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       AbortSend: false,
       ClipboardGet: "",
       PickScriptDir: "",
+      GetScriptManager: {
+        localDirectories: init.config.Scripts ?? [],
+        managed: [],
+        suggestedURL: "https://github.com/cyber-godzilla/praetor-scripts.git",
+        suggestedInstalled: false,
+      },
       AddKudosFavorite: false,
       // src/lib/bridge.ts declares this returning a string, not void.
       ExportPersistentData: "",
@@ -79,7 +85,7 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
       "Start", "Send", "SendInput", "SetMode", "RemoveAccount", "Disconnect",
       "ReloadScripts", "ClipboardSet", "OpenURL", "OpenWikiSlug",
       "SaveNote", "DeleteNote", "StartFileSend", "StartPlay", "ClearPersistentData",
-      "AddKudosQueue",
+	  "AddKudosQueue", "TestDiscordNotification",
     ]);
     const connectors = new Set(["ConnectNew", "ConnectStored"]);
 
@@ -103,6 +109,12 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
           }
           if (name === "SendInput") {
             const input = typeof args[0] === "string" ? args[0] : "";
+            if (input.trim().toLowerCase() === "/character") {
+              setTimeout(() => emit("praetor:events", [{
+                kind: "openMenu",
+                openMenu: "menu-character",
+              }]), 0);
+            }
             if (input.includes(";;") || input.includes("&&") || input.includes("$(")) {
               inputChainActive = true;
               inputChainStatus = {
@@ -129,10 +141,65 @@ export async function installFakeBackend(page: Page, init: InitState): Promise<F
               return {
                 ...structuredClone(fallback),
                 ...identity,
+                Variables: {},
+                ActionSetsMode: "inherit",
+                ActionSets: [],
+                QuickCycleMode: "inherit",
+                QuickCycleModes: null,
+                PriorityCommandsMode: "inherit",
+                HighPriority: null,
                 CustomViews: (fallback.CustomViews ?? []).map((view) => ({ ...view, ID: crypto.randomUUID() })),
               };
             });
+            const display = init.config.DisplayProfiles;
+            const defaultLayout = display.Profiles.find((profile) => profile.ID === display.DefaultID)!;
+            const layoutByCharacter = new Map(
+              display.Profiles
+                .filter((profile) => profile.CharacterProfileID)
+                .map((profile) => [profile.CharacterProfileID!, profile]),
+            );
+            display.Profiles = [defaultLayout, ...init.config.CharacterProfiles.Profiles
+              .filter((profile) => profile.ID !== init.config.CharacterProfiles.DefaultID)
+              .map((profile) => {
+                const current = layoutByCharacter.get(profile.ID);
+                if (current) return { ...current, Name: profile.Name };
+                const inherited = structuredClone(defaultLayout);
+                inherited.ID = crypto.randomUUID();
+                inherited.Name = profile.Name;
+                inherited.CharacterProfileID = profile.ID;
+                const customIDs = new Map(
+                  (fallback.CustomViews ?? []).map((view, index) => [view.ID, profile.CustomViews?.[index]?.ID]),
+                );
+                const remap = (components: typeof inherited.Main) => components.map((component) => ({
+                  ...component,
+                  ComponentID: customIDs.get(component.ComponentID) ?? component.ComponentID,
+                }));
+                inherited.Main = remap(inherited.Main);
+                inherited.Bench = remap(inherited.Bench).filter((component) =>
+                  !fallback.CustomViews?.some((view) => view.ID === component.ComponentID),
+                );
+                inherited.Sidebars = inherited.Sidebars.map((sidebar) => ({
+                  ...sidebar,
+                  ID: crypto.randomUUID(),
+                  Components: remap(sidebar.Components),
+                }));
+                return inherited;
+              })];
             readers.GetConfig = init.config;
+          }
+          if (name === "SetCharacterProfileAutoSwitch") {
+            init.config.CharacterProfiles.AutoSwitch = Boolean(args[0]);
+            readers.GetConfig = init.config;
+          }
+          if (name === "SwitchCharacterProfile") {
+            const profile = init.config.CharacterProfiles.Profiles.find((candidate) => candidate.ID === args[0]);
+            if (profile) {
+              setTimeout(() => emit("praetor:events", [{
+                kind: "characterProfile",
+                characterProfile: { id: profile.ID, name: profile.Name },
+              }]), 0);
+            }
+            return Promise.resolve(undefined);
           }
           if (name === "CalcRankBonus") {
             const [mode, basics, subskill] = args as number[];

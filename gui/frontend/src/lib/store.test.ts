@@ -3,6 +3,7 @@ import { store } from "./store.svelte";
 import { Kind } from "./types";
 import type { WireEvent } from "./types";
 import { webFixtureEvents } from "./web-fixture";
+import { COMPONENT_IDS } from "./layout";
 
 function conn(state: "connected" | "disconnected", reason?: string): WireEvent[] {
   return [{ kind: Kind.Conn, conn: { state, reason } }];
@@ -15,6 +16,7 @@ function testConfig(variables: Record<string, string> = {}, scrollback = 5000) {
     Commands: {},
     CharacterProfiles: {
       DefaultID: defaultProfileID,
+      AutoSwitch: true,
       Profiles: [{
         ID: defaultProfileID,
         Name: "Default",
@@ -126,6 +128,19 @@ describe("store connection routing", () => {
       ActionSets: [{ ID: "marcus-actions", Name: "Marcus actions", Buttons: [] }],
       SelectedActionSetID: "marcus-actions",
     });
+    store.config!.DisplayProfiles = {
+      DefaultID: "default-layout",
+      Profiles: [
+        {
+          ID: "default-layout", Name: "Default", CharacterProfileID: "", SidebarsVisible: true,
+          Main: [{ ComponentID: "all", SidebarHeight: 0, Collapsed: false }], Bench: [], Sidebars: [],
+        },
+        {
+          ID: "marcus-layout", Name: "Marcus", CharacterProfileID: marcusProfileID, SidebarsVisible: false,
+          Main: [{ ComponentID: "marcus-view", SidebarHeight: 0, Collapsed: false }], Bench: [], Sidebars: [],
+        },
+      ],
+    };
     store.apply(conn("connected"));
 
     store.apply([{
@@ -137,6 +152,132 @@ describe("store connection routing", () => {
     expect(store.characterProfile()?.Variables).toEqual({ target: "bandit" });
     expect(store.selectedActionSetID).toBe("marcus-actions");
     expect(store.tabs.some((tab) => tab.id === "marcus-view")).toBe(true);
+    expect(store.displayProfile()?.ID).toBe("marcus-layout");
+    expect(store.mainTabs().map((tab) => tab.name)).toEqual(["Marcus chat"]);
+    expect(store.displayMode).toBe("off");
+  });
+
+  it("keeps variables independent while resolving inherited collections", () => {
+    store.config = testConfig({ weapon: "gladius", stance: "guard" });
+    store.config!.UI.QuickCycleModes = ["disable", "combat"];
+    store.config!.Commands.HighPriority = ["flee"];
+    store.defaultCharacterProfile()!.ActionSets = [{ ID: "global", Name: "Global", Buttons: [] }];
+    store.config!.CharacterProfiles.Profiles.push({
+      ID: marcusProfileID,
+      Name: "Marcus",
+      Variables: { weapon: "spear" },
+      CustomViews: [],
+      ActionSetsMode: "inherit",
+      ActionSets: [],
+      SelectedActionSetID: "global",
+      QuickCycleMode: "customize",
+      QuickCycleModes: [],
+      PriorityCommandsMode: "inherit",
+      HighPriority: [],
+    });
+    store.activeCharacterProfileID = marcusProfileID;
+
+    expect(store.resolvedVariables()).toEqual({ weapon: "spear" });
+    expect(store.resolvedActionSets().map((set) => set.ID)).toEqual(["global"]);
+    expect(store.resolvedQuickCycleModes()).toEqual([]);
+    expect(store.resolvedHighPriority()).toEqual(["flee"]);
+
+    store.defaultCharacterProfile()!.Variables!.stance = "attack";
+    store.defaultCharacterProfile()!.ActionSets![0].Name = "Renamed";
+    expect(store.resolvedVariables().stance).toBeUndefined();
+    expect(store.resolvedActionSets()[0].Name).toBe("Renamed");
+  });
+
+  it("keeps each character variable list independent from Default", () => {
+    store.config = testConfig({ weapon: "gladius", stance: "guard" });
+    store.config!.CharacterProfiles.Profiles.push({
+      ID: marcusProfileID,
+      Name: "Marcus",
+      Variables: { weapon: "spear" },
+      CustomViews: [],
+      ActionSets: [],
+      SelectedActionSetID: "",
+    });
+    store.activeCharacterProfileID = marcusProfileID;
+
+    expect(store.resolvedVariables()).toEqual({ weapon: "spear" });
+    store.defaultCharacterProfile()!.Variables!.stance = "aggressive";
+    expect(store.resolvedVariables()).toEqual({ weapon: "spear" });
+  });
+
+  it("selects All only when the game changes character profiles", () => {
+    const defaultProfile = store.characterProfile()!;
+    const thinkOOCID = "shared-think-ooc";
+    defaultProfile.CustomViews = [{
+      ID: thinkOOCID,
+      Name: "Think/OOC",
+      Visible: true,
+      EchoCommands: false,
+      Rules: [],
+    }];
+    store.config!.CharacterProfiles.Profiles.push({
+      ID: marcusProfileID,
+      Name: "Marcus",
+      Variables: {},
+      CustomViews: [{
+        ID: thinkOOCID,
+        Name: "Think/OOC",
+        Visible: true,
+        EchoCommands: false,
+        Rules: [],
+      }],
+      ActionSets: [],
+      SelectedActionSetID: "",
+    });
+    store.config!.DisplayProfiles = {
+      DefaultID: "default-layout",
+      Profiles: [
+        {
+          ID: "default-layout", Name: "Default", CharacterProfileID: "", SidebarsVisible: true,
+          Main: [
+            { ComponentID: COMPONENT_IDS.all, SidebarHeight: 0, Collapsed: false },
+            { ComponentID: thinkOOCID, SidebarHeight: 0, Collapsed: false },
+          ],
+          Bench: [], Sidebars: [],
+        },
+        {
+          ID: "marcus-layout", Name: "Marcus", CharacterProfileID: marcusProfileID, SidebarsVisible: true,
+          Main: [
+            { ComponentID: COMPONENT_IDS.all, SidebarHeight: 0, Collapsed: false },
+            { ComponentID: thinkOOCID, SidebarHeight: 0, Collapsed: false },
+          ],
+          Bench: [], Sidebars: [],
+        },
+      ],
+    };
+    store.rebuildTabs(defaultProfile.CustomViews);
+    store.apply(conn("connected"));
+    store.selectTabByID(thinkOOCID);
+
+    store.apply([{
+      kind: Kind.CharacterProfile,
+      characterProfile: { id: marcusProfileID, name: "Marcus" },
+    }]);
+
+    expect(store.tabs[store.activeTab]?.id).toBe(COMPONENT_IDS.all);
+
+    store.selectTabByID(thinkOOCID);
+    store.apply([{
+      kind: Kind.CharacterProfile,
+      characterProfile: { id: defaultProfileID, name: "Default" },
+    }]);
+
+    expect(store.tabs[store.activeTab]?.id).toBe(COMPONENT_IDS.all);
+
+    store.selectTabByID(thinkOOCID);
+    const toastCount = store.toasts.length;
+    store.apply([{
+      kind: Kind.CharacterProfile,
+      characterProfile: { id: defaultProfileID, name: "Default" },
+    }]);
+
+    expect(store.tabs[store.activeTab]?.id).toBe(thinkOOCID);
+    expect(store.toasts).toHaveLength(toastCount);
   });
 
   it("routes custom views using live variables and shared wildcard escapes", () => {

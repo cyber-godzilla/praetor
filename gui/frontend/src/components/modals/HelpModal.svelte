@@ -46,17 +46,21 @@
         <tbody>
           <tr><td class="k">{"${name}"}</td><td>Insert a saved command variable</td></tr>
           <tr><td class="k">{"${name:fallback}"}</td><td>Use the saved value when non-empty, otherwise insert the fallback</td></tr>
+          <tr><td class="k">{"${my.health}"}</td><td>Insert the latest game-reported character value when this step runs</td></tr>
           <tr><td class="k">command ;;&nbsp; command</td><td>Run the next command after the configured delay</td></tr>
           <tr><td class="k">command &amp;&amp; command</td><td>Run the next command after an unbusy response and configured delay</td></tr>
           <tr><td class="k">$(wait 2.5)</td><td>Pause this chain for a number of seconds</td></tr>
           <tr><td class="k">$(wait-for "text" timeout 30)</td><td>Pause until matching text; optional <code>cancel-on "text"</code> and timeout cancel the chain</td></tr>
+          <tr><td class="k">$(wait-for my.health &gt;= 75)</td><td>Pause until a live health, fatigue, encumbrance, or satiation condition is true</td></tr>
           <tr><td class="k">$(notify "title" "message")</td><td>Show a desktop notification, then continue; omit the title to use Praetor</td></tr>
           <tr><td class="k">$(set-var name value)</td><td>Create or replace a saved command variable, then continue</td></tr>
           <tr><td class="k">$(add-var name amount)</td><td>Add a number to an existing saved numeric variable, then continue</td></tr>
           <tr><td class="k">$(repeat "command" until "success" max 10)</td><td>Retry after each unbusy response; optional <code>cancel-on "text"</code> or maximum attempts stop the whole chain</td></tr>
+          <tr><td class="k">$(repeat "rest" until my.fatigue &lt;= 20)</td><td>Repeat until a live value condition is true; <code>cancel-on</code> also accepts a condition</td></tr>
           <tr><td class="k">$(repeat "command" count 5)</td><td>Send exactly five times, paced by unbusy responses; optional <code>cancel-on "text"</code> stops the whole chain</td></tr>
           <tr><td class="k">{"\\${"} &nbsp; {"\\$("} &nbsp; {"\\;;"} &nbsp; {"\\&&"}</td><td>Send the syntax literally; use <code>\\"</code> inside quoted strings</td></tr>
-          <tr><td class="k">Variable scope</td><td>Typed input, Action Sets, and /send; not Lua or /play</td></tr>
+          <tr><td class="k">Saved-variable scope</td><td>Typed input, Action Sets, and /send; not Lua or /play</td></tr>
+          <tr><td class="k">my.* scope</td><td>PraetorScript chains from typed input, Action Sets, or Lua <code>praetor_script()</code></td></tr>
           <tr><td class="k">Chain scope</td><td>Single-line input and Action Sets only</td></tr>
         </tbody>
       </table>

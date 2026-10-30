@@ -305,6 +305,32 @@ func TestState_PersistFromLua(t *testing.T) {
 	}
 }
 
+func TestState_UnpersistFromLuaRemovesLegacyValue(t *testing.T) {
+	L, ms := newTestLuaWithState(t)
+	defer L.Close()
+	var dirty int
+	ms.SetOnPersistDirty(func() { dirty++ })
+
+	err := L.DoString(`
+		state.persist("legacy_workflow_value")
+		state.set("legacy_workflow_value", "gold")
+		state.unpersist("legacy_workflow_value")
+		assert(state.get("legacy_workflow_value") == nil)
+	`)
+	if err != nil {
+		t.Fatalf("DoString error: %v", err)
+	}
+	if ms.IsPersistent("legacy_workflow_value") {
+		t.Fatal("legacy_workflow_value remained persistent")
+	}
+	if _, ok := ms.PersistentSnapshot()["legacy_workflow_value"]; ok {
+		t.Fatal("legacy_workflow_value remained in persistent snapshot")
+	}
+	if dirty < 2 {
+		t.Fatalf("dirty notifications = %d, want persist write and removal", dirty)
+	}
+}
+
 func TestState_NonexistentReadOnlyReturnsNil(t *testing.T) {
 	L, _ := newTestLuaWithState(t)
 	defer L.Close()

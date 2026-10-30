@@ -137,7 +137,7 @@ func (h HelpScreen) View() string {
 		{"/kudos <name>", "Add a Kudos Favorite"},
 		{"/kudos <name> <message>", "Add a Kudos Queue entry"},
 		{"/wiki [topic]", "Open wiki bookmarks (or a topic directly)"},
-		{"/maps [location]", "Open map browser (or a location directly)"},
+		{"/maps, /map [location]", "Open map browser (or a location directly)"},
 		{"/calc, /rb", "Rank-bonus / training-cost calculator"},
 	}
 	for _, e := range cmdEntries {
@@ -150,14 +150,17 @@ func (h HelpScreen) View() string {
 	inputEntries := []struct{ key, desc string }{
 		{"${name}", "Insert a saved command variable"},
 		{"${name:fallback}", "Use fallback when variable is empty or missing"},
+		{"${my.health}", "Insert a live character value when this step runs"},
 		{"command ;; command", "Run next command after configured delay"},
 		{"command && command", "Run next command after unbusy response + delay"},
 		{"$(wait seconds)", "Pause this chain"},
 		{`$(wait-for "text" timeout 30)`, "Wait for text; optional cancel-on \"text\""},
+		{`$(wait-for my.health >= 75)`, "Wait for a live value condition"},
 		{`$(notify "title" "message")`, "Notify; omit title to use Praetor"},
 		{`$(set-var name value)`, "Create or replace a saved variable"},
 		{`$(add-var name amount)`, "Add a number to a saved numeric variable"},
 		{`$(repeat "cmd" until "success" max 10)`, "Retry on unbusy; optional cancel-on \"text\""},
+		{`$(repeat "rest" until my.fatigue <= 20)`, "Repeat until a live condition"},
 		{`$(repeat "cmd" count 5)`, "Send exactly 5 times; optional cancel-on \"text\""},
 		{`\${  \$(  \;;  \&&`, "Send the syntax literally"},
 	}

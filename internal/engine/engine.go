@@ -20,25 +20,33 @@ type ModeChange struct {
 }
 
 type Engine struct {
-	mu              sync.Mutex
-	persistMu       sync.Mutex
-	notifyMu        sync.RWMutex
-	notify          func(title, message string)
-	praetorScriptMu sync.RWMutex
-	praetorScript   func(string) error
-	vm              *LuaVM
-	state           *ModeState
-	queue           *CommandQueue
-	metrics         *Metrics
-	matcher         *Matcher
-	status          *StatusValues
-	timers          *TimerManager
-	currentMode     string
-	modeObj         *LuaMode
-	modeChangeCh    chan ModeChange // non-blocking notifications of mode switches
-	dataDir         string
-	persistStore    *PersistentStore
-	actionGen       uint64 // incremented on mode switch/reload to cancel stale delayed actions
+	mu               sync.Mutex
+	persistMu        sync.Mutex
+	notifyMu         sync.RWMutex
+	notify           func(title, message string)
+	praetorScriptMu  sync.RWMutex
+	praetorScript    func(string) error
+	variableMu       sync.RWMutex
+	variableGet      func(string) (string, bool)
+	variableSet      func(string, string) error
+	luaLogMu         sync.Mutex
+	luaLogWindow     time.Time
+	luaLogCount      int
+	luaLogSuppressed int
+	vm               *LuaVM
+	state            *ModeState
+	queue            *CommandQueue
+	metrics          *Metrics
+	matcher          *Matcher
+	status           *StatusValues
+	timers           map[*lua.LState]*TimerManager
+	currentMode      string
+	modeObj          *LuaMode
+	modeChangeCh     chan ModeChange // non-blocking notifications of mode switches
+	dataDir          string
+	persistStore     *PersistentStore
+	persistNamespace string
+	actionGen        uint64 // incremented on mode switch/reload to cancel stale delayed actions
 
 	inSwitch bool           // true while setModeLocked's on_start/on_stop are running
 	pending  *pendingSwitch // a set_mode requested during an active switch (deferred)
@@ -67,9 +75,31 @@ func (e *Engine) SetPraetorScriptHandler(fn func(string) error) {
 	e.praetorScriptMu.Unlock()
 }
 
+// SetVariableHandlers connects Lua's variables table to the shell-independent
+// client variable store. Reads and writes are synchronous so scripts can use a
+// value immediately after setting it or handing off to another mode.
+func (e *Engine) SetVariableHandlers(
+	get func(string) (string, bool),
+	set func(string, string) error,
+) {
+	e.variableMu.Lock()
+	e.variableGet = get
+	e.variableSet = set
+	e.variableMu.Unlock()
+}
+
 // NewEngine creates a new Engine, initializes the Lua VM with bridge and state
 // APIs, and loads all modes. Pass nil for cfg to use defaults.
 func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine, error) {
+	sources := make([]LuaSource, 0, len(scriptDirs))
+	for _, dir := range scriptDirs {
+		sources = append(sources, LuaSource{Path: dir, Trust: LuaTrustTrusted})
+	}
+	return NewEngineWithSources(sources, cfg, dataDir)
+}
+
+// NewEngineWithSources constructs an engine with explicit source-level trust.
+func NewEngineWithSources(sources []LuaSource, cfg *config.Config, dataDir string) (*Engine, error) {
 	var defaultDelay time.Duration
 	var minInterval time.Duration
 	var maxQueue int
@@ -87,7 +117,7 @@ func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine
 		highPriority = []string{}
 	}
 
-	vm := NewLuaVM(scriptDirs)
+	vm := NewLuaVMWithSources(sources)
 
 	e := &Engine{
 		vm:           vm,
@@ -100,10 +130,7 @@ func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine
 		dataDir:      dataDir,
 	}
 
-	L := vm.State()
-	e.timers = NewTimerManager(L, &e.mu, &e.actionGen)
-	RegisterBridge(L, e, e.status, e.timers)
-	RegisterStateAPI(L, e.state)
+	e.timers = e.registerVM(vm)
 
 	if err := vm.LoadModes(); err != nil {
 		vm.Close()
@@ -113,26 +140,61 @@ func NewEngine(scriptDirs []string, cfg *config.Config, dataDir string) (*Engine
 	return e, nil
 }
 
+func (e *Engine) registerVM(vm *LuaVM) map[*lua.LState]*TimerManager {
+	timers := make(map[*lua.LState]*TimerManager)
+	for _, L := range vm.States() {
+		timer := NewTimerManager(L, &e.mu, &e.actionGen)
+		timers[L] = timer
+		RegisterBridge(L, e, e.status, timer)
+		RegisterStateAPI(L, e.state)
+	}
+	return timers
+}
+
+func clearAllTimers(timers map[*lua.LState]*TimerManager) {
+	for _, timer := range timers {
+		timer.ClearAll()
+	}
+}
+
+func shutdownTimers(timers map[*lua.LState]*TimerManager) {
+	for _, timer := range timers {
+		timer.Shutdown()
+	}
+}
+
 // SetUsername sets the authenticated username and loads persistent state from disk.
 func (e *Engine) SetUsername(username string) {
-	if e.dataDir == "" || username == "" {
-		return
+	if err := e.SetPersistenceNamespace(username); err != nil {
+		log.Printf("[ENGINE] loading persistent state: %v", err)
+	}
+}
+
+// SetPersistenceNamespace atomically swaps the Lua persistent-state owner.
+// The old namespace is flushed before its store is closed; a failure to load
+// the destination leaves the current namespace and live state untouched.
+func (e *Engine) SetPersistenceNamespace(namespace string) error {
+	if e.dataDir == "" || namespace == "" {
+		return nil
 	}
 	e.persistMu.Lock()
 	defer e.persistMu.Unlock()
 
 	e.mu.Lock()
+	if e.persistNamespace == namespace {
+		e.mu.Unlock()
+		return nil
+	}
 	previous := e.persistStore
 	e.mu.Unlock()
-	if previous != nil {
-		previous.Close()
-	}
 
-	store := NewPersistentStore(e.dataDir, username)
+	store := NewPersistentStore(e.dataDir, namespace)
 	data, err := store.Load()
 	if err != nil {
-		log.Printf("[ENGINE] loading persistent state: %v", err)
-		data = make(map[string]interface{})
+		return err
+	}
+	if previous != nil {
+		previous.Close()
 	}
 	store.SetSnapshotFunc(func() map[string]interface{} {
 		// Acquire the engine mutex before snapshotting: the debounced flush runs
@@ -148,10 +210,29 @@ func (e *Engine) SetUsername(username string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.persistStore = store
+	e.persistNamespace = namespace
 	e.state.ReplacePersistent(data)
 	e.state.SetOnPersistDirty(func() {
 		store.MarkDirty()
 	})
+	return nil
+}
+
+// DeletePersistenceNamespace serializes namespace deletion with state swaps
+// and debounced flushes.
+func (e *Engine) DeletePersistenceNamespace(namespace string) error {
+	if e.dataDir == "" || namespace == "" {
+		return nil
+	}
+	e.persistMu.Lock()
+	defer e.persistMu.Unlock()
+	e.mu.Lock()
+	active := e.persistNamespace == namespace
+	e.mu.Unlock()
+	if active {
+		return fmt.Errorf("cannot delete the active persistence namespace")
+	}
+	return DeletePersistentNamespace(e.dataDir, namespace)
 }
 
 // PersistentStore returns the persistent store, or nil if not yet initialized.
@@ -181,7 +262,7 @@ func (e *Engine) Close() {
 	// no in-flight timer goroutine calls into the closed Lua state. Also advance
 	// the generation so any timer/action mid-flight is retired even if it somehow
 	// slips past the closed check.
-	e.timers.Shutdown()
+	shutdownTimers(e.timers)
 	e.actionGen++
 	if e.modeChangeCh != nil {
 		close(e.modeChangeCh)
@@ -238,8 +319,6 @@ func (e *Engine) runSwitch(name string, args []string) {
 
 // setModeLocked performs the mode switch while the lock is already held.
 func (e *Engine) setModeLocked(name string, args []string) {
-	L := e.vm.State()
-
 	// Normalize the requested mode to its canonical (case-correct) name so
 	// currentMode, the metrics session, and the mode-change event all agree
 	// regardless of how the caller cased it. "" and "disable" have no canonical
@@ -259,17 +338,17 @@ func (e *Engine) setModeLocked(name string, args []string) {
 
 	// Call on_stop on previous mode
 	if e.modeObj != nil && e.modeObj.HasOnStop && e.modeObj.onStopRef != nil {
-		if err := callLua(L, lua.P{
+		if err := callLua(e.modeObj.state, lua.P{
 			Fn:      e.modeObj.onStopRef,
 			NRet:    0,
 			Protect: true,
 		}); err != nil {
-			log.Printf("[ENGINE] on_stop error for %s: %v", e.currentMode, err)
+			log.Printf("[ENGINE] on_stop error for %s: %v", luaModeLogContext(e.modeObj), err)
 		}
 	}
 
 	// Cancel all active timers and delayed actions from previous mode.
-	e.timers.ClearAll()
+	clearAllTimers(e.timers)
 	e.actionGen++
 
 	// End metrics session if one is active.
@@ -319,6 +398,7 @@ func (e *Engine) setModeLocked(name string, args []string) {
 		return
 	}
 	e.modeObj = mode
+	L := mode.state
 
 	// Update read-only state fields
 	e.state.SetReadOnly("mode", name)
@@ -335,7 +415,7 @@ func (e *Engine) setModeLocked(name string, args []string) {
 			NRet:    0,
 			Protect: true,
 		}, argsTbl); err != nil {
-			log.Printf("[ENGINE] on_start error for %s: %v", name, err)
+			log.Printf("[ENGINE] on_start error for %s: %v", luaModeLogContext(mode), err)
 		}
 	}
 }
@@ -350,7 +430,7 @@ func (e *Engine) Process(text string) {
 		return
 	}
 
-	L := e.vm.State()
+	L := e.modeObj.state
 
 	for _, reaction := range e.modeObj.Reactions {
 		// Match patterns (Go-side)
@@ -365,7 +445,7 @@ func (e *Engine) Process(text string) {
 				NRet:    1,
 				Protect: true,
 			}); err != nil {
-				log.Printf("[ENGINE] condition error: %v", err)
+				log.Printf("[ENGINE] condition error for %s: %v", luaModeLogContext(e.modeObj), err)
 				continue
 			}
 			result := L.Get(-1)
@@ -395,7 +475,7 @@ func (e *Engine) Process(text string) {
 					NRet:    0,
 					Protect: true,
 				}, capturedText); err != nil {
-					log.Printf("[ENGINE] delayed action error: %v", err)
+					log.Printf("[ENGINE] delayed action error for %s: %v", luaModeLogContext(e.modeObj), err)
 				}
 			}()
 		} else {
@@ -404,13 +484,20 @@ func (e *Engine) Process(text string) {
 				NRet:    0,
 				Protect: true,
 			}, luaText); err != nil {
-				log.Printf("[ENGINE] action error: %v", err)
+				log.Printf("[ENGINE] action error for %s: %v", luaModeLogContext(e.modeObj), err)
 			}
 		}
 
 		// First matching reaction wins
 		return
 	}
+}
+
+func luaModeLogContext(mode *LuaMode) string {
+	if mode == nil {
+		return "unknown mode"
+	}
+	return fmt.Sprintf("%s (source=%s, trust=%s)", mode.Name, mode.SourcePath, mode.Trust)
 }
 
 // CurrentMode returns the name of the active mode.
@@ -452,7 +539,25 @@ func (e *Engine) Status() *StatusValues {
 func (e *Engine) UpdateScriptDirs(dirs []string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.rebuildVM(dirs)
+	sources := make([]LuaSource, 0, len(dirs))
+	for _, dir := range dirs {
+		sources = append(sources, LuaSource{Path: dir, Trust: LuaTrustTrusted})
+	}
+	return e.rebuildVM(sources)
+}
+
+// UpdateScriptSources transactionally reloads the source graph with explicit
+// trust boundaries.
+func (e *Engine) UpdateScriptSources(sources []LuaSource) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.rebuildVM(sources)
+}
+
+func (e *Engine) ScriptSources() []LuaSource {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.vm.Sources()
 }
 
 // ReloadMode hot-reloads a single mode from disk.
@@ -468,31 +573,32 @@ func (e *Engine) ReloadMode(name string) error {
 func (e *Engine) ReloadAllModes() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.rebuildVM(e.vm.ScriptDirs())
+	return e.rebuildVM(e.vm.Sources())
 }
 
 // rebuildVM creates a fresh Lua VM with the given directories. If the current
 // mode still exists after reload it is preserved; otherwise it is disabled.
 // Must be called with e.mu held.
-func (e *Engine) rebuildVM(dirs []string) error {
+func (e *Engine) rebuildVM(sources []LuaSource) error {
 	prevMode := e.currentMode
 
-	newVM := NewLuaVM(dirs)
-	L := newVM.State()
-	newTimers := NewTimerManager(L, &e.mu, &e.actionGen)
-	RegisterBridge(L, e, e.status, newTimers)
-	RegisterStateAPI(L, e.state)
+	newVM := NewLuaVMWithSources(sources)
+	newTimers := e.registerVM(newVM)
 
 	if err := newVM.LoadModes(); err != nil {
-		newTimers.Shutdown()
+		shutdownTimers(newTimers)
 		newVM.Close()
 		return fmt.Errorf("loading modes: %w", err)
 	}
 
+	// Mode state survives a hot reload. Move its Lua-owned data into the new VM
+	// while the old states are still alive, dropping non-portable capabilities.
+	e.state.RehomeValues(newVM.State())
+
 	// Only retire the working VM/timers after the replacement has loaded
 	// successfully. A syntax error in a newly configured directory therefore
 	// leaves the current automation session intact.
-	e.timers.Shutdown()
+	shutdownTimers(e.timers)
 	e.timers = newTimers
 
 	// Cancel any delayed actions from the old VM before closing it.
@@ -610,6 +716,29 @@ func (e *Engine) OnNotify(title, message string) {
 
 // OnLog logs a message from Lua.
 func (e *Engine) OnLog(message string) {
+	if len(message) > 2048 {
+		message = message[:2048] + "…"
+	}
+	e.luaLogMu.Lock()
+	defer e.luaLogMu.Unlock()
+	now := time.Now()
+	if e.luaLogWindow.IsZero() || now.Sub(e.luaLogWindow) >= time.Second {
+		if e.luaLogSuppressed > 0 {
+			log.Printf("[LUA] suppressed %d log messages", e.luaLogSuppressed)
+		}
+		e.luaLogWindow = now
+		e.luaLogCount = 0
+		e.luaLogSuppressed = 0
+	}
+	if e.luaLogCount >= 20 {
+		e.luaLogSuppressed++
+		return
+	}
+	e.luaLogCount++
+	if e.modeObj != nil {
+		log.Printf("[LUA:%s] %s", luaModeLogContext(e.modeObj), message)
+		return
+	}
 	log.Printf("[LUA] %s", message)
 }
 
@@ -636,6 +765,29 @@ func (e *Engine) OnMetricsSet(key string, value int) {
 // OnMetricsGet returns the current value of a metric.
 func (e *Engine) OnMetricsGet(key string) int {
 	return e.metrics.Get(key)
+}
+
+// OnVariableGet reads one user-facing variable from the active character's
+// effective variable snapshot.
+func (e *Engine) OnVariableGet(name string) (string, bool) {
+	e.variableMu.RLock()
+	get := e.variableGet
+	e.variableMu.RUnlock()
+	if get == nil {
+		return "", false
+	}
+	return get(name)
+}
+
+// OnVariableSet persists one user-facing variable for the active character.
+func (e *Engine) OnVariableSet(name, value string) error {
+	e.variableMu.RLock()
+	set := e.variableSet
+	e.variableMu.RUnlock()
+	if set == nil {
+		return fmt.Errorf("variable storage is unavailable")
+	}
+	return set(name, value)
 }
 
 // SetHighPriority updates the command queue's high-priority list.

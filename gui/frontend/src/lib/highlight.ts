@@ -2,7 +2,8 @@
 // highlighting (loot detection) and IP masking. These are visual-only and do
 // not touch the core event stream.
 
-import type { Segment, HighlightConfig } from "./types";
+import type { Segment, HighlightConfig, ColorwordStyle } from "./types";
+import { safeColor } from "./color";
 import { expandVariables } from "./variables";
 import { compileWildcard, type WildcardPattern } from "./wildcard";
 
@@ -26,6 +27,23 @@ export interface CompiledHighlight {
 // four configurable highlight styles so a search never masquerades as loot.
 export const SEARCH_STYLE = { bg: "#7f5fb0", fg: "#ffffff" };
 
+export function highlightStyleColors(
+  name: string,
+  styles?: ColorwordStyle[] | null,
+): { bg: string; fg: string } {
+  const style = styles?.find((candidate) => candidate.name === name);
+  const color = safeColor(style?.colors[0]);
+  if (!color) return STYLE_COLORS[name] ?? STYLE_COLORS.gold;
+  const match = /^#([0-9a-f]{6})(?:[0-9a-f]{2})?$/i.exec(color);
+  if (!match) return { bg: color, fg: "#000000" };
+  const value = Number.parseInt(match[1], 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return { bg: color, fg: luminance < 0.46 ? "#ffffff" : "#000000" };
+}
+
 // foldAscii lowercases only ASCII A-Z, leaving every other code unit untouched.
 // It is LENGTH-PRESERVING (unlike String.prototype.toLowerCase, which can grow a
 // string — e.g. 'İ' → 'i̇'), so match offsets found in the folded string remain
@@ -44,6 +62,7 @@ export function foldAscii(s: string): string {
 export function compileHighlights(
   rules: HighlightConfig[] | null | undefined,
   variables?: Record<string, string> | null,
+  styles?: ColorwordStyle[] | null,
 ): CompiledHighlight[] {
   return (rules ?? []).flatMap((r) => {
       if (!r.Active || !r.Pattern) return [];
@@ -54,7 +73,7 @@ export function compileHighlights(
         return [];
       }
       if (!pattern) return [];
-      const c = STYLE_COLORS[r.Style] ?? STYLE_COLORS.gold;
+      const c = highlightStyleColors(r.Style, styles);
       return [{ pattern, matcher: compileWildcard(pattern, "substring"), bg: c.bg, fg: c.fg }];
     });
 }

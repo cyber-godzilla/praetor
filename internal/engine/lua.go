@@ -68,6 +68,9 @@ type LuaMode struct {
 	HasOnStop  bool
 	onStartRef *lua.LFunction
 	onStopRef  *lua.LFunction
+	state      *lua.LState
+	SourcePath string
+	Trust      string
 }
 
 // ModeSpec is a mode's self-declared metadata, read off the mode table at load
@@ -99,49 +102,260 @@ type ModeSpec struct {
 
 // LuaVM manages the gopher-lua state, mode registry, and hot reload.
 type LuaVM struct {
-	mu         sync.Mutex
-	state      *lua.LState
-	modes      map[string]*LuaMode
-	scriptDirs []string
-	matcher    *Matcher
+	mu       sync.Mutex
+	state    *lua.LState // compatibility: trusted state, or first restricted state
+	states   []*lua.LState
+	modes    map[string]*LuaMode
+	sources  []LuaSource
+	runtimes map[string]*lua.LState
+	matcher  *Matcher
+}
+
+const (
+	LuaTrustRestricted = "restricted"
+	LuaTrustTrusted    = "trusted"
+)
+
+// LuaSource assigns one script root to a source-level trust boundary. Trusted
+// roots share the legacy Lua state for cross-directory compatibility;
+// Restricted roots receive independent states and source-scoped module caches.
+type LuaSource struct {
+	Path  string
+	Trust string
 }
 
 // NewLuaVM creates a new LuaVM with a fresh Lua state. All script directories
 // are added to package.path so that modes can require shared libraries.
 func NewLuaVM(scriptDirs []string) *LuaVM {
-	L := lua.NewState()
-
-	// Add all script directories to package.path.
-	pkg := L.GetGlobal("package")
-	if tbl, ok := pkg.(*lua.LTable); ok {
-		currentPath := lua.LVAsString(tbl.RawGetString("path"))
-		var newPaths []string
-		for _, dir := range scriptDirs {
-			newPaths = append(newPaths, filepath.Join(dir, "?.lua"))
-			newPaths = append(newPaths, filepath.Join(dir, "?/init.lua"))
-		}
-		if currentPath != "" {
-			newPaths = append(newPaths, currentPath)
-		}
-		tbl.RawSetString("path", lua.LString(strings.Join(newPaths, ";")))
+	sources := make([]LuaSource, 0, len(scriptDirs))
+	for _, dir := range scriptDirs {
+		sources = append(sources, LuaSource{Path: dir, Trust: LuaTrustTrusted})
 	}
+	return NewLuaVMWithSources(sources)
+}
 
-	return &LuaVM{
-		state:      L,
-		modes:      make(map[string]*LuaMode),
-		scriptDirs: scriptDirs,
-		matcher:    NewMatcher(),
+func NewLuaVMWithSources(sources []LuaSource) *LuaVM {
+	vm := &LuaVM{
+		modes: make(map[string]*LuaMode), runtimes: make(map[string]*lua.LState), matcher: NewMatcher(),
 	}
+	trustedDirs := make([]string, 0, len(sources))
+	for _, source := range sources {
+		source.Path = filepath.Clean(source.Path)
+		if source.Trust != LuaTrustRestricted {
+			source.Trust = LuaTrustTrusted
+			trustedDirs = append(trustedDirs, source.Path)
+		}
+		vm.sources = append(vm.sources, source)
+	}
+	var trusted *lua.LState
+	if len(trustedDirs) > 0 {
+		trusted = lua.NewState()
+		configureTrustedPackagePath(trusted, trustedDirs)
+		vm.addState(trusted)
+	}
+	for _, source := range vm.sources {
+		if source.Trust == LuaTrustRestricted {
+			L := newRestrictedState(source.Path)
+			vm.runtimes[source.Path] = L
+			vm.addState(L)
+		} else {
+			vm.runtimes[source.Path] = trusted
+		}
+	}
+	if vm.state == nil {
+		// Preserve the historical non-nil State contract for an empty source list.
+		vm.addState(lua.NewState())
+	}
+	return vm
+}
+
+func (vm *LuaVM) addState(L *lua.LState) {
+	if vm.state == nil {
+		vm.state = L
+	}
+	vm.states = append(vm.states, L)
+}
+
+func configureTrustedPackagePath(L *lua.LState, dirs []string) {
+	pkg, ok := L.GetGlobal("package").(*lua.LTable)
+	if !ok {
+		return
+	}
+	currentPath := lua.LVAsString(pkg.RawGetString("path"))
+	paths := make([]string, 0, len(dirs)*2+1)
+	for _, dir := range dirs {
+		paths = append(paths, filepath.Join(dir, "?.lua"), filepath.Join(dir, "?/init.lua"))
+	}
+	if currentPath != "" {
+		paths = append(paths, currentPath)
+	}
+	pkg.RawSetString("path", lua.LString(strings.Join(paths, ";")))
+}
+
+func newRestrictedState(root string) *lua.LState {
+	L := lua.NewState(lua.Options{SkipOpenLibs: true})
+	lua.OpenBase(L)
+	lua.OpenTable(L)
+	lua.OpenString(L)
+	lua.OpenMath(L)
+	lua.OpenCoroutine(L)
+	for _, name := range []string{
+		"collectgarbage", "dofile", "getfenv", "load", "loadfile", "loadstring",
+		"module", "newproxy", "setfenv", "_printregs",
+	} {
+		L.SetGlobal(name, lua.LNil)
+	}
+	installRestrictedRequire(L, root)
+	var printMu sync.Mutex
+	printWindow := time.Now()
+	printCount := 0
+	printSuppressed := 0
+	L.SetGlobal("print", L.NewFunction(func(L *lua.LState) int {
+		parts := make([]string, 0, L.GetTop())
+		for i := 1; i <= L.GetTop(); i++ {
+			parts = append(parts, L.ToStringMeta(L.Get(i)).String())
+		}
+		message := strings.Join(parts, "\t")
+		if len(message) > 2048 {
+			message = message[:2048] + "…"
+		}
+		printMu.Lock()
+		now := time.Now()
+		if now.Sub(printWindow) >= time.Second {
+			if printSuppressed > 0 {
+				log.Printf("[LUA:%s] suppressed %d print messages", filepath.Base(root), printSuppressed)
+			}
+			printWindow = now
+			printCount = 0
+			printSuppressed = 0
+		}
+		if printCount >= 20 {
+			printSuppressed++
+			printMu.Unlock()
+			return 0
+		}
+		printCount++
+		log.Printf("[LUA:%s] %s", filepath.Base(root), message)
+		printMu.Unlock()
+		return 0
+	}))
+	return L
+}
+
+func installRestrictedRequire(L *lua.LState, root string) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolvedRoot = filepath.Clean(root)
+	}
+	cache := make(map[string]lua.LValue)
+	loading := make(map[string]bool)
+	L.SetGlobal("require", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+		if !validRestrictedModuleName(name) {
+			L.RaiseError("restricted require denied module %q", name)
+			return 0
+		}
+		if value, ok := cache[name]; ok {
+			L.Push(value)
+			return 1
+		}
+		if loading[name] {
+			L.RaiseError("circular require of %q", name)
+			return 0
+		}
+		relative := filepath.FromSlash(strings.ReplaceAll(name, ".", "/"))
+		candidates := []string{filepath.Join(resolvedRoot, relative+".lua"), filepath.Join(resolvedRoot, relative, "init.lua")}
+		modulePath := ""
+		for _, candidate := range candidates {
+			resolved, resolveErr := filepath.EvalSymlinks(candidate)
+			if resolveErr != nil {
+				continue
+			}
+			rel, relErr := filepath.Rel(resolvedRoot, resolved)
+			if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+				continue
+			}
+			if info, statErr := os.Stat(resolved); statErr == nil && !info.IsDir() {
+				modulePath = resolved
+				break
+			}
+		}
+		if modulePath == "" {
+			L.RaiseError("restricted module %q not found in source", name)
+			return 0
+		}
+		fn, loadErr := L.LoadFile(modulePath)
+		if loadErr != nil {
+			L.RaiseError("loading restricted module %q: %v", name, loadErr)
+			return 0
+		}
+		loading[name] = true
+		callErr := callLua(L, lua.P{Fn: fn, NRet: 1, Protect: true})
+		delete(loading, name)
+		if callErr != nil {
+			L.RaiseError("loading restricted module %q: %v", name, callErr)
+			return 0
+		}
+		value := L.Get(-1)
+		L.Pop(1)
+		if value == lua.LNil {
+			value = lua.LTrue
+		}
+		cache[name] = value
+		L.Push(value)
+		return 1
+	}))
+}
+
+func validRestrictedModuleName(name string) bool {
+	if name == "" || strings.HasPrefix(name, ".") || strings.HasSuffix(name, ".") {
+		return false
+	}
+	for _, part := range strings.Split(name, ".") {
+		if part == "" {
+			return false
+		}
+		for i, r := range part {
+			if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func resolveContainedFile(root, path string) (string, error) {
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
+	resolvedPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", err
+	}
+	rel, err := filepath.Rel(resolvedRoot, resolvedPath)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path escapes restricted source")
+	}
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("path is a directory")
+	}
+	return resolvedPath, nil
 }
 
 // Close shuts down the Lua state.
 func (vm *LuaVM) Close() {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
-	if vm.state != nil {
-		vm.state.Close()
-		vm.state = nil
+	for _, L := range vm.states {
+		L.Close()
 	}
+	vm.states = nil
+	vm.state = nil
 }
 
 // LoadModes scans all script directories for .lua files, loads each one, and
@@ -151,7 +365,8 @@ func (vm *LuaVM) LoadModes() error {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
-	for _, dir := range vm.scriptDirs {
+	for _, source := range vm.sources {
+		dir := source.Path
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			log.Printf("[ENGINE] skipping script directory %s: %v", dir, err)
@@ -170,7 +385,7 @@ func (vm *LuaVM) LoadModes() error {
 			name := strings.TrimSuffix(entry.Name(), ".lua")
 			path := filepath.Join(dir, entry.Name())
 
-			mode, err := vm.loadModeFile(name, path)
+			mode, err := vm.loadModeFile(name, path, vm.runtimes[source.Path], source)
 			if err != nil {
 				log.Printf("[ENGINE] skipping %s: %v", path, err)
 				continue
@@ -218,12 +433,13 @@ func (vm *LuaVM) ReloadMode(name string) error {
 
 	vm.clearLibCache()
 
-	for _, dir := range vm.scriptDirs {
+	for _, source := range vm.sources {
+		dir := source.Path
 		path := filepath.Join(dir, name+".lua")
 		if _, err := os.Stat(path); err != nil {
 			continue
 		}
-		mode, err := vm.loadModeFile(name, path)
+		mode, err := vm.loadModeFile(name, path, vm.runtimes[source.Path], source)
 		if err != nil {
 			return fmt.Errorf("reloading mode %s: %w", name, err)
 		}
@@ -239,13 +455,35 @@ func (vm *LuaVM) ReloadMode(name string) error {
 func (vm *LuaVM) ScriptDirs() []string {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
-	return vm.scriptDirs
+	dirs := make([]string, 0, len(vm.sources))
+	for _, source := range vm.sources {
+		dirs = append(dirs, source.Path)
+	}
+	return dirs
+}
+
+func (vm *LuaVM) Sources() []LuaSource {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	return append([]LuaSource(nil), vm.sources...)
+}
+
+func (vm *LuaVM) States() []*lua.LState {
+	vm.mu.Lock()
+	defer vm.mu.Unlock()
+	return append([]*lua.LState(nil), vm.states...)
 }
 
 // clearLibCache removes all entries from Lua's package.loaded table
 // so that subsequent require() calls re-read files from disk.
 func (vm *LuaVM) clearLibCache() {
-	pkg := vm.state.GetGlobal("package")
+	for _, L := range vm.states {
+		vm.clearStateLibCache(L)
+	}
+}
+
+func (vm *LuaVM) clearStateLibCache(L *lua.LState) {
+	pkg := L.GetGlobal("package")
 	tbl, ok := pkg.(*lua.LTable)
 	if !ok {
 		return
@@ -311,28 +549,40 @@ func (vm *LuaVM) Matcher() *Matcher {
 
 // loadModeFile loads a single .lua file which must return a table M with
 // on_start(args), optional on_stop(), and reactions array.
-func (vm *LuaVM) loadModeFile(name, path string) (*LuaMode, error) {
+func (vm *LuaVM) loadModeFile(name, path string, L *lua.LState, source LuaSource) (*LuaMode, error) {
+	if source.Trust == LuaTrustRestricted {
+		resolved, err := resolveContainedFile(source.Path, path)
+		if err != nil {
+			return nil, fmt.Errorf("restricted mode path %s: %w", path, err)
+		}
+		path = resolved
+	}
 	// Snapshot the stack depth so we can (a) detect a file that returns nothing
 	// and (b) always restore the stack afterward, leaving it clean for the next
 	// file regardless of how many values this one returned.
-	base := vm.state.GetTop()
-	if err := vm.state.DoFile(path); err != nil {
-		vm.state.SetTop(base)
+	base := L.GetTop()
+	fn, err := L.LoadFile(path)
+	if err != nil {
+		L.SetTop(base)
+		return nil, fmt.Errorf("executing %s: %w", path, err)
+	}
+	if err := callLua(L, lua.P{Fn: fn, NRet: lua.MultRet, Protect: true}); err != nil {
+		L.SetTop(base)
 		return nil, fmt.Errorf("executing %s: %w", path, err)
 	}
 
 	// A file with no `return M` leaves the stack unchanged. Popping in that case
 	// underflows gopher-lua's register stack and panics (uncaught), so guard it
 	// and report a skippable error instead of crashing the client.
-	if vm.state.GetTop() <= base {
-		vm.state.SetTop(base)
+	if L.GetTop() <= base {
+		L.SetTop(base)
 		return nil, fmt.Errorf("%s: mode file returned no value (did you forget `return M`?)", path)
 	}
 
 	// Take the first returned value (the mode table); `return M, extra` leaves
 	// the extras above it. SetTop(base) then drops everything this file pushed.
-	ret := vm.state.Get(base + 1)
-	vm.state.SetTop(base)
+	ret := L.Get(base + 1)
+	L.SetTop(base)
 
 	tbl, ok := ret.(*lua.LTable)
 	if !ok {
@@ -340,7 +590,7 @@ func (vm *LuaVM) loadModeFile(name, path string) (*LuaMode, error) {
 	}
 
 	mode := &LuaMode{
-		Name: name,
+		Name: name, state: L, SourcePath: source.Path, Trust: source.Trust,
 	}
 
 	// Extract the declared metadata (all optional). A field of the wrong type is

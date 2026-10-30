@@ -108,21 +108,54 @@ const (
 	KindAddVariable
 )
 
-// Command is one fully expanded command and the separator that preceded it.
+// Command is one parsed command and the separator that preceded it. Saved
+// variables are expanded immediately; reserved my.* values remain late-bound.
 type Command struct {
-	Text     string
-	Title    string
-	Wait     WaitMode
-	Kind     CommandKind
-	Duration time.Duration
-	Timeout  time.Duration
-	Match    string
-	Cancel   string
-	Max      int
-	Count    int
-	Variable string
-	Value    string
-	Amount   float64
+	Text             string
+	Title            string
+	Wait             WaitMode
+	Kind             CommandKind
+	Duration         time.Duration
+	DurationTemplate string
+	Timeout          time.Duration
+	TimeoutTemplate  string
+	Match            string
+	MatchCondition   *ValueCondition
+	Cancel           string
+	CancelCondition  *ValueCondition
+	Max              int
+	MaxTemplate      string
+	Count            int
+	CountTemplate    string
+	Variable         string
+	Value            string
+	Amount           float64
+	AmountTemplate   string
+}
+
+// ValueCondition compares one live, read-only my.* value with a numeric
+// operand. Operand may retain ${my.*} references for evaluation at runtime.
+type ValueCondition struct {
+	Field    string
+	Operator string
+	Operand  string
+}
+
+var liveValueFields = map[string]struct{}{
+	"health":      {},
+	"fatigue":     {},
+	"encumbrance": {},
+	"satiation":   {},
+}
+
+// IsLiveValueName reports whether name is one of PraetorScript's reserved,
+// read-only my.* values.
+func IsLiveValueName(name string) bool {
+	if !strings.HasPrefix(name, "my.") {
+		return false
+	}
+	_, ok := liveValueFields[strings.TrimPrefix(name, "my.")]
+	return ok
 }
 
 type part struct {
@@ -131,9 +164,10 @@ type part struct {
 }
 
 // Expand splits one typed line on unescaped ;; and && separators and
-// substitutes ${name} or ${name:fallback} references in each resulting
-// command. ;; waits for the normal pacing delay; && waits for a recognized
-// unbusy game line. Splitting happens first, so variable values and fallbacks
+// substitutes saved ${name} or ${name:fallback} references in each resulting
+// command while retaining my.* references for dispatch. ;; waits for the normal
+// pacing delay; && waits for a recognized unbusy game line. Splitting happens
+// first, so variable values and fallbacks
 // containing separators remain data and cannot inject extra commands.
 func Expand(input string, variables map[string]string) ([]Command, error) {
 	parts, err := split(input)
@@ -261,7 +295,7 @@ func expandPart(part part, variables map[string]string) (Command, error) {
 	if containsUnescapedDirective(raw) {
 		return Command{}, fmt.Errorf("input directive must occupy a complete chain step")
 	}
-	text, err := ExpandVariables(part.text, variables)
+	text, err := expandPraetorVariables(part.text, variables)
 	if err != nil {
 		return Command{}, err
 	}
@@ -288,9 +322,15 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 	name, arg := splitDirectiveHead(body)
 	switch name {
 	case "wait":
-		expanded, err := ExpandVariables(strings.TrimSpace(arg), variables)
+		expanded, err := expandPraetorVariables(strings.TrimSpace(arg), variables)
 		if err != nil {
 			return Command{}, err
+		}
+		if containsLiveValueReference(expanded) {
+			if err := validateLiveNumberTemplate(expanded, true, false, "wait"); err != nil {
+				return Command{}, err
+			}
+			return Command{Kind: KindWait, DurationTemplate: expanded}, nil
 		}
 		seconds, err := strconv.ParseFloat(expanded, 64)
 		if err != nil || seconds <= 0 {
@@ -303,41 +343,49 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		return Command{Kind: KindWait, Duration: duration}, nil
 
 	case "wait-for":
-		value, cancel, timeoutText, err := parseWaitForArguments(arg)
+		value, matchCondition, cancel, cancelCondition, timeoutText, err := parseWaitForArguments(arg)
 		if err != nil {
 			return Command{}, err
 		}
-		value, err = ExpandVariables(value, variables)
+		value, err = expandPraetorVariables(value, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		if value == "" {
+		if value == "" && matchCondition == nil {
 			return Command{}, fmt.Errorf("wait-for requires a non-empty substring")
 		}
-		hasCancel := cancel != ""
-		cancel, err = ExpandVariables(cancel, variables)
+		hasCancel := cancel != "" || cancelCondition != nil
+		cancel, err = expandPraetorVariables(cancel, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		if hasCancel && cancel == "" {
+		if hasCancel && cancelCondition == nil && cancel == "" {
 			return Command{}, fmt.Errorf("cancel-on requires a non-empty substring")
 		}
-		timeout, err := expandPositiveSeconds(timeoutText, variables, "wait-for timeout")
+		matchCondition, err = expandValueCondition(matchCondition, variables)
+		if err != nil {
+			return Command{}, fmt.Errorf("wait-for condition: %w", err)
+		}
+		cancelCondition, err = expandValueCondition(cancelCondition, variables)
+		if err != nil {
+			return Command{}, fmt.Errorf("cancel-on condition: %w", err)
+		}
+		timeout, timeoutTemplate, err := expandPositiveSeconds(timeoutText, variables, "wait-for timeout")
 		if err != nil {
 			return Command{}, err
 		}
-		return Command{Kind: KindWaitFor, Match: value, Cancel: cancel, Timeout: timeout}, nil
+		return Command{Kind: KindWaitFor, Match: value, MatchCondition: matchCondition, Cancel: cancel, CancelCondition: cancelCondition, Timeout: timeout, TimeoutTemplate: timeoutTemplate}, nil
 
 	case "notify":
 		title, value, err := parseNotifyArguments(arg)
 		if err != nil {
 			return Command{}, err
 		}
-		title, err = ExpandVariables(title, variables)
+		title, err = expandPraetorVariables(title, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		value, err = ExpandVariables(value, variables)
+		value, err = expandPraetorVariables(value, variables)
 		if err != nil {
 			return Command{}, err
 		}
@@ -350,48 +398,56 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		return Command{Kind: KindNotify, Title: title, Text: value}, nil
 
 	case "repeat":
-		command, match, cancel, maxText, countText, err := parseRepeatArguments(arg)
+		command, match, matchCondition, cancel, cancelCondition, maxText, countText, err := parseRepeatArguments(arg)
 		if err != nil {
 			return Command{}, err
 		}
-		command, err = ExpandVariables(command, variables)
+		command, err = expandPraetorVariables(command, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		match, err = ExpandVariables(match, variables)
+		match, err = expandPraetorVariables(match, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		hasCancel := cancel != ""
-		cancel, err = ExpandVariables(cancel, variables)
+		hasCancel := cancel != "" || cancelCondition != nil
+		cancel, err = expandPraetorVariables(cancel, variables)
 		if err != nil {
 			return Command{}, err
 		}
-		if hasCancel && cancel == "" {
+		if hasCancel && cancelCondition == nil && cancel == "" {
 			return Command{}, fmt.Errorf("cancel-on requires a non-empty substring")
 		}
 		if command == "" {
 			return Command{}, fmt.Errorf("repeat command must not be empty")
 		}
-		if countText == "" && match == "" {
+		if countText == "" && match == "" && matchCondition == nil {
 			return Command{}, fmt.Errorf("repeat success substring must not be empty")
 		}
-		max, err := expandPositiveInt(maxText, variables, "repeat max")
+		matchCondition, err = expandValueCondition(matchCondition, variables)
+		if err != nil {
+			return Command{}, fmt.Errorf("repeat until condition: %w", err)
+		}
+		cancelCondition, err = expandValueCondition(cancelCondition, variables)
+		if err != nil {
+			return Command{}, fmt.Errorf("cancel-on condition: %w", err)
+		}
+		max, maxTemplate, err := expandPositiveInt(maxText, variables, "repeat max")
 		if err != nil {
 			return Command{}, err
 		}
-		count, err := expandPositiveInt(countText, variables, "repeat count")
+		count, countTemplate, err := expandPositiveInt(countText, variables, "repeat count")
 		if err != nil {
 			return Command{}, err
 		}
-		return Command{Kind: KindRepeat, Text: command, Match: match, Cancel: cancel, Max: max, Count: count}, nil
+		return Command{Kind: KindRepeat, Text: command, Match: match, MatchCondition: matchCondition, Cancel: cancel, CancelCondition: cancelCondition, Max: max, MaxTemplate: maxTemplate, Count: count, CountTemplate: countTemplate}, nil
 
 	case "set-var":
 		variable, value, err := parseSetVariableArguments(arg)
 		if err != nil {
 			return Command{}, err
 		}
-		value, err = ExpandVariables(value, variables)
+		value, err = expandPraetorVariables(value, variables)
 		if err != nil {
 			return Command{}, err
 		}
@@ -402,9 +458,15 @@ func expandDirective(body string, variables map[string]string) (Command, error) 
 		if err != nil {
 			return Command{}, err
 		}
-		amountText, err = ExpandVariables(amountText, variables)
+		amountText, err = expandPraetorVariables(amountText, variables)
 		if err != nil {
 			return Command{}, err
+		}
+		if containsLiveValueReference(amountText) {
+			if err := validateLiveNumberTemplate(amountText, false, false, "add-var amount"); err != nil {
+				return Command{}, err
+			}
+			return Command{Kind: KindAddVariable, Variable: variable, AmountTemplate: amountText}, nil
 		}
 		amount, err := strconv.ParseFloat(amountText, 64)
 		if err != nil || math.IsNaN(amount) || math.IsInf(amount, 0) {
@@ -447,38 +509,50 @@ func parseAddVariableArguments(arg string) (variable, amount string, err error) 
 	return words[0], words[1], nil
 }
 
-func expandPositiveSeconds(input string, variables map[string]string, name string) (time.Duration, error) {
+func expandPositiveSeconds(input string, variables map[string]string, name string) (time.Duration, string, error) {
 	if input == "" {
-		return 0, nil
+		return 0, "", nil
 	}
-	expanded, err := ExpandVariables(input, variables)
+	expanded, err := expandPraetorVariables(input, variables)
 	if err != nil {
-		return 0, err
+		return 0, "", err
+	}
+	if containsLiveValueReference(expanded) {
+		if err := validateLiveNumberTemplate(expanded, true, false, name); err != nil {
+			return 0, "", err
+		}
+		return 0, expanded, nil
 	}
 	seconds, err := strconv.ParseFloat(expanded, 64)
 	if err != nil || seconds <= 0 {
-		return 0, fmt.Errorf("%s requires a positive number of seconds", name)
+		return 0, "", fmt.Errorf("%s requires a positive number of seconds", name)
 	}
 	duration := time.Duration(seconds * float64(time.Second))
 	if duration <= 0 {
-		return 0, fmt.Errorf("%s is too small", name)
+		return 0, "", fmt.Errorf("%s is too small", name)
 	}
-	return duration, nil
+	return duration, "", nil
 }
 
-func expandPositiveInt(input string, variables map[string]string, name string) (int, error) {
+func expandPositiveInt(input string, variables map[string]string, name string) (int, string, error) {
 	if input == "" {
-		return 0, nil
+		return 0, "", nil
 	}
-	expanded, err := ExpandVariables(input, variables)
+	expanded, err := expandPraetorVariables(input, variables)
 	if err != nil {
-		return 0, err
+		return 0, "", err
+	}
+	if containsLiveValueReference(expanded) {
+		if err := validateLiveNumberTemplate(expanded, true, true, name); err != nil {
+			return 0, "", err
+		}
+		return 0, expanded, nil
 	}
 	value, err := strconv.Atoi(expanded)
 	if err != nil || value <= 0 {
-		return 0, fmt.Errorf("%s requires a positive whole number", name)
+		return 0, "", fmt.Errorf("%s requires a positive whole number", name)
 	}
-	return value, nil
+	return value, "", nil
 }
 
 func splitDirectiveHead(body string) (name, arg string) {
@@ -524,62 +598,59 @@ func parseNotifyArguments(arg string) (title, message string, err error) {
 	return first, second, nil
 }
 
-func parseWaitForArguments(arg string) (match, cancel, timeout string, err error) {
+func parseWaitForArguments(arg string) (match string, condition *ValueCondition, cancel string, cancelCondition *ValueCondition, timeout string, err error) {
 	rest := strings.TrimSpace(arg)
 	if rest == "" {
-		return "", "", "", fmt.Errorf("wait-for requires a string")
+		return "", nil, "", nil, "", fmt.Errorf("wait-for requires a string or my.* condition")
 	}
-	if rest[0] != '"' {
+	if rest[0] != '"' && !strings.HasPrefix(strings.ToLower(firstField(rest)), "my.") {
 		// Preserve the original convenient unquoted form. Optional clauses are
 		// intentionally available only with a quoted match, avoiding ambiguity.
-		return rest, "", "", nil
+		return rest, nil, "", nil, "", nil
 	}
-	match, rest, err = consumeQuoted(rest)
+	match, condition, rest, err = consumeMatcher(rest, "wait-for")
 	if err != nil {
-		return "", "", "", err
+		return "", nil, "", nil, "", err
 	}
 	for strings.TrimSpace(rest) != "" {
 		rest = strings.TrimSpace(rest)
 		switch {
 		case hasKeyword(rest, "cancel-on"):
-			if cancel != "" {
-				return "", "", "", fmt.Errorf("wait-for has more than one cancel-on clause")
+			if cancel != "" || cancelCondition != nil {
+				return "", nil, "", nil, "", fmt.Errorf("wait-for has more than one cancel-on clause")
 			}
 			rest = strings.TrimSpace(rest[len("cancel-on"):])
-			if rest == "" || rest[0] != '"' {
-				return "", "", "", fmt.Errorf("cancel-on requires a quoted substring")
-			}
-			cancel, rest, err = consumeQuoted(rest)
+			cancel, cancelCondition, rest, err = consumeMatcher(rest, "cancel-on")
 			if err != nil {
-				return "", "", "", err
+				return "", nil, "", nil, "", err
 			}
-			if cancel == "" {
-				return "", "", "", fmt.Errorf("cancel-on requires a non-empty substring")
+			if cancel == "" && cancelCondition == nil {
+				return "", nil, "", nil, "", fmt.Errorf("cancel-on requires a non-empty substring or my.* condition")
 			}
 		case hasKeyword(rest, "timeout"):
 			if timeout != "" {
-				return "", "", "", fmt.Errorf("wait-for has more than one timeout clause")
+				return "", nil, "", nil, "", fmt.Errorf("wait-for has more than one timeout clause")
 			}
 			rest = strings.TrimSpace(rest[len("timeout"):])
 			timeout, rest = consumeField(rest)
 			if timeout == "" {
-				return "", "", "", fmt.Errorf("wait-for timeout requires seconds")
+				return "", nil, "", nil, "", fmt.Errorf("wait-for timeout requires seconds")
 			}
 		default:
-			return "", "", "", fmt.Errorf("wait-for accepts only cancel-on and timeout clauses")
+			return "", nil, "", nil, "", fmt.Errorf("wait-for accepts only cancel-on and timeout clauses")
 		}
 	}
-	return match, cancel, timeout, nil
+	return match, condition, cancel, cancelCondition, timeout, nil
 }
 
-func parseRepeatArguments(arg string) (command, match, cancel, max, count string, err error) {
+func parseRepeatArguments(arg string) (command, match string, condition *ValueCondition, cancel string, cancelCondition *ValueCondition, max, count string, err error) {
 	rest := strings.TrimSpace(arg)
 	if rest == "" || rest[0] != '"' {
-		return "", "", "", "", "", fmt.Errorf("repeat requires a quoted command")
+		return "", "", nil, "", nil, "", "", fmt.Errorf("repeat requires a quoted command")
 	}
 	command, rest, err = consumeQuoted(rest)
 	if err != nil {
-		return "", "", "", "", "", err
+		return "", "", nil, "", nil, "", "", err
 	}
 	rest = strings.TrimSpace(rest)
 	countMode := hasKeyword(rest, "count")
@@ -587,59 +658,155 @@ func parseRepeatArguments(arg string) (command, match, cancel, max, count string
 		rest = strings.TrimSpace(rest[len("count"):])
 		count, rest = consumeField(rest)
 		if count == "" {
-			return "", "", "", "", "", fmt.Errorf("repeat count requires an attempt count")
+			return "", "", nil, "", nil, "", "", fmt.Errorf("repeat count requires an attempt count")
 		}
 	} else {
 		if !hasKeyword(rest, "until") {
-			return "", "", "", "", "", fmt.Errorf("repeat requires until followed by a quoted success substring, or count followed by an attempt count")
+			return "", "", nil, "", nil, "", "", fmt.Errorf("repeat requires until followed by a quoted success substring or my.* condition, or count followed by an attempt count")
 		}
 		rest = strings.TrimSpace(rest[len("until"):])
-		if rest == "" || rest[0] != '"' {
-			return "", "", "", "", "", fmt.Errorf("repeat requires a quoted success substring")
-		}
-		match, rest, err = consumeQuoted(rest)
+		match, condition, rest, err = consumeMatcher(rest, "repeat until")
 		if err != nil {
-			return "", "", "", "", "", err
+			return "", "", nil, "", nil, "", "", err
 		}
 	}
 	for strings.TrimSpace(rest) != "" {
 		rest = strings.TrimSpace(rest)
 		switch {
 		case hasKeyword(rest, "cancel-on"):
-			if cancel != "" {
-				return "", "", "", "", "", fmt.Errorf("repeat has more than one cancel-on clause")
+			if cancel != "" || cancelCondition != nil {
+				return "", "", nil, "", nil, "", "", fmt.Errorf("repeat has more than one cancel-on clause")
 			}
 			rest = strings.TrimSpace(rest[len("cancel-on"):])
-			if rest == "" || rest[0] != '"' {
-				return "", "", "", "", "", fmt.Errorf("cancel-on requires a quoted substring")
-			}
-			cancel, rest, err = consumeQuoted(rest)
+			cancel, cancelCondition, rest, err = consumeMatcher(rest, "cancel-on")
 			if err != nil {
-				return "", "", "", "", "", err
+				return "", "", nil, "", nil, "", "", err
 			}
-			if cancel == "" {
-				return "", "", "", "", "", fmt.Errorf("cancel-on requires a non-empty substring")
+			if cancel == "" && cancelCondition == nil {
+				return "", "", nil, "", nil, "", "", fmt.Errorf("cancel-on requires a non-empty substring or my.* condition")
 			}
 		case hasKeyword(rest, "max"):
 			if countMode {
-				return "", "", "", "", "", fmt.Errorf("repeat count does not accept a max clause")
+				return "", "", nil, "", nil, "", "", fmt.Errorf("repeat count does not accept a max clause")
 			}
 			if max != "" {
-				return "", "", "", "", "", fmt.Errorf("repeat has more than one max clause")
+				return "", "", nil, "", nil, "", "", fmt.Errorf("repeat has more than one max clause")
 			}
 			rest = strings.TrimSpace(rest[len("max"):])
 			max, rest = consumeField(rest)
 			if max == "" {
-				return "", "", "", "", "", fmt.Errorf("repeat max requires an attempt count")
+				return "", "", nil, "", nil, "", "", fmt.Errorf("repeat max requires an attempt count")
 			}
 		default:
 			if countMode {
-				return "", "", "", "", "", fmt.Errorf("repeat count accepts only an optional cancel-on clause")
+				return "", "", nil, "", nil, "", "", fmt.Errorf("repeat count accepts only an optional cancel-on clause")
 			}
-			return "", "", "", "", "", fmt.Errorf("repeat accepts only cancel-on and max clauses after until")
+			return "", "", nil, "", nil, "", "", fmt.Errorf("repeat accepts only cancel-on and max clauses after until")
 		}
 	}
-	return command, match, cancel, max, count, nil
+	return command, match, condition, cancel, cancelCondition, max, count, nil
+}
+
+func consumeMatcher(input, context string) (text string, condition *ValueCondition, rest string, err error) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", nil, "", fmt.Errorf("%s requires a quoted substring or my.* condition", context)
+	}
+	if input[0] == '"' {
+		text, rest, err = consumeQuoted(input)
+		return text, nil, rest, err
+	}
+	if !strings.HasPrefix(strings.ToLower(firstField(input)), "my.") {
+		return "", nil, "", fmt.Errorf("%s requires a quoted substring or my.* condition", context)
+	}
+	condition, rest, err = consumeValueCondition(input)
+	return "", condition, rest, err
+}
+
+func consumeValueCondition(input string) (*ValueCondition, string, error) {
+	fieldName, rest := consumeField(input)
+	operator, rest := consumeField(rest)
+	operand, rest := consumeField(rest)
+	fieldName = strings.ToLower(fieldName)
+	if !IsLiveValueName(fieldName) {
+		return nil, "", fmt.Errorf("unknown live value %q", fieldName)
+	}
+	if !validComparisonOperator(operator) {
+		return nil, "", fmt.Errorf("unsupported comparison operator %q", operator)
+	}
+	if operand == "" {
+		return nil, "", fmt.Errorf("condition requires a numeric value")
+	}
+	return &ValueCondition{
+		Field:    strings.TrimPrefix(fieldName, "my."),
+		Operator: operator,
+		Operand:  operand,
+	}, rest, nil
+}
+
+func validComparisonOperator(operator string) bool {
+	switch operator {
+	case "==", "!=", "<", "<=", ">", ">=":
+		return true
+	default:
+		return false
+	}
+}
+
+func expandValueCondition(condition *ValueCondition, variables map[string]string) (*ValueCondition, error) {
+	if condition == nil {
+		return nil, nil
+	}
+	expanded, err := expandPraetorVariables(condition.Operand, variables)
+	if err != nil {
+		return nil, err
+	}
+	if !containsLiveValueReference(expanded) {
+		value, err := strconv.ParseFloat(expanded, 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf("comparison value must be a finite number")
+		}
+	}
+	copy := *condition
+	copy.Operand = expanded
+	return &copy, nil
+}
+
+func containsLiveValueReference(input string) bool {
+	for _, field := range []string{"health", "fatigue", "encumbrance", "satiation"} {
+		if strings.Contains(input, "${my."+field+"}") || strings.Contains(input, "${my."+field+":") {
+			return true
+		}
+	}
+	return false
+}
+
+func validateLiveNumberTemplate(input string, positive, whole bool, name string) error {
+	values := map[string]string{
+		"my.health":      "1",
+		"my.fatigue":     "1",
+		"my.encumbrance": "1",
+		"my.satiation":   "1",
+	}
+	expanded, err := ExpandLiveValues(input, values)
+	if err != nil {
+		return err
+	}
+	if whole {
+		value, err := strconv.Atoi(expanded)
+		if err != nil || (positive && value <= 0) {
+			return fmt.Errorf("%s requires a positive whole number", name)
+		}
+		return nil
+	}
+	value, err := strconv.ParseFloat(expanded, 64)
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || (positive && value <= 0) {
+		if positive {
+			return fmt.Errorf("%s requires a positive number", name)
+		}
+		return fmt.Errorf("%s must be a finite number", name)
+	}
+	return nil
 }
 
 func consumeField(input string) (field, rest string) {
@@ -698,4 +865,137 @@ func consumeQuoted(input string) (value, rest string, err error) {
 // variables are supported but ;; and && must remain ordinary text.
 func ExpandVariables(input string, variables map[string]string) (string, error) {
 	return sharedvars.Expand(input, variables)
+}
+
+func expandPraetorVariables(input string, variables map[string]string) (string, error) {
+	return sharedvars.ExpandPreserving(input, variables, IsLiveValueName)
+}
+
+// ExpandLiveValues resolves the reserved my.* references retained during the
+// initial PraetorScript parse. Callers provide only values observed for the
+// current game session; ordinary saved-variable references have already been
+// expanded and are not accepted here.
+func ExpandLiveValues(input string, values map[string]string) (string, error) {
+	return sharedvars.ExpandSelected(input, values, IsLiveValueName)
+}
+
+// ResolveLiveCommand resolves late-bound my.* interpolation for the step about
+// to execute. Value conditions remain live and are evaluated separately for
+// every relevant SKOOT update.
+func ResolveLiveCommand(command Command, values map[string]string) (Command, error) {
+	var err error
+	for _, target := range []*string{&command.Text, &command.Title, &command.Match, &command.Cancel, &command.Value} {
+		*target, err = ExpandLiveValues(*target, values)
+		if err != nil {
+			return Command{}, err
+		}
+	}
+	if command.DurationTemplate != "" {
+		command.Duration, err = resolvePositiveSeconds(command.DurationTemplate, values, "wait")
+		if err != nil {
+			return Command{}, err
+		}
+		command.DurationTemplate = ""
+	}
+	if command.TimeoutTemplate != "" {
+		command.Timeout, err = resolvePositiveSeconds(command.TimeoutTemplate, values, "wait-for timeout")
+		if err != nil {
+			return Command{}, err
+		}
+		command.TimeoutTemplate = ""
+	}
+	if command.MaxTemplate != "" {
+		command.Max, err = resolvePositiveInt(command.MaxTemplate, values, "repeat max")
+		if err != nil {
+			return Command{}, err
+		}
+		command.MaxTemplate = ""
+	}
+	if command.CountTemplate != "" {
+		command.Count, err = resolvePositiveInt(command.CountTemplate, values, "repeat count")
+		if err != nil {
+			return Command{}, err
+		}
+		command.CountTemplate = ""
+	}
+	if command.AmountTemplate != "" {
+		expanded, expandErr := ExpandLiveValues(command.AmountTemplate, values)
+		if expandErr != nil {
+			return Command{}, expandErr
+		}
+		command.Amount, err = strconv.ParseFloat(expanded, 64)
+		if err != nil || math.IsNaN(command.Amount) || math.IsInf(command.Amount, 0) {
+			return Command{}, fmt.Errorf("add-var amount must be a finite number")
+		}
+		command.AmountTemplate = ""
+	}
+	return command, nil
+}
+
+func resolvePositiveSeconds(input string, values map[string]string, name string) (time.Duration, error) {
+	expanded, err := ExpandLiveValues(input, values)
+	if err != nil {
+		return 0, err
+	}
+	seconds, err := strconv.ParseFloat(expanded, 64)
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 {
+		return 0, fmt.Errorf("%s requires a positive number of seconds", name)
+	}
+	duration := time.Duration(seconds * float64(time.Second))
+	if duration <= 0 {
+		return 0, fmt.Errorf("%s is too small", name)
+	}
+	return duration, nil
+}
+
+func resolvePositiveInt(input string, values map[string]string, name string) (int, error) {
+	expanded, err := ExpandLiveValues(input, values)
+	if err != nil {
+		return 0, err
+	}
+	value, err := strconv.Atoi(expanded)
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("%s requires a positive whole number", name)
+	}
+	return value, nil
+}
+
+// EvaluateValueCondition compares a live field with its possibly interpolated
+// numeric operand. An unobserved live value makes the condition false.
+func EvaluateValueCondition(condition *ValueCondition, values map[string]string) (bool, error) {
+	if condition == nil {
+		return false, nil
+	}
+	leftText, ok := values["my."+condition.Field]
+	if !ok {
+		return false, nil
+	}
+	rightText, err := ExpandLiveValues(condition.Operand, values)
+	if err != nil {
+		if expansionErr, ok := err.(*sharedvars.ExpansionError); ok && expansionErr.Code == sharedvars.ErrorUnresolved {
+			return false, nil
+		}
+		return false, err
+	}
+	left, leftErr := strconv.ParseFloat(leftText, 64)
+	right, rightErr := strconv.ParseFloat(rightText, 64)
+	if leftErr != nil || rightErr != nil || math.IsNaN(left) || math.IsNaN(right) || math.IsInf(left, 0) || math.IsInf(right, 0) {
+		return false, fmt.Errorf("condition values must be finite numbers")
+	}
+	switch condition.Operator {
+	case "==":
+		return left == right, nil
+	case "!=":
+		return left != right, nil
+	case "<":
+		return left < right, nil
+	case "<=":
+		return left <= right, nil
+	case ">":
+		return left > right, nil
+	case ">=":
+		return left >= right, nil
+	default:
+		return false, fmt.Errorf("unsupported comparison operator %q", condition.Operator)
+	}
 }

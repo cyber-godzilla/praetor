@@ -48,6 +48,11 @@ function scanClientGo(): Set<string> {
   return new Set(matchAll(body, /"(\/[a-z-]+)"/g));
 }
 
+function scanGuiGo(): Set<string> {
+  const src = read("../../../../internal/gui/app.go");
+  return new Set(matchAll(src, /EqualFold\(parts\[0\], "(\/[a-z-]+)"\)/g));
+}
+
 describe("catalog covers every dispatched command", () => {
   it("covers the frontend commands in InputLine.svelte", () => {
     const found = scanInputLine();
@@ -79,7 +84,7 @@ describe("catalog covers every dispatched command", () => {
   // command still being advertised) fails here too, which the per-scan tests
   // cannot see at all since they only check dispatched -> catalogued.
   it("the union of both scans exactly equals the catalog's names and aliases", () => {
-    const dispatched = new Set([...scanInputLine(), ...scanClientGo()]);
+    const dispatched = new Set([...scanInputLine(), ...scanClientGo(), ...scanGuiGo()]);
     const catalogued = known();
 
     const uncatalogued = [...dispatched].filter((c) => !catalogued.has(c));

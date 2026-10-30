@@ -13,7 +13,7 @@
     if (!valid || saving) return; // guard invalid input and double-submit
     saving = true;
     const sets: ActionSet[] = [
-      ...(store.characterProfile()?.ActionSets ?? []),
+      ...store.resolvedActionSets(),
       { ID: newActionSetID(), Name: name.trim(), Buttons: [] },
     ];
     try {

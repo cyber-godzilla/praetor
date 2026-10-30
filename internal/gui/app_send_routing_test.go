@@ -143,6 +143,109 @@ func newVerbatimSendRoutingApp(t *testing.T) (*GuiApp, <-chan string) {
 	return a, recv
 }
 
+func configureSendRoutingCharacterProfiles(t *testing.T, a *GuiApp) {
+	t.Helper()
+	a.deps.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	if err := a.SetCharacterProfiles([]config.CharacterProfileIdentity{
+		{ID: config.DefaultCharacterProfileID, Name: "Default"},
+		{ID: testCharacterProfileID, Name: "Marcus", Account: "one", CharacterNumber: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	a.setConnectedAccount("one")
+}
+
+func waitForActiveCharacterProfile(t *testing.T, a *GuiApp, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if a.ActiveCharacterProfileID() == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("active character profile = %q, want %q", a.ActiveCharacterProfileID(), want)
+}
+
+func TestPraetorScriptChainCommandsDriveCharacterAutoSwitch(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	configureSendRoutingCharacterProfiles(t, a)
+	a.client().SetSemicolonDelay(10 * time.Millisecond)
+	a.Start()
+	t.Cleanup(a.Shutdown)
+
+	if err := a.SendInput("play;;1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"play", "1"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("server did not receive %q", want)
+		}
+	}
+	waitForActiveCharacterProfile(t, a, testCharacterProfileID)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for a.InputChainActive() && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if a.InputChainActive() {
+		t.Fatal("PraetorScript chain remained active")
+	}
+	if err := a.SendInput("look;;sleep"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"look", "sleep"} {
+		select {
+		case got := <-recv:
+			if got != want {
+				t.Fatalf("server received %q, want %q", got, want)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("server did not receive %q", want)
+		}
+	}
+	waitForActiveCharacterProfile(t, a, config.DefaultCharacterProfileID)
+}
+
+func TestLuaPraetorScriptCommandsDriveCharacterAutoSwitch(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+	configureSendRoutingCharacterProfiles(t, a)
+	a.Start()
+	t.Cleanup(a.Shutdown)
+
+	a.client().Engine.SetMode("aggro", nil)
+	a.client().Engine.OnPraetorScript("play 1")
+	select {
+	case got := <-recv:
+		if got != "play 1" {
+			t.Fatalf("server received %q, want play 1", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not receive Lua PraetorScript play command")
+	}
+	waitForActiveCharacterProfile(t, a, testCharacterProfileID)
+	if got := a.client().Engine.CurrentMode(); got != "" && got != "disable" {
+		t.Fatalf("mode after automatic character switch = %q", got)
+	}
+
+	a.client().Engine.SetMode("aggro", nil)
+	a.client().Engine.OnPraetorScript("sleep")
+	select {
+	case got := <-recv:
+		if got != "sleep" {
+			t.Fatalf("server received %q, want sleep", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("server did not receive Lua PraetorScript sleep command")
+	}
+	waitForActiveCharacterProfile(t, a, config.DefaultCharacterProfileID)
+}
+
 // TestSend_PlainCommandTrailingNewlineDoesNotLeak covers the assertion the
 // final review asked for: a plain (non-slash) single-line command typed or
 // pasted with a trailing newline, e.g. "look\n", must not leak that newline
@@ -290,6 +393,28 @@ func TestSendInput_ExpandsVariablesAndDoubleSemicolon(t *testing.T) {
 			t.Fatalf("command gap %d = %s, want approximately %s or longer", i, gap, client.InputCommandDelay)
 		} else {
 			t.Logf("observed ;; command gap %d: %s", i, gap)
+		}
+	}
+}
+
+func TestSendInput_TargetedSpeechBypassesPraetorParsing(t *testing.T) {
+	a, recv := newSendRoutingApp(t)
+
+	inputs := []string{
+		`"apula Good morning`,
+		" \t\"Gaius can you hear me?",
+	}
+	for _, input := range inputs {
+		if err := a.SendInput(input); err != nil {
+			t.Fatalf("SendInput(%q): %v", input, err)
+		}
+		select {
+		case got := <-recv:
+			if got != input {
+				t.Fatalf("server received %q, want targeted speech unchanged as %q", got, input)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatalf("server never received targeted speech %q", input)
 		}
 	}
 }

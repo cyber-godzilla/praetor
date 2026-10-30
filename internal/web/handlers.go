@@ -259,11 +259,193 @@ func (s *Server) handleReloadScripts(w http.ResponseWriter, _ *http.Request, _ s
 	s.writeJSON(w, http.StatusOK, map[string]any{"ok": true, "modeNames": names})
 }
 
+func (s *Server) handleGetScriptManager(w http.ResponseWriter, _ *http.Request, _ string) {
+	s.opMu.Lock()
+	state := s.app.GetScriptManager()
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, state)
+}
+
+func (s *Server) handleInstallManagedScript(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		URL string `json:"url"`
+	}
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.URL) == "" || len(req.URL) > 4096 {
+		s.writeError(w, http.StatusBadRequest, "invalid_repository", "A valid repository URL is required.")
+		return
+	}
+	s.opMu.Lock()
+	source, err := s.app.InstallManagedScript(req.URL)
+	if err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_install_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusCreated, map[string]any{
+		"source": source, "state": state, "config": configJSON, "revision": revision,
+	})
+}
+
+func (s *Server) handleCheckManagedScript(w http.ResponseWriter, r *http.Request, _ string) {
+	s.opMu.Lock()
+	status, err := s.app.CheckManagedScript(r.PathValue("id"))
+	if err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_check_failed", err.Error())
+		return
+	}
+	response := map[string]any{"status": status}
+	if status.Updated {
+		response["config"] = s.commitConfigLocked()
+		response["revision"] = s.revision
+	}
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleUpdateManagedScript(w http.ResponseWriter, r *http.Request, _ string) {
+	s.opMu.Lock()
+	source, err := s.app.UpdateManagedScript(r.PathValue("id"))
+	if err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_update_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"source": source, "state": state, "config": configJSON, "revision": revision,
+	})
+}
+
+func (s *Server) handleSetManagedScriptStartupCheck(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid startup-check setting.")
+		return
+	}
+	s.opMu.Lock()
+	if err := s.app.SetManagedScriptStartupCheck(r.PathValue("id"), req.Enabled); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_setting_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"state": state, "config": configJSON, "revision": revision,
+	})
+}
+
+func (s *Server) handleSetManagedScriptEnabled(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		Enabled        bool `json:"enabled"`
+		StopAutomation bool `json:"stopAutomation"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid script enablement setting.")
+		return
+	}
+	s.opMu.Lock()
+	if err := s.app.SetManagedScriptEnabled(r.PathValue("id"), req.Enabled, req.StopAutomation); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_setting_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{"state": state, "config": configJSON, "revision": revision})
+}
+
+func (s *Server) handleSetManagedScriptTrust(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		Trust          string `json:"trust"`
+		StopAutomation bool   `json:"stopAutomation"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid script trust setting.")
+		return
+	}
+	s.opMu.Lock()
+	if err := s.app.SetManagedScriptTrust(r.PathValue("id"), req.Trust, req.StopAutomation); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_setting_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{"state": state, "config": configJSON, "revision": revision})
+}
+
+func (s *Server) handleRemoveManagedScript(w http.ResponseWriter, r *http.Request, _ string) {
+	s.opMu.Lock()
+	if err := s.app.RemoveManagedScript(r.PathValue("id")); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_remove_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"state": state, "config": configJSON, "revision": revision,
+	})
+}
+
+func (s *Server) handleReorderManagedScripts(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid script source order.")
+		return
+	}
+	s.opMu.Lock()
+	if err := s.app.ReorderManagedScripts(req.IDs); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_order_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{
+		"state": state, "config": configJSON, "revision": revision,
+	})
+}
+
 func (s *Server) handleRefreshGraphics(w http.ResponseWriter, _ *http.Request, _ string) {
 	s.opMu.Lock()
 	s.app.RefreshGraphics()
 	s.opMu.Unlock()
 	s.writeJSON(w, http.StatusAccepted, map[string]bool{"ok": true})
+}
+
+func (s *Server) handleTestDiscordNotification(w http.ResponseWriter, _ *http.Request, _ string) {
+	s.opMu.Lock()
+	err := s.app.TestDiscordNotification()
+	s.opMu.Unlock()
+	if err != nil {
+		s.writeError(w, http.StatusBadRequest, "discord_test_failed", err.Error())
+		return
+	}
+	s.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 func (s *Server) handleSetting(w http.ResponseWriter, r *http.Request, _ string) {
@@ -362,6 +544,16 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 			return err
 		}
 		return s.app.SetViewLayout(value.Layout, value.CustomViews)
+	case "profile-view-layout":
+		value, err := decodeValue[struct {
+			ProfileID   string                      `json:"profileID"`
+			Layout      config.DisplayProfileConfig `json:"layout"`
+			CustomViews []config.CustomTabConfig    `json:"customViews"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		return s.app.SetProfileViewLayout(value.ProfileID, value.Layout, value.CustomViews)
 	case "selected-action-set":
 		return settingValue(raw, s.app.SetSelectedActionSetID)
 	case "crt-effects":
@@ -384,20 +576,39 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue[[]config.CustomTabConfig](raw, s.app.SetCustomTabs)
 	case "action-sets":
 		return settingValue[[]config.ActionSet](raw, s.app.SetActionSets)
+	case "action-set-inheritance":
+		return settingValue(raw, s.app.SetActionSetInheritance)
+	case "action-set-delete-everywhere":
+		return settingValue(raw, s.app.DeleteActionSetEverywhere)
 	case "quick-cycle-modes":
 		return settingValue[[]string](raw, s.app.SetQuickCycleModes)
+	case "quick-cycle-inheritance":
+		return settingValue(raw, s.app.SetQuickCycleInheritance)
 	case "high-priority":
 		return settingValue[[]string](raw, s.app.SetHighPriority)
+	case "high-priority-inheritance":
+		return settingValue(raw, s.app.SetHighPriorityInheritance)
 	case "input-variables":
 		return settingValue[map[string]string](raw, s.app.SetInputVariables)
 	case "character-profiles":
 		return settingValue[[]config.CharacterProfileIdentity](raw, s.app.SetCharacterProfiles)
+	case "character-profile-auto-switch":
+		return settingValue(raw, s.app.SetCharacterProfileAutoSwitch)
+	case "character-profile-selection":
+		value, err := decodeValue[struct {
+			ProfileID      string `json:"profileID"`
+			StopAutomation bool   `json:"stopAutomation"`
+		}](raw)
+		if err != nil {
+			return err
+		}
+		return s.app.SwitchCharacterProfile(value.ProfileID, value.StopAutomation)
 	case "ignore-ooc":
 		return settingValue[[]string](raw, s.app.SetIgnoreOOC)
 	case "ignore-think":
 		return settingValue[[]string](raw, s.app.SetIgnoreThink)
 	case "notifications":
-		return settingValue[config.DesktopNotificationsConfig](raw, s.app.SetNotifications)
+		return settingValue[config.NotificationsConfig](raw, s.app.SetNotifications)
 	case "script-directories":
 		return settingValue[[]string](raw, s.app.SetScriptDirs)
 	default:

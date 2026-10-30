@@ -1,13 +1,19 @@
 import { readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { test, expect } from "./test";
-import { baseInit, COMPONENT_IDS, makeConfig } from "./fixtures";
+import { dragAndDrop, test, expect } from "./test";
+import { baseInit, makeConfig } from "./fixtures";
 import type { Page } from "@playwright/test";
 import type { ImagePayload, ModeSpec, RBResult, TextPayload, TrainingCostRow, WireEvent } from "../src/lib/types";
 
 const SCREENSHOT_DIR = resolve("artifacts/ui-screenshots");
 const GRAPHICS_DIR = resolve(SCREENSHOT_DIR, "graphics");
+
+async function openMenuItem(page: Page, section: string, item: string) {
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("button.category").filter({ hasText: section }).click();
+  await dialog.locator(".entry-list button").filter({ hasText: item }).click();
+}
 
 function generatedPNG(path: string): ImagePayload {
   const png = readFileSync(path);
@@ -54,10 +60,11 @@ docsConfig.CharacterProfiles.Profiles[0].Variables = {
 docsConfig.Notifications.Desktop = {
   AllowScriptNotifications: true,
   Sound: false,
-  HealthBelow: { Enabled: true, Threshold: 25 },
-  FatigueBelow: { Enabled: false, Threshold: 10 },
+  ScriptSound: false,
+  HealthBelow: { Enabled: true, Threshold: 25, When: "unfocused", Sound: true, Delivery: "both" },
+  FatigueBelow: { Enabled: false, Threshold: 10, When: "always", Sound: false, Delivery: "desktop" },
   Patterns: [
-    { Pattern: "retalq", Title: "Rare drop", Message: "Retalq appeared in the output.", Enabled: true },
+    { Pattern: "retalq", Title: "Rare drop", Message: "Retalq appeared in the output.", Enabled: true, When: "unfocused", Sound: true, Delivery: "desktop" },
   ],
 };
 
@@ -265,14 +272,14 @@ test("render documentation screenshots from deterministic sample data", async ({
   // frame, so the wiki cannot silently drift to hand-built mockups.
   await page.setViewportSize({ width: 1200, height: 900 });
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toContainText("Text Parsing and Display");
+  await expect(page.getByRole("dialog")).toContainText("Quick actions");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-menu.png"),
     animations: "disabled",
     caret: "hide",
   });
 
-  await page.getByRole("dialog").getByRole("button", { name: "Settings", exact: true }).click();
+  await openMenuItem(page, "Input & commands", "Input behavior");
   await expect(page.getByRole("dialog")).toContainText(";; chain delay (ms)");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-settings.png"),
@@ -280,17 +287,19 @@ test("render documentation screenshots from deterministic sample data", async ({
     caret: "hide",
   });
 
-  await page.getByTitle("Back to menu").click();
-  await page.getByRole("dialog").getByRole("button", { name: "Notifications", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText("Allow Script Notifications");
+  await page.getByTitle("Back to Input & commands").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Notifications & logs", exact: true }).click();
+  await page.getByRole("dialog").locator(".entry-list button").filter({ hasText: "Notifications" }).click();
+  await expect(page.getByRole("dialog")).toContainText("Only while unfocused");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-notifications.png"),
     animations: "disabled",
     caret: "hide",
   });
 
-  await page.getByTitle("Back to menu").click();
-  await page.getByRole("dialog").getByRole("button", { name: "Variables", exact: true }).click();
+  await page.getByTitle("Back to Notifications & logs").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Input & commands", exact: true }).click();
+  await page.getByRole("dialog").locator(".entry-list button").filter({ hasText: "Variables" }).click();
   await expect(page.getByRole("dialog", { name: "Variables" }).getByLabel("Value for target")).toHaveValue("bandit");
   await page.screenshot({
     path: resolve(SCREENSHOT_DIR, "praetor-variables.png"),
@@ -298,8 +307,9 @@ test("render documentation screenshots from deterministic sample data", async ({
     caret: "hide",
   });
 
-  await page.getByTitle("Back to menu").click();
-  await page.getByRole("dialog").getByRole("button", { name: "Rank-Bonus Calculator", exact: true }).click();
+  await page.getByTitle("Back to Input & commands").click();
+  await page.getByRole("dialog").getByRole("button", { name: "Tools & help", exact: true }).click();
+  await page.getByRole("dialog").locator(".entry-list button").filter({ hasText: "Rank-bonus calculator" }).click();
   await backend.setReader("CalcRankBonus:0:1150:500", rbCalcFixture.current);
   await backend.setReader("CalcRankBonus:0:1150:1150", rbCalcFixture.target);
   await backend.setReader(
@@ -323,7 +333,7 @@ test("render documentation screenshots from deterministic sample data", async ({
     caret: "hide",
   });
 
-  await page.getByTitle("Back to menu").click();
+  await page.getByTitle("Back to Tools & help").click();
   await page.getByLabel("Close").click();
   await backend.input.fill("/list");
   await backend.input.press("Enter");
@@ -356,15 +366,16 @@ test("render one, two, and three sidebar layout examples with the real controls"
   await mkdir(SCREENSHOT_DIR, { recursive: true });
 
   async function openLayout() {
-    const menu = page.getByRole("dialog", { name: "Menu" });
+    const menu = page.getByRole("dialog", { name: "Praetor" });
     if (!(await menu.isVisible())) await page.keyboard.press("Escape");
-    await menu.getByRole("button", { name: "Layout", exact: true }).click();
-    return page.getByRole("dialog", { name: "Layout" });
+    await openMenuItem(page, "Layout & display", "Arrange layout");
+    return page.getByRole("dialog", { name: "Layout", exact: true });
   }
 
   async function saveLayout() {
-    await page.getByRole("dialog", { name: "Layout" }).locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Layout" })).toHaveCount(0);
+    await page.getByRole("dialog", { name: "Layout", exact: true }).locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "Layout", exact: true })).toHaveCount(0);
+    await page.getByRole("dialog", { name: "Praetor / Layout & display" }).getByLabel("Close").click();
     await expect(page.getByTestId("e2e-toasts").locator(".toast")).toHaveCount(0, { timeout: 7_000 });
   }
 
@@ -386,17 +397,21 @@ test("render one, two, and three sidebar layout examples with the real controls"
   async function place(
     dialog: ReturnType<Page["getByRole"]>,
     view: string,
-    componentID: string,
     location: "main" | 1 | 2 | 3,
     height: number,
   ) {
-    await dialog.getByRole("button", { name: `Unplace ${view}` }).click();
+    const unplace = dialog.getByRole("button", { name: `Unplace ${view}` });
+    if (await unplace.count()) await unplace.click();
     const destination = location === "main"
       ? dialog.locator(".main-destination")
-      : dialog.getByRole("group", { name: `Sidebar ${location}` });
-    const selectName = location === "main" ? "Component ID to add to main" : `Component ID to add to Sidebar ${location}`;
-    await destination.getByRole("combobox", { name: selectName }).selectOption(componentID);
-    await destination.getByRole("button", { name: "Add", exact: true }).click();
+      : dialog.getByRole("group", { name: `Sidebar ${location}` }).locator(".destination");
+    const source = dialog.getByRole("list", { name: "View Bench" })
+      .getByRole("listitem").filter({ hasText: view });
+    const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+    await source.dispatchEvent("dragstart", { dataTransfer });
+    await destination.dispatchEvent("dragover", { dataTransfer });
+    await destination.dispatchEvent("drop", { dataTransfer });
+    await dataTransfer.dispose();
     if (location !== "main") await destination.getByRole("spinbutton", { name: `${view} height` }).fill(String(height));
   }
 
@@ -405,12 +420,12 @@ test("render one, two, and three sidebar layout examples with the real controls"
   await setSidebar(dialog, 1, true, "right", 300);
   await setSidebar(dialog, 2, false, "left", 230);
   await setSidebar(dialog, 3, false, "right", 230);
-  await place(dialog, "Map", COMPONENT_IDS.map, 1, 250);
-  await place(dialog, "Compass", COMPONENT_IDS.exits, 1, 170);
-  await place(dialog, "Vitals", COMPONENT_IDS.vitals, 1, 150);
-  await place(dialog, "Action Sets", COMPONENT_IDS.actions, "main", 190);
-  await place(dialog, "Modes", COMPONENT_IDS.modes, "main", 210);
-  await place(dialog, "Variables", COMPONENT_IDS.variables, "main", 210);
+  await place(dialog, "Map", 1, 250);
+  await place(dialog, "Compass", 1, 170);
+  await place(dialog, "Vitals", 1, 150);
+  await place(dialog, "Action Sets", "main", 190);
+  await place(dialog, "Modes", "main", 210);
+  await place(dialog, "Variables", "main", 210);
   await saveLayout();
   await expect(page.locator('aside[aria-label="Sidebar 1"]')).toBeVisible();
   await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(1);
@@ -423,12 +438,12 @@ test("render one, two, and three sidebar layout examples with the real controls"
   // Two sidebars: data and variables on the left, navigation and combat on the right.
   dialog = await openLayout();
   await setSidebar(dialog, 2, true, "left", 230);
-  await place(dialog, "Metrics", COMPONENT_IDS.metrics, 2, 210);
-  await place(dialog, "Variables", COMPONENT_IDS.variables, 2, 230);
-  await place(dialog, "Map", COMPONENT_IDS.map, 1, 180);
-  await place(dialog, "Compass", COMPONENT_IDS.exits, 1, 140);
-  await place(dialog, "Vitals", COMPONENT_IDS.vitals, 1, 120);
-  await place(dialog, "Action Sets", COMPONENT_IDS.actions, 1, 150);
+  await place(dialog, "Metrics", 2, 210);
+  await place(dialog, "Variables", 2, 230);
+  await place(dialog, "Map", 1, 180);
+  await place(dialog, "Compass", 1, 140);
+  await place(dialog, "Vitals", 1, 120);
+  await place(dialog, "Action Sets", 1, 150);
   await saveLayout();
   await expect(page.locator('aside[aria-label="Sidebar 2"]')).toBeVisible();
   await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(2);
@@ -441,8 +456,8 @@ test("render one, two, and three sidebar layout examples with the real controls"
   // Three sidebars: a second right-hand rail holds the automation controls.
   dialog = await openLayout();
   await setSidebar(dialog, 3, true, "right", 230);
-  await place(dialog, "Action Sets", COMPONENT_IDS.actions, 3, 210);
-  await place(dialog, "Modes", COMPONENT_IDS.modes, 3, 260);
+  await place(dialog, "Action Sets", 3, 210);
+  await place(dialog, "Modes", 3, 260);
   await saveLayout();
   await expect(page.locator('aside[aria-label="Sidebar 3"]')).toBeVisible();
   await expect(page.locator('aside[aria-label^="Sidebar"]')).toHaveCount(3);
@@ -453,18 +468,62 @@ test("render one, two, and three sidebar layout examples with the real controls"
   });
 });
 
-test("render a filtered Think and OOC custom view as a sidebar component", async ({ page, backend }) => {
+test("render a width-collapsed sidebar and its explicit Expand control", async ({ page, backend }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await backend.boot();
+  await backend.enterGame();
+  await backend.events(sampleState);
+  await backend.text(sampleOutput);
+  await page.evaluate(() => document.fonts.ready);
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
+
+  await page.keyboard.press("Escape");
+  await openMenuItem(page, "Layout & display", "Arrange layout");
+  const dialog = page.getByRole("dialog", { name: "Layout", exact: true });
+  const sidebar1 = dialog.getByRole("group", { name: "Sidebar 1" });
+  const sidebar2 = dialog.getByRole("group", { name: "Sidebar 2" });
+  await sidebar1.getByRole("spinbutton", { name: "Sidebar 1 width" }).fill("400");
+  await sidebar2.getByRole("checkbox", { name: "Sidebar 2 enabled" }).check();
+  await sidebar2.getByRole("spinbutton", { name: "Sidebar 2 width" }).fill("400");
+  await dragAndDrop(
+    page,
+    dialog.locator(".main-destination .component").filter({ hasText: "Metrics" }),
+    sidebar2.locator(".destination"),
+  );
+  await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByLabel("Close").click();
+
+  await page.setViewportSize({ width: 1100, height: 800 });
+  const collapsed = page.locator('aside[aria-label="Sidebar 2"]');
+  await expect(collapsed).toHaveCSS("width", "30px");
+  await expect(collapsed.locator(".section")).toHaveCount(0);
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-sidebar-collapsed.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+
+  await collapsed.getByRole("button", { name: "Expand Sidebar 2" }).click();
+  await expect(collapsed).toContainText("Metrics");
+  await page.screenshot({
+    path: resolve(SCREENSHOT_DIR, "praetor-sidebar-expanded.png"),
+    animations: "disabled",
+    caret: "hide",
+  });
+});
+
+test("render a filtered Think and OOC custom view in a sidebar", async ({ page, backend }) => {
   await page.setViewportSize({ width: 1600, height: 900 });
   await backend.boot();
   await backend.enterGame();
   await backend.events(sampleState);
   await backend.text(sampleOutput);
 
-  // Build and place the filtered view through the same Layout controls a user
-  // operates. This keeps the example coupled to the real custom-view editor.
+  // Configure placement with Layout and define the reusable filtered view in
+  // the View Library, following the same split exposed to users.
   await page.keyboard.press("Escape");
-  await page.getByRole("dialog", { name: "Menu" }).getByRole("button", { name: "Layout", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Layout" });
+  await openMenuItem(page, "Layout & display", "Arrange layout");
+  let dialog = page.getByRole("dialog", { name: "Layout", exact: true });
 
   const sidebar1 = dialog.getByRole("group", { name: "Sidebar 1" });
   await sidebar1.getByRole("spinbutton", { name: "Sidebar 1 width" }).fill("300");
@@ -476,18 +535,21 @@ test("render a filtered Think and OOC custom view as a sidebar component", async
   await sidebar1.getByRole("spinbutton", { name: "Map height" }).fill("250");
   await sidebar1.getByRole("spinbutton", { name: "Compass height" }).fill("170");
   await sidebar1.getByRole("spinbutton", { name: "Vitals height" }).fill("150");
-  for (const [view, id] of [["Action Sets", COMPONENT_IDS.actions], ["Modes", COMPONENT_IDS.modes], ["Variables", COMPONENT_IDS.variables]] as const) {
+  const bench = dialog.getByRole("list", { name: "View Bench" });
+  const main = dialog.locator(".main-destination");
+  for (const view of ["Action Sets", "Modes", "Variables"] as const) {
     await dialog.getByRole("button", { name: `Unplace ${view}` }).click();
-    const main = dialog.locator(".main-destination");
-    await main.getByRole("combobox", { name: "Component ID to add to main" }).selectOption(id);
-    await main.getByRole("button", { name: "Add", exact: true }).click();
+    await dragAndDrop(page, bench.getByRole("listitem").filter({ hasText: view }), main);
   }
 
-  const addRow = dialog.locator(".add-row");
-  await addRow.getByPlaceholder("New filtered text component…").fill("Think / OOC");
-  await addRow.getByRole("button").click();
+  await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("dialog", { name: "Praetor / Layout & display" }).locator(".entry-list button").filter({ hasText: "View Library" }).click();
+  dialog = page.getByRole("dialog", { name: "View Library" });
 
-  const editor = dialog.locator(".custom-editor");
+  await dialog.getByPlaceholder("New filtered text view…").fill("Think / OOC");
+  await dialog.getByRole("button", { name: "Add filtered text view" }).click();
+
+  const editor = dialog.locator(".view-editor");
   await editor.getByRole("button", { name: "+ Add rule" }).click();
   await editor.locator(".rule").nth(0).getByPlaceholder("pattern").fill("thinks aloud");
   await editor.getByRole("button", { name: "+ Add rule" }).click();
@@ -495,14 +557,21 @@ test("render a filtered Think and OOC custom view as a sidebar component", async
   await editor.getByRole("button", { name: "+ Add rule" }).click();
   await editor.locator(".rule").nth(2).getByPlaceholder("pattern").fill("?m OOC>");
 
-  const filteredID = (await editor.locator("code").textContent())!.trim();
-  await dialog.getByRole("button", { name: "Unplace Think / OOC" }).click();
-  await sidebar2.getByRole("combobox", { name: "Component ID to add to Sidebar 2" }).selectOption(filteredID);
-  await sidebar2.getByRole("button", { name: "Add", exact: true }).click();
-  await sidebar2.getByRole("spinbutton", { name: "Think / OOC height" }).fill("650");
+  await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
+  await page.getByRole("dialog", { name: "Praetor / Layout & display" }).locator(".entry-list button").filter({ hasText: "Arrange layout" }).click();
+  dialog = page.getByRole("dialog", { name: "Layout", exact: true });
+  const layoutBench = dialog.getByRole("list", { name: "View Bench" });
+  const layoutSidebar2 = dialog.getByRole("group", { name: "Sidebar 2" });
+  await dragAndDrop(
+    page,
+    layoutBench.getByRole("listitem").filter({ hasText: "Think / OOC" }),
+    layoutSidebar2.locator(".destination"),
+  );
+  await layoutSidebar2.getByRole("spinbutton", { name: "Think / OOC height" }).fill("650");
 
   await dialog.locator(".mfoot").getByRole("button", { name: "Close", exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  await page.getByRole("dialog", { name: "Praetor / Layout & display" }).getByLabel("Close").click();
   await expect(page.getByTestId("e2e-toasts").locator(".toast")).toHaveCount(0, { timeout: 7_000 });
 
   await backend.text([

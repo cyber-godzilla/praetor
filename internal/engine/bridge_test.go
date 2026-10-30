@@ -56,6 +56,8 @@ type BridgeSink struct {
 	Notifications  []NotificationRequest
 	Logs           []string
 	Metrics        map[string]int
+	Variables      map[string]string
+	VariableSetErr error
 }
 
 func (s *BridgeSink) OnSend(command string, delayMs int) {
@@ -115,6 +117,22 @@ func (s *BridgeSink) OnMetricsGet(key string) int {
 	return s.Metrics[key]
 }
 
+func (s *BridgeSink) OnVariableGet(name string) (string, bool) {
+	value, ok := s.Variables[name]
+	return value, ok
+}
+
+func (s *BridgeSink) OnVariableSet(name, value string) error {
+	if s.VariableSetErr != nil {
+		return s.VariableSetErr
+	}
+	if s.Variables == nil {
+		s.Variables = make(map[string]string)
+	}
+	s.Variables[name] = value
+	return nil
+}
+
 func newTestBridge(t *testing.T) (*lua.LState, *BridgeSink, *StatusValues) {
 	t.Helper()
 	L := lua.NewState()
@@ -141,6 +159,35 @@ func TestBridge_SendWithoutDelay(t *testing.T) {
 	}
 	if sink.Commands[0].DelayMs != 0 {
 		t.Errorf("DelayMs = %d, want 0", sink.Commands[0].DelayMs)
+	}
+}
+
+func TestBridge_VariablesReadAndWrite(t *testing.T) {
+	L, sink, _ := newTestBridge(t)
+	defer L.Close()
+	sink.Variables = map[string]string{"target": "scarred bandit"}
+
+	err := L.DoString(`
+        assert(variables.get("target") == "scarred bandit")
+        assert(variables.get("missing") == nil)
+        variables.set("crafting_material", "gold")
+    `)
+	if err != nil {
+		t.Fatalf("DoString error: %v", err)
+	}
+	if got := sink.Variables["crafting_material"]; got != "gold" {
+		t.Fatalf("crafting_material = %q, want gold", got)
+	}
+}
+
+func TestBridge_VariablesSetSurfacesPersistenceFailure(t *testing.T) {
+	L, sink, _ := newTestBridge(t)
+	defer L.Close()
+	sink.VariableSetErr = fmt.Errorf("disk full")
+
+	err := L.DoString(`variables.set("crafting_material", "gold")`)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("variables.set error = %v, want persistence failure", err)
 	}
 }
 

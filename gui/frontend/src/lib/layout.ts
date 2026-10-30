@@ -23,18 +23,19 @@ export interface BuiltinViewDefinition {
   id: string;
   kind: BuiltinViewKind;
   name: string;
+  type: string;
 }
 
 export const BUILTIN_VIEWS: BuiltinViewDefinition[] = [
-  { id: COMPONENT_IDS.all, kind: "all", name: "All" },
-  { id: COMPONENT_IDS.metrics, kind: "metrics", name: "Metrics" },
-  { id: COMPONENT_IDS.debug, kind: "debug", name: "Debug" },
-  { id: COMPONENT_IDS.map, kind: "map", name: "Map" },
-  { id: COMPONENT_IDS.exits, kind: "exits", name: "Compass" },
-  { id: COMPONENT_IDS.vitals, kind: "vitals", name: "Vitals" },
-  { id: COMPONENT_IDS.actions, kind: "actions", name: "Action Sets" },
-  { id: COMPONENT_IDS.modes, kind: "modes", name: "Modes" },
-  { id: COMPONENT_IDS.variables, kind: "variables", name: "Variables" },
+  { id: COMPONENT_IDS.all, kind: "all", name: "All", type: "Game output" },
+  { id: COMPONENT_IDS.metrics, kind: "metrics", name: "Metrics", type: "Session metrics" },
+  { id: COMPONENT_IDS.debug, kind: "debug", name: "Debug", type: "Diagnostics" },
+  { id: COMPONENT_IDS.map, kind: "map", name: "Map", type: "Map" },
+  { id: COMPONENT_IDS.exits, kind: "exits", name: "Compass", type: "Compass" },
+  { id: COMPONENT_IDS.vitals, kind: "vitals", name: "Vitals", type: "Status bars" },
+  { id: COMPONENT_IDS.actions, kind: "actions", name: "Action Sets", type: "Action controls" },
+  { id: COMPONENT_IDS.modes, kind: "modes", name: "Modes", type: "Automation modes" },
+  { id: COMPONENT_IDS.variables, kind: "variables", name: "Variables", type: "Variable editor" },
 ];
 
 export function newUUID(): string {
@@ -50,18 +51,49 @@ export function newUUID(): string {
 
 export const newCustomViewID = newUUID;
 
+export function integerLayoutPixels(value: number, minimum: number, maximum: number): number {
+  return Math.max(minimum, Math.min(maximum, Math.round(value)));
+}
+
+export function layoutWithIntegerPixels(profile: DisplayProfileConfig): DisplayProfileConfig {
+  const integerPlacement = (placement: DisplayComponentConfig): DisplayComponentConfig => ({
+    ...placement,
+    SidebarHeight: Math.round(placement.SidebarHeight),
+  });
+  return {
+    ...profile,
+    Main: profile.Main.map(integerPlacement),
+    Bench: profile.Bench.map(integerPlacement),
+    Sidebars: profile.Sidebars.map((sidebar) => ({
+      ...sidebar,
+      Width: integerLayoutPixels(sidebar.Width, 180, 600),
+      Components: sidebar.Components.map(integerPlacement),
+    })),
+  };
+}
+
 export function componentName(id: string, custom: CustomTabConfig[]): string {
   return BUILTIN_VIEWS.find((view) => view.id === id)?.name
     ?? custom.find((view) => view.ID === id)?.Name
-    ?? id;
+    ?? "Unknown component";
+}
+
+export function componentType(id: string, custom: CustomTabConfig[]): string {
+  const builtin = BUILTIN_VIEWS.find((view) => view.id === id);
+  if (builtin) return builtin.type;
+  return custom.some((view) => view.ID === id) ? "Filtered text" : "Unavailable";
 }
 
 export function componentKind(id: string): BuiltinViewKind | "custom" | undefined {
   return BUILTIN_VIEWS.find((view) => view.id === id)?.kind ?? (id ? "custom" : undefined);
 }
 
+export function layoutComponentVisible(id: string, debug: boolean): boolean {
+  return id !== COMPONENT_IDS.debug || debug;
+}
+
 function enabledComponent(id: string, custom: CustomTabConfig[], debug: boolean): boolean {
-  if (id === COMPONENT_IDS.debug) return debug;
+  if (!layoutComponentVisible(id, debug)) return false;
   const configured = custom.find((view) => view.ID === id);
   return configured ? configured.Visible : true;
 }
@@ -85,29 +117,65 @@ export function orderedSidebarIDs(sidebars: DisplaySidebarConfig[], side: "left"
   return side === "left" ? ids.reverse() : ids;
 }
 
-export function responsiveSidebarIDs(
+export const COLLAPSED_SIDEBAR_WIDTH = 30;
+
+export function responsiveExpandedSidebarIDs(
   sidebars: DisplaySidebarConfig[],
   nonemptyIDs: string[],
   availableWidth: number,
   minimumCentralWidth: number,
+  manuallyCollapsedIDs: string[] = [],
+  preferredExpandedID = "",
 ): string[] {
   const widths = new Map(sidebars.map((sidebar) => [sidebar.ID, sidebar.Width]));
-  const visible = sidebars
+  const configured = sidebars
     .filter((sidebar) => sidebar.Enabled && nonemptyIDs.includes(sidebar.ID))
     .map((sidebar) => sidebar.ID);
+  const manuallyCollapsed = new Set(manuallyCollapsedIDs);
+  const expanded = configured.filter((id) => !manuallyCollapsed.has(id));
   while (
-    visible.length > 0
-    && visible.reduce((sum, id) => sum + (widths.get(id) ?? 260), minimumCentralWidth) > availableWidth
+    expanded.length > 0
+    && configured.reduce(
+      (sum, id) => sum + (expanded.includes(id) ? (widths.get(id) ?? 260) : COLLAPSED_SIDEBAR_WIDTH),
+      minimumCentralWidth,
+    ) > availableWidth
   ) {
-    visible.pop();
+    let collapseIndex = expanded.length - 1;
+    while (collapseIndex >= 0 && expanded[collapseIndex] === preferredExpandedID) collapseIndex--;
+    if (collapseIndex < 0) break;
+    expanded.splice(collapseIndex, 1);
   }
-  return visible;
+  return expanded;
 }
 
-export type ComponentDestination = { kind: "main" } | { kind: "sidebar"; sidebarID: string };
+export function collapsedSidebarIDs(configuredIDs: string[], expandedIDs: string[]): string[] {
+  const expanded = new Set(expandedIDs);
+  return configuredIDs.filter((id) => !expanded.has(id));
+}
+
+export type ComponentDestination =
+  | { kind: "main" }
+  | { kind: "bench" }
+  | { kind: "sidebar"; sidebarID: string };
+
+export interface BenchComponent {
+  id: string;
+  name: string;
+}
+
+export function benchComponents(
+  profile: DisplayProfileConfig,
+  custom: CustomTabConfig[],
+): BenchComponent[] {
+  return (profile.Bench ?? []).map((component) => ({
+    id: component.ComponentID,
+    name: componentName(component.ComponentID, custom),
+  }));
+}
 
 // moveComponent is the single ordering primitive used by drag/drop and the
-// keyboard buttons. A component exists in exactly one destination.
+// keyboard buttons. A component exists in exactly one visible destination or
+// on the Bench.
 export function moveComponent(
   profile: DisplayProfileConfig,
   componentID: string,
@@ -115,17 +183,26 @@ export function moveComponent(
   index: number,
 ): void {
   let placement: DisplayComponentConfig | undefined;
+  let source: DisplayComponentConfig[] | undefined;
+  let sourceIndex = -1;
   const remove = (items: DisplayComponentConfig[]) => {
     const found = items.findIndex((item) => item.ComponentID === componentID);
-    if (found >= 0) placement = items.splice(found, 1)[0];
+    if (found >= 0) {
+      source = items;
+      sourceIndex = found;
+      placement = items.splice(found, 1)[0];
+    }
   };
   remove(profile.Main);
   for (const sidebar of profile.Sidebars) remove(sidebar.Components);
+  remove(profile.Bench);
   placement ??= { ComponentID: componentID, SidebarHeight: 300, Collapsed: false };
 
   const target = destination.kind === "main"
     ? profile.Main
-    : profile.Sidebars.find((sidebar) => sidebar.ID === destination.sidebarID)?.Components;
+    : destination.kind === "bench"
+      ? profile.Bench
+      : profile.Sidebars.find((sidebar) => sidebar.ID === destination.sidebarID)?.Components;
   if (!target) return;
   if (destination.kind === "main") {
     placement.SidebarHeight = 0;
@@ -133,8 +210,18 @@ export function moveComponent(
   } else if (placement.SidebarHeight < 80) {
     placement.SidebarHeight = 300;
   }
-  const position = Math.max(0, Math.min(index, target.length));
+  const adjustedIndex = source === target && sourceIndex < index ? index - 1 : index;
+  const position = Math.max(0, Math.min(adjustedIndex, target.length));
   target.splice(position, 0, placement);
+}
+
+export function deleteSidebar(profile: DisplayProfileConfig, sidebarID: string): void {
+  const sidebar = profile.Sidebars.find((candidate) => candidate.ID === sidebarID);
+  if (!sidebar) return;
+  for (const component of [...sidebar.Components]) {
+    moveComponent(profile, component.ComponentID, { kind: "bench" }, profile.Bench.length);
+  }
+  profile.Sidebars = profile.Sidebars.filter((candidate) => candidate.ID !== sidebarID);
 }
 
 export function newSidebar(index: number): DisplaySidebarConfig {

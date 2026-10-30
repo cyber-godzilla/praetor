@@ -169,8 +169,10 @@ type ConnPayload struct {
 
 // NotifyPayload mirrors a desktop notification.
 type NotifyPayload struct {
-	Title   string `json:"title"`
-	Message string `json:"message"`
+	Title             string `json:"title"`
+	Message           string `json:"message"`
+	Sound             bool   `json:"sound,omitempty"`
+	OnlyWhenUnfocused bool   `json:"onlyWhenUnfocused,omitempty"`
 }
 
 // ErrorPayload mirrors types.ErrorEvent.

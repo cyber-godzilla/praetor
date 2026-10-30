@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { store } from "../lib/store.svelte";
   import * as api from "../lib/bridge";
   import { numpadCommand } from "../lib/numpad";
@@ -11,10 +11,11 @@
   import ViewsDrawer from "./ViewsDrawer.svelte";
   import MobileDock from "./MobileDock.svelte";
   import { nextDisplayMode } from "../lib/display";
-  import { orderedSidebarIDs, responsiveSidebarIDs, sidebarComponentIDs } from "../lib/layout";
+  import { collapsedSidebarIDs, orderedSidebarIDs, responsiveExpandedSidebarIDs, sidebarComponentIDs } from "../lib/layout";
 
   let bodyEl: HTMLDivElement;
   let bodyWidth = $state(0);
+  let preferredExpandedSidebarID = $state("");
   let layoutSave: Promise<void> = Promise.resolve();
 
   const layout = $derived(store.displayProfile());
@@ -25,10 +26,27 @@
       .filter((sidebar) => sidebar.Enabled && sidebarComponentIDs(sidebar, customViews, store.debug).length > 0)
       .map((sidebar) => sidebar.ID);
   });
-  const canvasSidebarIDs = $derived(
+  const manuallyCollapsedSidebarIDs = $derived(
+    layout?.Sidebars.filter((sidebar) => sidebar.Collapsed).map((sidebar) => sidebar.ID) ?? [],
+  );
+  const expandedSidebarIDs = $derived(
     store.displayMode === "sidebar" && layout && bodyWidth >= 900
-      ? responsiveSidebarIDs(layout.Sidebars, configuredSidebarIDs, bodyWidth, 480)
+      ? responsiveExpandedSidebarIDs(
+          layout.Sidebars,
+          configuredSidebarIDs,
+          bodyWidth,
+          480,
+          manuallyCollapsedSidebarIDs,
+          preferredExpandedSidebarID,
+        )
       : [],
+  );
+  const canvasSidebarIDs = $derived(
+    store.displayMode === "sidebar" && bodyWidth >= 900 ? configuredSidebarIDs : [],
+  );
+  const collapsedCanvasSidebarIDs = $derived(collapsedSidebarIDs(canvasSidebarIDs, expandedSidebarIDs));
+  const widthCollapsedSidebarIDs = $derived(
+    collapsedCanvasSidebarIDs.filter((id) => !manuallyCollapsedSidebarIDs.includes(id)),
   );
   const leftSidebarIDs = $derived(
     layout ? orderedSidebarIDs(layout.Sidebars, "left").filter((id) => canvasSidebarIDs.includes(id)) : [],
@@ -36,9 +54,40 @@
   const rightSidebarIDs = $derived(
     layout ? orderedSidebarIDs(layout.Sidebars, "right").filter((id) => canvasSidebarIDs.includes(id)) : [],
   );
-  const drawerAvailable = $derived(
-    store.displayMode === "sidebar" && configuredSidebarIDs.some((id) => !canvasSidebarIDs.includes(id)),
+  const drawerSidebarIDs = $derived(
+    store.displayMode !== "sidebar" || bodyWidth <= 0 || bodyWidth >= 900
+      ? []
+      : configuredSidebarIDs,
   );
+  const drawerAvailable = $derived(drawerSidebarIDs.length > 0);
+  let previouslyWidthCollapsed = new Set<string>();
+
+  $effect(() => {
+    if (!layout || bodyWidth < 900 || store.displayMode !== "sidebar") {
+      previouslyWidthCollapsed = new Set();
+      return;
+    }
+    const newlyCollapsed = widthCollapsedSidebarIDs.filter((id) => !previouslyWidthCollapsed.has(id));
+    previouslyWidthCollapsed = new Set(widthCollapsedSidebarIDs);
+    if (newlyCollapsed.length === 0) return;
+    const names = newlyCollapsed.map((id) => layout.Sidebars.find((sidebar) => sidebar.ID === id)?.Name ?? "Sidebar");
+    const title = newlyCollapsed.length === 1 ? "Sidebar collapsed" : `${newlyCollapsed.length} sidebars collapsed`;
+    const message = `${names.join(", ")} ${newlyCollapsed.length === 1 ? "was" : "were"} collapsed because the window is too narrow. Select Expand to restore it.`;
+    untrack(() => store.addToast(title, message));
+  });
+
+  function setSidebarCollapsed(id: string, collapsed: boolean) {
+    const sidebar = layout?.Sidebars.find((candidate) => candidate.ID === id);
+    if (!sidebar) return;
+    if (collapsed) {
+      preferredExpandedSidebarID = preferredExpandedSidebarID === id ? "" : preferredExpandedSidebarID;
+    } else {
+      preferredExpandedSidebarID = id;
+    }
+    if (!!sidebar.Collapsed === collapsed) return;
+    sidebar.Collapsed = collapsed;
+    saveLayout();
+  }
 
   function saveLayout() {
     if (!layout) return;
@@ -62,7 +111,7 @@
   }
 
   async function quickCycleMode() {
-    const modes = store.config?.UI?.QuickCycleModes ?? [];
+    const modes = store.resolvedQuickCycleModes();
     if (modes.length === 0) return;
     const cur = store.mode || "disable";
     const i = modes.indexOf(cur);
@@ -114,9 +163,9 @@
         return;
       }
       e.preventDefault();
-      // From a submenu, Esc goes back to the menu (modalEscapeTarget = "menu");
-      // from the menu or a standalone modal it closes; with nothing open it
-      // opens the menu.
+      // From an editor, Esc goes to its category; from a category, it goes to
+      // the root menu. The root and standalone dialogs close, and Esc with
+      // nothing open opens the menu.
       store.openModal = store.openModal ? store.modalEscapeTarget : "menu";
       return;
     }
@@ -247,7 +296,7 @@
     {#if layout}
       {#each leftSidebarIDs as id (id)}
         {@const sidebar = layout.Sidebars.find((item) => item.ID === id)}
-        {#if sidebar}<SidebarColumn {sidebar} onsave={saveLayout} />{/if}
+        {#if sidebar}<SidebarColumn {sidebar} collapsed={collapsedCanvasSidebarIDs.includes(id)} oncollapse={() => setSidebarCollapsed(id, true)} onexpand={() => setSidebarCollapsed(id, false)} onsave={saveLayout} />{/if}
       {/each}
     {/if}
     <div class="main">
@@ -257,7 +306,7 @@
     {#if layout}
       {#each rightSidebarIDs as id (id)}
         {@const sidebar = layout.Sidebars.find((item) => item.ID === id)}
-        {#if sidebar}<SidebarColumn {sidebar} onsave={saveLayout} />{/if}
+        {#if sidebar}<SidebarColumn {sidebar} collapsed={collapsedCanvasSidebarIDs.includes(id)} oncollapse={() => setSidebarCollapsed(id, true)} onexpand={() => setSidebarCollapsed(id, false)} onsave={saveLayout} />{/if}
       {/each}
     {/if}
     {#if store.displayMode === "sidebar"}
@@ -268,7 +317,7 @@
     {/if}
   </div>
   {#if store.viewsDrawerOpen && drawerAvailable}
-    <ViewsDrawer sidebarIDs={configuredSidebarIDs} onsave={saveLayout} />
+    <ViewsDrawer sidebarIDs={drawerSidebarIDs} onsave={saveLayout} />
   {/if}
 </div>
 

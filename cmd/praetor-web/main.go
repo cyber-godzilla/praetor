@@ -91,11 +91,12 @@ func main() {
 	}
 
 	hub := webapp.NewHub(deps.Config.UI.Scrollback)
-	deps.DesktopNotify.SetSink(client.NotificationSinkFunc(func(title, message string) {
+	deps.DesktopNotify.SetSink(client.NotificationOptionsSinkFunc(func(title, message string, options client.NotificationOptions) {
 		hub.Emit(appgui.EventChannel, []appgui.WireEvent{{
 			Kind: appgui.KindNotify,
 			Notify: &appgui.NotifyPayload{
-				Title: title, Message: message,
+				Title: title, Message: message, Sound: options.Sound,
+				OnlyWhenUnfocused: options.OnlyWhenUnfocused,
 			},
 		}})
 	}))

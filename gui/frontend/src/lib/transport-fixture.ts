@@ -25,6 +25,7 @@ export class FixtureTransport implements PraetorTransport {
         config: {
           CharacterProfiles: {
             DefaultID: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50",
+            AutoSwitch: true,
             Profiles: [{
               ID: "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50",
               Name: "Default",
@@ -41,6 +42,7 @@ export class FixtureTransport implements PraetorTransport {
               Name: "Default",
               SidebarsVisible: true,
               Main: [{ ComponentID: "a1ebe82e-7f0d-4ba9-9e00-181d045e3e12", SidebarHeight: 0, Collapsed: false }],
+              Bench: [],
               Sidebars: [],
             }],
           },
@@ -66,7 +68,7 @@ export class FixtureTransport implements PraetorTransport {
   async webLogin(_password: string): Promise<void> {}
   async webLogout(): Promise<void> {}
   async quit(): Promise<void> {}
-  showLocalNotification(_title: string, _message: string): void {}
+  showLocalNotification(_title: string, _message: string, _sound = false): void {}
   async requestNotificationPermission(): Promise<"unsupported"> {
     return "unsupported";
   }

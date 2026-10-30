@@ -68,7 +68,9 @@
     store.apply(batch);
     for (const event of batch) {
       if (api.inWeb() && event.kind === "notify" && event.notify) {
-        api.showLocalNotification(event.notify.title, event.notify.message);
+        if (!event.notify.onlyWhenUnfocused || !document.hasFocus()) {
+          api.showLocalNotification(event.notify.title, event.notify.message, event.notify.sound);
+        }
       }
     }
   }
@@ -157,12 +159,18 @@
     viewport?.addEventListener("resize", syncViewport);
     viewport?.addEventListener("scroll", syncViewport);
     window.addEventListener("resize", syncViewport);
+    const syncFocus = () => { if (!api.inWeb()) void api.setWindowFocused(document.hasFocus()); };
+    window.addEventListener("focus", syncFocus);
+    window.addEventListener("blur", syncFocus);
+    syncFocus();
     initialize();
     return () => {
       unsub?.();
       viewport?.removeEventListener("resize", syncViewport);
       viewport?.removeEventListener("scroll", syncViewport);
       window.removeEventListener("resize", syncViewport);
+      window.removeEventListener("focus", syncFocus);
+      window.removeEventListener("blur", syncFocus);
       document.documentElement.style.removeProperty("--praetor-viewport-height");
     };
   });

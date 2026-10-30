@@ -62,7 +62,7 @@ describe("web responsive layout contract", () => {
     expect(input.slice(rendered, focused)).toContain("stickyFocusEnabled()");
   });
 
-  it("wires the browser-mobile preferences together at the bottom", () => {
+  it("wires the browser-mobile preferences together in display settings", () => {
     const settings = source("../components/modals/SettingsModal.svelte");
     const dock = source("../components/MobileDock.svelte");
     const input = source("../components/InputLine.svelte");
@@ -74,9 +74,11 @@ describe("web responsive layout contract", () => {
     const navigation = settings.indexOf("Hide map and compass while command input is active");
     const lowercase = settings.indexOf("Lowercase the first command letter on mobile");
     const mobileFont = settings.indexOf("Mobile output text size");
-    const logPath = settings.lastIndexOf("bind:value={logPath}");
+    const displaySection = settings.lastIndexOf('section === "all" || section === "display"');
+    const logsSection = settings.lastIndexOf('section === "all" || section === "logs"');
     expect(toolbar).toBeGreaterThan(-1);
-    expect(toolbar).toBeGreaterThan(logPath);
+    expect(toolbar).toBeGreaterThan(displaySection);
+    expect(toolbar).toBeLessThan(logsSection);
     expect(tabSelector).toBeGreaterThan(toolbar);
     expect(navigation).toBeGreaterThan(tabSelector);
     expect(lowercase).toBeGreaterThan(navigation);

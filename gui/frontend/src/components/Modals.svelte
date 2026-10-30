@@ -1,12 +1,14 @@
 <script lang="ts">
   import { store } from "../lib/store.svelte";
   import MenuModal from "./modals/MenuModal.svelte";
+  import MenuSectionModal from "./modals/MenuSectionModal.svelte";
   import SettingsModal from "./modals/SettingsModal.svelte";
   import VariablesModal from "./modals/VariablesModal.svelte";
   import CharacterProfilesModal from "./modals/CharacterProfilesModal.svelte";
   import HighlightsModal from "./modals/HighlightsModal.svelte";
   import SpeechColorsModal from "./modals/SpeechColorsModal.svelte";
   import LayoutModal from "./modals/LayoutModal.svelte";
+  import ViewLibraryModal from "./modals/ViewLibraryModal.svelte";
   import ActionSetsModal from "./modals/ActionSetsModal.svelte";
   import AddActionSetModal from "./modals/AddActionSetModal.svelte";
   import AddActionModal from "./modals/AddActionModal.svelte";
@@ -22,6 +24,8 @@
   import HelpModal from "./modals/HelpModal.svelte";
   import ModeSelectModal from "./modals/ModeSelectModal.svelte";
   import QuickCycleModal from "./modals/QuickCycleModal.svelte";
+  import PriorityCommandsModal from "./modals/PriorityCommandsModal.svelte";
+  import ScriptManagerModal from "./modals/ScriptManagerModal.svelte";
   import CRTEffectsModal from "./modals/CRTEffectsModal.svelte";
   import MobileActionsModal from "./modals/MobileActionsModal.svelte";
   import NewUserModal from "./modals/NewUserModal.svelte";
@@ -41,22 +45,12 @@
     await api.setIgnoreThink(v);
     if (store.config?.Ignorelist) store.config.Ignorelist.Think = v;
   }
-  async function saveScriptDirs(v: string[]) {
-    await api.setScriptDirs(v);
-    if (store.config) store.config.Scripts = v;
-  }
-  async function saveHighPriority(v: string[]) {
-    await api.setHighPriority(v);
-    if (store.config?.Commands) store.config.Commands.HighPriority = v;
-  }
-
-  const browseScriptDir = api.inWeb()
-    ? undefined
-    : async () => (await api.pickScriptDir()) || null;
 </script>
 
 {#if m === "menu"}
   <MenuModal />
+{:else if m?.startsWith("menu-")}
+  <MenuSectionModal sectionId={m.slice(5)} />
 {:else if m === "new-user"}
   <NewUserModal />
 {:else if m === "help"}
@@ -65,6 +59,14 @@
   <ModeSelectModal />
 {:else if m === "settings"}
   <SettingsModal />
+{:else if m === "settings-display"}
+  <SettingsModal section="display" />
+{:else if m === "settings-input"}
+  <SettingsModal section="input" />
+{:else if m === "settings-logs"}
+  <SettingsModal section="logs" />
+{:else if m === "settings-application"}
+  <SettingsModal section="application" />
 {:else if m === "variables"}
   <VariablesModal />
 {:else if m === "character-profiles"}
@@ -77,6 +79,8 @@
   <SpeechColorsModal />
 {:else if m === "layout"}
   <LayoutModal />
+{:else if m === "view-library"}
+  <ViewLibraryModal />
 {:else if m === "actionsets"}
   <ActionSetsModal />
 {:else if m === "actionset-add"}
@@ -100,22 +104,9 @@
     variablePatterns
   />
 {:else if m === "scripts"}
-  <StringListModal
-    title="Script directories"
-    hint={api.inWeb()
-      ? "Directories on the praetor-web server host scanned for Lua modes. Reloads on save."
-      : "Directories scanned for Lua modes. Reloads on save."}
-    initial={store.config?.Scripts ?? []}
-    onsave={saveScriptDirs}
-    onBrowse={browseScriptDir}
-  />
+  <ScriptManagerModal />
 {:else if m === "priority"}
-  <StringListModal
-    title="High-priority commands"
-    hint="Commands with an immediate precedence during script events, which will bypass other queued commands."
-    initial={store.config?.Commands?.HighPriority ?? []}
-    onsave={saveHighPriority}
-  />
+  <PriorityCommandsModal />
 {:else if m === "quickcycle"}
   <QuickCycleModal />
 {:else if m === "notifications"}

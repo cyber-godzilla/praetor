@@ -32,7 +32,7 @@ export interface PraetorTransport {
   webLogin(password: string): Promise<void>;
   webLogout(): Promise<void>;
   quit(): Promise<void>;
-  showLocalNotification(title: string, message: string): void;
+  showLocalNotification(title: string, message: string, sound?: boolean): void;
   requestNotificationPermission(): Promise<NotificationPermission | "unsupported">;
 }
 

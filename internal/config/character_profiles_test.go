@@ -24,11 +24,17 @@ func TestDefaultsContainGlobalDefaultCharacterProfile(t *testing.T) {
 	if profile.Name != "Default" {
 		t.Fatalf("default profile name = %q", profile.Name)
 	}
+	if profile.VariablesMode != CharacterVariablesIndependent {
+		t.Fatalf("default variables mode = %q", profile.VariablesMode)
+	}
 	if profile.Variables == nil || profile.CustomViews == nil || profile.ActionSets == nil {
 		t.Fatalf("default profile collections must be initialized: %+v", profile)
 	}
 	if len(cfg.CharacterProfiles.Profiles) != 1 {
 		t.Fatalf("fresh config profiles = %d, want only Default", len(cfg.CharacterProfiles.Profiles))
+	}
+	if !cfg.CharacterProfiles.AutoSwitch {
+		t.Fatal("automatic play/sleep profile switching should default on")
 	}
 }
 
@@ -111,6 +117,67 @@ ui:
 	}
 }
 
+func TestLoadMaterializesLegacyPerKeyVariableInheritance(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	legacy := `
+server:
+  host: game.example.test
+  port: 8080
+  protocol: ws
+  login_url: https://example.test/login
+character_profiles:
+  default_id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+  auto_switch: true
+  profiles:
+    - id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+      name: Default
+      variables:
+        target: rat
+        stance: guard
+    - id: 2a764b7a-4145-44d9-9574-3bc2f0fe29cd
+      name: Marcus
+      variables:
+        target: bandit
+`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := cfg.CharacterProfileByID("2a764b7a-4145-44d9-9574-3bc2f0fe29cd")
+	if profile.VariablesMode != CharacterVariablesIndependent {
+		t.Fatalf("variables mode = %q", profile.VariablesMode)
+	}
+	if len(profile.Variables) != 2 || profile.Variables["target"] != "bandit" || profile.Variables["stance"] != "guard" {
+		t.Fatalf("materialized variables = %#v", profile.Variables)
+	}
+
+	cfg.DefaultCharacterProfile().Variables["stance"] = "aggressive"
+	if got := cfg.ResolvedVariables(profile.ID)["stance"]; got != "guard" {
+		t.Fatalf("Default edit changed migrated character stance to %q", got)
+	}
+
+	// Once the migration marker is saved, a deletion is part of the complete
+	// character-owned list and must survive a reload without re-inheriting.
+	delete(profile.Variables, "stance")
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloadedProfile := reloaded.CharacterProfileByID(profile.ID)
+	if _, exists := reloadedProfile.Variables["stance"]; exists {
+		t.Fatalf("deleted variable returned after reload: %#v", reloadedProfile.Variables)
+	}
+	if got := reloadedProfile.Variables["target"]; got != "bandit" {
+		t.Fatalf("remaining variable = %q, want bandit", got)
+	}
+}
+
 func TestValidateRepairsDefaultCharacterProfileIdentity(t *testing.T) {
 	cfg := Defaults()
 	cfg.CharacterProfiles.DefaultID = "not-a-uuid"
@@ -185,5 +252,123 @@ func TestValidateMakesCustomComponentIDsUniqueAcrossCharacterProfiles(t *testing
 	got := cfg.CharacterProfiles.Profiles[1].CustomViews[0].ID
 	if got == sharedID || !ValidUUID(got) {
 		t.Fatalf("duplicate custom component ID repaired to %q", got)
+	}
+}
+
+func TestCharacterProfileAutoSwitchRoundTripsDisabled(t *testing.T) {
+	cfg := Defaults()
+	cfg.CharacterProfiles.AutoSwitch = false
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Save(cfg, path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CharacterProfiles.AutoSwitch {
+		t.Fatal("disabled automatic character switching was not preserved")
+	}
+}
+
+func TestResolvedCharacterSettingsSupportIndependentVariablesAndCollectionInheritance(t *testing.T) {
+	cfg := Defaults()
+	global := cfg.DefaultCharacterProfile()
+	global.Variables = map[string]string{"weapon": "gladius", "stance": "guard"}
+	global.ActionSets = []ActionSet{{ID: "global-set", Name: "Global"}}
+	cfg.UI.QuickCycleModes = []string{"disable", "combat"}
+	cfg.Commands.HighPriority = []string{"flee"}
+
+	profileID := "2a764b7a-4145-44d9-9574-3bc2f0fe29cd"
+	cfg.CharacterProfiles.Profiles = append(cfg.CharacterProfiles.Profiles, CharacterProfileConfig{
+		ID:                   profileID,
+		Name:                 "Marcus",
+		Account:              "one",
+		CharacterNumber:      1,
+		Variables:            map[string]string{"weapon": "spear"},
+		ActionSetsMode:       CharacterSettingInherit,
+		QuickCycleMode:       CharacterSettingCustomize,
+		QuickCycleModes:      []string{},
+		PriorityCommandsMode: CharacterSettingInherit,
+	})
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := cfg.ResolvedVariables(profileID); len(got) != 1 || got["weapon"] != "spear" {
+		t.Fatalf("resolved variables = %#v", got)
+	}
+	if got := cfg.ResolvedActionSets(profileID); len(got) != 1 || got[0].ID != "global-set" {
+		t.Fatalf("resolved action sets = %#v", got)
+	}
+	if got := cfg.ResolvedQuickCycleModes(profileID); len(got) != 0 || got == nil {
+		t.Fatalf("custom empty quick cycle = %#v, want non-nil empty", got)
+	}
+	if got := cfg.ResolvedHighPriority(profileID); len(got) != 1 || got[0] != "flee" {
+		t.Fatalf("resolved priority commands = %#v", got)
+	}
+
+	global = cfg.DefaultCharacterProfile()
+	global.Variables["stance"] = "aggressive"
+	global.ActionSets[0].Name = "Renamed globally"
+	cfg.Commands.HighPriority = []string{"retreat"}
+	if _, exists := cfg.ResolvedVariables(profileID)["stance"]; exists {
+		t.Fatal("Default variable edit leaked into an independent character list")
+	}
+	if got := cfg.ResolvedActionSets(profileID)[0].Name; got != "Renamed globally" {
+		t.Fatalf("live inherited action set = %q", got)
+	}
+	if got := cfg.ResolvedHighPriority(profileID)[0]; got != "retreat" {
+		t.Fatalf("live inherited priority = %q", got)
+	}
+}
+
+func TestResolvedVariablesAreCharacterSpecific(t *testing.T) {
+	cfg := Defaults()
+	global := cfg.DefaultCharacterProfile()
+	global.Variables = map[string]string{"weapon": "gladius", "stance": "guard"}
+	profileID := "2a764b7a-4145-44d9-9574-3bc2f0fe29cd"
+	cfg.CharacterProfiles.Profiles = append(cfg.CharacterProfiles.Profiles, CharacterProfileConfig{
+		ID:        profileID,
+		Name:      "Marcus",
+		Variables: map[string]string{"weapon": "spear"},
+	})
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	got := cfg.ResolvedVariables(profileID)
+	if got["weapon"] != "spear" {
+		t.Fatalf("weapon = %q, want spear", got["weapon"])
+	}
+	if _, exists := got["stance"]; exists {
+		t.Fatalf("Default stance leaked into character variables %#v", got)
+	}
+
+	global = cfg.DefaultCharacterProfile()
+	global.Variables["stance"] = "aggressive"
+	if _, exists := cfg.ResolvedVariables(profileID)["stance"]; exists {
+		t.Fatal("a later Default edit changed an independent character list")
+	}
+}
+
+func TestResolvedCharacterSettingsReturnDefensiveCopies(t *testing.T) {
+	cfg := Defaults()
+	cfg.DefaultCharacterProfile().Variables = map[string]string{"target": "rat"}
+	cfg.DefaultCharacterProfile().ActionSets = []ActionSet{{
+		ID: "set", Name: "Set", Buttons: []ActionButton{{Label: "Hit", Command: "kill rat"}},
+	}}
+
+	variables := cfg.ResolvedVariables(cfg.CharacterProfiles.DefaultID)
+	sets := cfg.ResolvedActionSets(cfg.CharacterProfiles.DefaultID)
+	variables["target"] = "mutated"
+	sets[0].Name = "Mutated"
+	sets[0].Buttons[0].Command = "mutated"
+
+	if cfg.DefaultCharacterProfile().Variables["target"] != "rat" {
+		t.Fatal("resolved variables alias persisted config")
+	}
+	if got := cfg.DefaultCharacterProfile().ActionSets[0]; got.Name != "Set" || got.Buttons[0].Command != "kill rat" {
+		t.Fatalf("resolved action sets alias persisted config: %+v", got)
 	}
 }

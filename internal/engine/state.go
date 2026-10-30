@@ -24,6 +24,7 @@ type DisplayItem struct {
 type ModeState struct {
 	mu             sync.RWMutex
 	values         map[string]lua.LValue
+	valueOwners    map[string]*lua.LState
 	readOnly       map[string]lua.LValue
 	persistentKeys map[string]bool // keys that survive Clear()
 	onPersistDirty func()          // called when a persistent key changes
@@ -37,6 +38,7 @@ type ModeState struct {
 func NewModeState() *ModeState {
 	return &ModeState{
 		values:         make(map[string]lua.LValue),
+		valueOwners:    make(map[string]*lua.LState),
 		readOnly:       make(map[string]lua.LValue),
 		persistentKeys: make(map[string]bool),
 	}
@@ -49,15 +51,19 @@ func (ms *ModeState) Clear() {
 	defer ms.mu.Unlock()
 
 	saved := make(map[string]lua.LValue)
+	savedOwners := make(map[string]*lua.LState)
 	for key := range ms.persistentKeys {
 		if val, ok := ms.values[key]; ok {
 			saved[key] = val
+			savedOwners[key] = ms.valueOwners[key]
 		}
 	}
 
 	ms.values = make(map[string]lua.LValue)
+	ms.valueOwners = make(map[string]*lua.LState)
 	for key, val := range saved {
 		ms.values[key] = val
+		ms.valueOwners[key] = savedOwners[key]
 	}
 
 	ms.displayItems = nil
@@ -222,6 +228,7 @@ func (ms *ModeState) ClearPersistentKey(key string) {
 	ms.mu.Lock()
 	delete(ms.persistentKeys, key)
 	delete(ms.values, key)
+	delete(ms.valueOwners, key)
 	ms.revision.Add(1)
 	ms.mu.Unlock()
 	// Mark dirty so the explicit Flush the UIs run persists the deletion;
@@ -249,6 +256,7 @@ func (ms *ModeState) LoadPersistent(data map[string]interface{}) {
 	for key, val := range data {
 		ms.persistentKeys[key] = true
 		ms.values[key] = ms.goToLuaDeep(val)
+		ms.valueOwners[key] = ms.luaState
 	}
 	ms.revision.Add(1)
 }
@@ -261,12 +269,36 @@ func (ms *ModeState) ReplacePersistent(data map[string]interface{}) {
 	defer ms.mu.Unlock()
 	for key := range ms.persistentKeys {
 		delete(ms.values, key)
+		delete(ms.valueOwners, key)
 	}
 	ms.persistentKeys = make(map[string]bool, len(data))
 	for key, val := range data {
 		ms.persistentKeys[key] = true
 		ms.values[key] = ms.goToLuaDeep(val)
+		ms.valueOwners[key] = ms.luaState
 	}
+	ms.revision.Add(1)
+}
+
+// RehomeValues copies portable state into a live replacement Lua state before
+// an old VM is closed. Runtime reloads intentionally preserve mode state, but
+// retaining tables owned by the retired VM would leave dangling cross-state
+// objects. Capabilities and other non-data values are dropped.
+func (ms *ModeState) RehomeValues(L *lua.LState) {
+	ms.mu.Lock()
+	defer ms.mu.Unlock()
+	for key, value := range ms.values {
+		portable, ok := luaToPortable(value, make(map[*lua.LTable]bool))
+		if !ok {
+			delete(ms.values, key)
+			delete(ms.valueOwners, key)
+			continue
+		}
+		ms.values[key] = portableToLua(L, portable)
+		ms.valueOwners[key] = L
+	}
+	ms.luaState = L
+	ms.actions = nil
 	ms.revision.Add(1)
 }
 
@@ -344,11 +376,12 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 		key := L.CheckString(1)
 		ms.mu.RLock()
 		val, ok := ms.values[key]
+		owner := ms.valueOwners[key]
 		ms.mu.RUnlock()
 		if !ok {
 			L.Push(lua.LNil)
 		} else {
-			L.Push(val)
+			L.Push(luaValueForState(L, val, owner))
 		}
 		return 1
 	}))
@@ -359,6 +392,7 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 		val := L.Get(2)
 		ms.mu.Lock()
 		ms.values[key] = val
+		ms.valueOwners[key] = L
 		isPersistent := ms.persistentKeys[key]
 		ms.revision.Add(1)
 		ms.mu.Unlock()
@@ -380,6 +414,14 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 	stateTbl.RawSetString("persist", L.NewFunction(func(L *lua.LState) int {
 		key := L.CheckString(1)
 		ms.SetPersist(key)
+		return 0
+	}))
+
+	// state.unpersist(key) removes a legacy durable value entirely. This is
+	// primarily a migration tool for data that has moved to character variables;
+	// ordinary transient state still disappears automatically on mode switch.
+	stateTbl.RawSetString("unpersist", L.NewFunction(func(L *lua.LState) int {
+		ms.ClearPersistentKey(L.CheckString(1))
 		return 0
 	}))
 
@@ -416,6 +458,93 @@ func RegisterStateAPI(L *lua.LState, ms *ModeState) {
 
 	L.SetMetatable(stateTbl, mt)
 	L.SetGlobal("state", stateTbl)
+}
+
+// luaValueForState prevents values owned by one isolated Lua state from being
+// pushed into another. Serializable data is copied without metatables;
+// functions, userdata, threads, channels, and cycles become nil across the
+// boundary, so Trusted capabilities cannot ride through state into Restricted.
+func luaValueForState(L *lua.LState, value lua.LValue, owner *lua.LState) lua.LValue {
+	if owner == nil || owner == L {
+		return value
+	}
+	converted, ok := luaToPortable(value, make(map[*lua.LTable]bool))
+	if !ok {
+		return lua.LNil
+	}
+	return portableToLua(L, converted)
+}
+
+func luaToPortable(value lua.LValue, seen map[*lua.LTable]bool) (interface{}, bool) {
+	switch typed := value.(type) {
+	case *lua.LNilType:
+		return nil, true
+	case lua.LBool:
+		return bool(typed), true
+	case lua.LNumber:
+		return float64(typed), true
+	case lua.LString:
+		return string(typed), true
+	case *lua.LTable:
+		if seen[typed] {
+			return nil, false
+		}
+		seen[typed] = true
+		defer delete(seen, typed)
+		result := make(map[interface{}]interface{})
+		valid := true
+		typed.ForEach(func(key, item lua.LValue) {
+			if !valid {
+				return
+			}
+			var portableKey interface{}
+			switch keyValue := key.(type) {
+			case lua.LString:
+				portableKey = string(keyValue)
+			case lua.LNumber:
+				portableKey = float64(keyValue)
+			default:
+				valid = false
+				return
+			}
+			portableItem, ok := luaToPortable(item, seen)
+			if !ok {
+				valid = false
+				return
+			}
+			result[portableKey] = portableItem
+		})
+		return result, valid
+	default:
+		return nil, false
+	}
+}
+
+func portableToLua(L *lua.LState, value interface{}) lua.LValue {
+	switch typed := value.(type) {
+	case nil:
+		return lua.LNil
+	case bool:
+		return lua.LBool(typed)
+	case float64:
+		return lua.LNumber(typed)
+	case string:
+		return lua.LString(typed)
+	case map[interface{}]interface{}:
+		table := L.NewTable()
+		for key, item := range typed {
+			luaItem := portableToLua(L, item)
+			switch keyValue := key.(type) {
+			case string:
+				table.RawSetString(keyValue, luaItem)
+			case float64:
+				table.RawSet(lua.LNumber(keyValue), luaItem)
+			}
+		}
+		return table
+	default:
+		return lua.LNil
+	}
 }
 
 // goToLua converts a Go value to a Lua value.

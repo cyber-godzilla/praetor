@@ -9,8 +9,10 @@ import (
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/engine"
 	"github.com/cyber-godzilla/praetor/internal/logging"
 	"github.com/cyber-godzilla/praetor/internal/notes"
+	"github.com/cyber-godzilla/praetor/internal/scriptmanager"
 	"github.com/cyber-godzilla/praetor/internal/session"
 )
 
@@ -28,9 +30,11 @@ type Deps struct {
 	Creds         session.CredentialStore
 	SessionLog    *client.SessionLogger
 	DesktopNotify *client.DesktopNotifier
+	DiscordNotify *client.DiscordNotifier
 	Clipboard     Clipboard
 	Dialogs       Dialogs
 	ScriptDirs    []string
+	ScriptManager *scriptmanager.Manager
 	Notes         *notes.Store
 	Version       string
 	Debug         bool
@@ -124,7 +128,17 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		appLog.Close()
 		return nil, err
 	}
-	gc, err := client.NewClient(cfg, scriptDirs, dataDir, creds)
+	scriptSources := make([]engine.LuaSource, 0, len(scriptDirs)+len(cfg.ManagedScripts))
+	for _, dir := range scriptDirs {
+		scriptSources = append(scriptSources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+	}
+	managedRoot := filepath.Join(configDir, "managed-scripts")
+	for _, source := range cfg.ManagedScripts {
+		if source.Enabled {
+			scriptSources = append(scriptSources, engine.LuaSource{Path: filepath.Join(managedRoot, source.ID), Trust: source.Trust})
+		}
+	}
+	gc, err := client.NewClientWithSources(cfg, scriptSources, dataDir, creds)
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +158,9 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		sessLog, _ = client.NewSessionLogger(false, logDir)
 	}
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	discordNotify := client.NewDiscordNotifier(cfg.Notifications.Discord)
+	desktopNotify.SetDiscordNotifier(discordNotify)
+	gc.SetDiscordNotifier(discordNotify)
 	desktopNotify.SetVariables(cfg.DefaultCharacterProfile().Variables)
 
 	notesStore := notes.New(filepath.Join(configDir, "notes"))
@@ -159,7 +176,9 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 		Creds:         creds,
 		SessionLog:    sessLog,
 		DesktopNotify: desktopNotify,
+		DiscordNotify: discordNotify,
 		ScriptDirs:    scriptDirs,
+		ScriptManager: scriptmanager.New(managedRoot),
 		Notes:         notesStore,
 		Version:       version,
 		Debug:         debug,

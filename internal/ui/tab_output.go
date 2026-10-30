@@ -346,9 +346,7 @@ func renderSegments(segments []types.StyledSegment, maxWidth int) string {
 		noStyle := false
 		if strings.HasPrefix(seg.Color, "highlight:") {
 			styleName := seg.Color[len("highlight:"):]
-			if hs, ok := highlightStyles[styleName]; ok {
-				style = hs.Bold(seg.Bold).Underline(seg.Underline)
-			}
+			style = highlightStyle(styleName).Bold(seg.Bold).Underline(seg.Underline)
 		} else if seg.Color != "" {
 			style = style.Foreground(lipgloss.Color(seg.Color))
 		} else {

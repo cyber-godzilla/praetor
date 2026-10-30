@@ -15,7 +15,7 @@ import type {
   CustomTabConfig,
   ActionSet,
   DisplayProfileConfig,
-  DesktopNotificationsConfig,
+  NotificationsConfig,
   UpdateInfo,
   NoteSummary,
   Note,
@@ -28,11 +28,15 @@ import type {
   SpeechColorConfig,
   WoundHighlightConfig,
   CharacterProfileIdentity,
+  ScriptManagerState,
+  ManagedScriptSourceConfig,
+  ManagedScriptUpdateStatus,
 } from "./types";
 import type { PraetorTransport, SystemUpdate } from "./transport";
 import { WebAuthRequiredError } from "./transport";
 import { WailsTransport } from "./transport-wails";
 import { WebTransport } from "./transport-web";
+import { layoutWithIntegerPixels } from "./layout";
 
 const transport: PraetorTransport = window.go?.gui?.GuiApp && window.runtime
   ? new WailsTransport()
@@ -54,8 +58,9 @@ export function inWeb(): boolean {
 export const webLogin = (password: string) => transport.webLogin(password);
 export const webLogout = () => transport.webLogout();
 export const quit = () => transport.quit();
-export const showLocalNotification = (title: string, message: string) =>
-  transport.showLocalNotification(title, message);
+export const showLocalNotification = (title: string, message: string, sound = false) =>
+  transport.showLocalNotification(title, message, sound);
+export const setWindowFocused = (focused: boolean) => call<void>("SetWindowFocused", undefined, focused);
 export const requestNotificationPermission = () => transport.requestNotificationPermission();
 
 // ---- Lifecycle & init ----
@@ -118,6 +123,27 @@ export const modeSpecs = () => call<ModeSpec[]>("ModeSpecs", []);
 export const setMode = (name: string, args: string[]) =>
   call<void>("SetMode", undefined, name, args);
 export const reloadScripts = () => call<void>("ReloadScripts", undefined);
+export const getScriptManager = () => call<ScriptManagerState>("GetScriptManager", {
+  localDirectories: [], managed: [], suggestedURL: "", suggestedInstalled: false,
+});
+export const installManagedScript = (url: string) =>
+  call<ManagedScriptSourceConfig>("InstallManagedScript", {} as ManagedScriptSourceConfig, url);
+export const checkManagedScript = (id: string) =>
+  call<ManagedScriptUpdateStatus>("CheckManagedScript", {
+    available: false, updated: false, version: "", commit: "", tracking: "", ref: "",
+  }, id);
+export const updateManagedScript = (id: string) =>
+  call<ManagedScriptSourceConfig>("UpdateManagedScript", {} as ManagedScriptSourceConfig, id);
+export const removeManagedScript = (id: string) =>
+  call<void>("RemoveManagedScript", undefined, id);
+export const setManagedScriptStartupCheck = (id: string, enabled: boolean) =>
+  call<void>("SetManagedScriptStartupCheck", undefined, id, enabled);
+export const setManagedScriptEnabled = (id: string, enabled: boolean, stopAutomation = false) =>
+  call<void>("SetManagedScriptEnabled", undefined, id, enabled, stopAutomation);
+export const setManagedScriptTrust = (id: string, trust: "restricted" | "trusted", stopAutomation = false) =>
+  call<void>("SetManagedScriptTrust", undefined, id, trust, stopAutomation);
+export const reorderManagedScripts = (ids: string[]) =>
+  call<void>("ReorderManagedScripts", undefined, ids);
 
 // ---- Clipboard ----
 export const clipboardGet = () => call<string>("ClipboardGet", "");
@@ -166,24 +192,38 @@ export const setWoundHighlights = (config: WoundHighlightConfig) =>
   call<void>("SetWoundHighlights", undefined, config);
 export const setCustomTabs = (t: CustomTabConfig[]) => call<void>("SetCustomTabs", undefined, t);
 export const setViewLayout = (layout: DisplayProfileConfig, customViews: CustomTabConfig[]) =>
-  call<void>("SetViewLayout", undefined, layout, customViews);
+  call<void>("SetViewLayout", undefined, layoutWithIntegerPixels(layout), customViews);
+export const setProfileViewLayout = (profileID: string, layout: DisplayProfileConfig, customViews: CustomTabConfig[]) =>
+  call<void>("SetProfileViewLayout", undefined, profileID, layoutWithIntegerPixels(layout), customViews);
 export const setActionSets = (s: ActionSet[]) => call<void>("SetActionSets", undefined, s);
+export const setActionSetInheritance = (inherit: boolean) =>
+  call<void>("SetActionSetInheritance", undefined, inherit);
+export const deleteActionSetEverywhere = (id: string) =>
+  call<void>("DeleteActionSetEverywhere", undefined, id);
 export const setSelectedActionSetID = (id: string) =>
   call<void>("SetSelectedActionSetID", undefined, id);
 export const setQuickCycleModes = (m: string[]) => call<void>("SetQuickCycleModes", undefined, m);
+export const setQuickCycleInheritance = (inherit: boolean) =>
+  call<void>("SetQuickCycleInheritance", undefined, inherit);
 export const setHighPriority = (c: string[]) => call<void>("SetHighPriority", undefined, c);
+export const setHighPriorityInheritance = (inherit: boolean) =>
+  call<void>("SetHighPriorityInheritance", undefined, inherit);
 export const setInputVariables = (v: Record<string, string>) =>
   call<void>("SetInputVariables", undefined, v);
-export const setCharacterProfiles = async (profiles: CharacterProfileIdentity[]) => {
-  await call<void>("SetCharacterProfiles", undefined, profiles);
-  return getConfig();
-};
+export const setCharacterProfiles = (profiles: CharacterProfileIdentity[]) =>
+  call<void>("SetCharacterProfiles", undefined, profiles);
+export const setCharacterProfileAutoSwitch = (enabled: boolean) =>
+  call<void>("SetCharacterProfileAutoSwitch", undefined, enabled);
+export const switchCharacterProfile = (id: string, stopAutomation = false) =>
+  call<void>("SwitchCharacterProfile", undefined, id, stopAutomation);
 export const setIgnoreOOC = (n: string[]) => call<void>("SetIgnoreOOC", undefined, n);
 export const setIgnoreThink = (n: string[]) => call<void>("SetIgnoreThink", undefined, n);
 export const setScriptDirs = (d: string[]) => call<void>("SetScriptDirs", undefined, d);
 export const pickScriptDir = () => call<string>("PickScriptDir", "");
-export const setNotifications = (c: DesktopNotificationsConfig) =>
+export const setNotifications = (c: NotificationsConfig) =>
   call<void>("SetNotifications", undefined, c);
+export const testDiscordNotification = () =>
+  call<void>("TestDiscordNotification", undefined);
 
 // ---- Kudos ----
 export const getKudos = () =>

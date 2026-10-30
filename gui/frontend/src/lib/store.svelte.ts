@@ -161,6 +161,8 @@ class AppStore {
   // Alt+S display-mode unmount/remount.
   collapsed = $state({ map: false, exits: false, vitals: false });
   openModal = $state<string | null>(null);
+  characterPickerOpen = $state(false);
+  newCharacterProfileRequest = $state(0);
   // True while the custom right-click context menu is open, so the game view's
   // Escape handler yields to it instead of opening the app menu.
   contextMenuOpen = $state(false);
@@ -211,8 +213,9 @@ class AppStore {
   hintCompleteRequest = $state(0);
   // Global reveal of all suppressed lines (Alt+I), complementing per-line click.
   expandAllSuppressed = $state(false);
-  // Where Esc goes from the currently-open modal: "menu" for submenus (with a
-  // Back button), null to close entirely. Set by the active Modal on mount.
+  // Where Esc goes from the currently-open modal: the owning menu category for
+  // editors, the root menu for categories, or null to close entirely. Set by
+  // the active Modal on mount.
   modalEscapeTarget = $state<string | null>(null);
 
   private nextLineId = 1;
@@ -276,10 +279,51 @@ class AppStore {
     return profiles.find((profile) => profile.ID === id) ?? profiles[0] ?? null;
   }
 
+  defaultCharacterProfile(): CharacterProfileConfig | null {
+    const profiles = this.config?.CharacterProfiles?.Profiles ?? [];
+    const defaultID = this.config?.CharacterProfiles?.DefaultID;
+    return profiles.find((profile) => profile.ID === defaultID) ?? profiles[0] ?? null;
+  }
+
+  resolvedVariables(): Record<string, string> {
+    const active = this.characterProfile();
+    return { ...(active?.Variables ?? {}) };
+  }
+
+  resolvedActionSets(): import("./types").ActionSet[] {
+    const active = this.characterProfile();
+    if (active && active.ID !== this.config?.CharacterProfiles?.DefaultID && active.ActionSetsMode === "inherit") {
+      return this.defaultCharacterProfile()?.ActionSets ?? [];
+    }
+    return active?.ActionSets ?? [];
+  }
+
+  resolvedQuickCycleModes(): string[] {
+    const active = this.characterProfile();
+    if (active && active.ID !== this.config?.CharacterProfiles?.DefaultID && active.QuickCycleMode === "customize") {
+      return active.QuickCycleModes ?? [];
+    }
+    return this.config?.UI?.QuickCycleModes ?? [];
+  }
+
+  resolvedHighPriority(): string[] {
+    const active = this.characterProfile();
+    if (active && active.ID !== this.config?.CharacterProfiles?.DefaultID && active.PriorityCommandsMode === "customize") {
+      return active.HighPriority ?? [];
+    }
+    return this.config?.Commands?.HighPriority ?? [];
+  }
+
   displayProfile() {
     const profiles = this.config?.DisplayProfiles?.Profiles ?? [];
-    const id = this.config?.DisplayProfiles?.DefaultID;
-    return profiles.find((profile) => profile.ID === id) ?? profiles[0] ?? null;
+    const characterID = this.activeCharacterProfileID || this.config?.CharacterProfiles?.DefaultID;
+    const defaultCharacterID = this.config?.CharacterProfiles?.DefaultID;
+    if (characterID && characterID !== defaultCharacterID) {
+      const characterProfile = profiles.find((profile) => profile.CharacterProfileID === characterID);
+      if (characterProfile) return characterProfile;
+    }
+    const defaultID = this.config?.DisplayProfiles?.DefaultID;
+    return profiles.find((profile) => profile.ID === defaultID) ?? profiles[0] ?? null;
   }
 
   mainTabs(): Tab[] {
@@ -322,7 +366,7 @@ class AppStore {
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
         if (line.isEcho && !tab.echoCommands && isExcludeOnly(tab.rules)) continue;
-        if (matchesTab(p.text, tab.rules, this.characterProfile()?.Variables ?? {})) this.appendLine(tab, line, mark);
+        if (matchesTab(p.text, tab.rules, this.resolvedVariables())) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -341,7 +385,7 @@ class AppStore {
         this.appendLine(tab, line, mark);
       } else if (tab.kind === "custom") {
         if (!tab.visible) continue;
-        if (matchesTab(p.originalText, tab.rules, this.characterProfile()?.Variables ?? {})) this.appendLine(tab, line, mark);
+        if (matchesTab(p.originalText, tab.rules, this.resolvedVariables())) this.appendLine(tab, line, mark);
       }
     }
   }
@@ -533,6 +577,7 @@ class AppStore {
           break;
         case Kind.CharacterProfile:
           if (ev.characterProfile) {
+            if (ev.characterProfile.id === this.activeCharacterProfileID) break;
             const profile = this.config?.CharacterProfiles?.Profiles?.find(
               (candidate) => candidate.ID === ev.characterProfile!.id,
             );
@@ -540,6 +585,8 @@ class AppStore {
               this.activeCharacterProfileID = profile.ID;
               this.selectedActionSetID = profile.SelectedActionSetID ?? "";
               this.rebuildTabs(profile.CustomViews);
+              this.selectTabByID(COMPONENT_IDS.all);
+              this.displayMode = this.displayProfile()?.SidebarsVisible === false ? "off" : "sidebar";
               this.addToast("Character profile", `${profile.Name} is now active.`);
             }
           }
@@ -554,7 +601,8 @@ class AppStore {
           if (ev.debug) this.ingestDebug(ev.debug.channel, ev.debug.payload);
           break;
         case Kind.OpenMenu:
-          if (ev.openMenu) this.openModal = ev.openMenu;
+          if (ev.openMenu === "character-picker") this.characterPickerOpen = true;
+          else if (ev.openMenu) this.openModal = ev.openMenu;
           break;
         case Kind.Command:
           break; // command echo already arrives as a text event

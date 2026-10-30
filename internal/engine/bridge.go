@@ -22,6 +22,8 @@ type BridgeCallbacks interface {
 	OnMetricsDec(key string)
 	OnMetricsSet(key string, value int)
 	OnMetricsGet(key string) int
+	OnVariableGet(name string) (string, bool)
+	OnVariableSet(name, value string) error
 }
 
 // StatusValues holds the current status bar values, readable from Lua.
@@ -188,6 +190,29 @@ func RegisterBridge(L *lua.LState, cb BridgeCallbacks, status *StatusValues, tim
 		return 1
 	}))
 	L.SetGlobal("metrics", metricsTbl)
+
+	// variables provides synchronous access to the active character profile's
+	// user-facing variables. Writes complete (including config persistence)
+	// before Lua continues, so a mode handoff can immediately read the value.
+	variablesTbl := L.NewTable()
+	variablesTbl.RawSetString("get", L.NewFunction(func(L *lua.LState) int {
+		value, ok := cb.OnVariableGet(L.CheckString(1))
+		if !ok {
+			L.Push(lua.LNil)
+		} else {
+			L.Push(lua.LString(value))
+		}
+		return 1
+	}))
+	variablesTbl.RawSetString("set", L.NewFunction(func(L *lua.LState) int {
+		name := L.CheckString(1)
+		value := L.CheckString(2)
+		if err := cb.OnVariableSet(name, value); err != nil {
+			L.RaiseError("setting variable %q: %v", name, err)
+		}
+		return 0
+	}))
+	L.SetGlobal("variables", variablesTbl)
 
 	// Timer functions (optional)
 	if len(timers) > 0 && timers[0] != nil {

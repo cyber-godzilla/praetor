@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math"
@@ -40,16 +41,20 @@ type inputContinuation struct {
 // inputReaction is a live $(wait-for ...) or $(repeat ...) step. Repeat steps
 // also occupy one slot in inputWaiters while waiting to consume an unbusy line.
 type inputReaction struct {
-	chain    *inputChain
-	commands []commandinput.Command
-	match    string
-	cancel   string
-	repeat   string
-	timeout  time.Duration
-	done     chan struct{}
-	attempts int
-	max      int
-	count    int
+	chain           *inputChain
+	commands        []commandinput.Command
+	match           string
+	matchCondition  *commandinput.ValueCondition
+	cancel          string
+	cancelCondition *commandinput.ValueCondition
+	repeat          string
+	repeatTemplate  string
+	valuesArmed     bool
+	timeout         time.Duration
+	done            chan struct{}
+	attempts        int
+	max             int
+	count           int
 }
 
 // inputChain owns one typed line with commands or $() controls still pending.
@@ -133,6 +138,8 @@ type Client struct {
 	inputVariables      map[string]string
 	inputVariableSaver  func(map[string]string) error
 	inputVariableSetMu  sync.Mutex
+	liveValueMu         sync.RWMutex
+	liveValues          map[string]string
 	inputChainMu        sync.Mutex
 	inputChains         map[*inputChain]struct{}
 	inputWaiters        []*inputContinuation
@@ -157,6 +164,7 @@ type Client struct {
 
 	// desktopNotify launches the platform notification. Overridable in tests.
 	desktopNotify func(title, message string, sound bool)
+	discordNotify *DiscordNotifier
 
 	// Script notification preferences are hot-swappable from the settings UI.
 	// Atomics keep Lua notify callbacks race-free while settings are saved.
@@ -173,7 +181,15 @@ type Client struct {
 // NewClient creates a fully wired Client. Pass scriptDirs for the
 // Lua engine, and a CredentialStore for auth.
 func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds session.CredentialStore) (*Client, error) {
-	eng, err := engine.NewEngine(scriptDirs, cfg, dataDir)
+	sources := make([]engine.LuaSource, 0, len(scriptDirs))
+	for _, dir := range scriptDirs {
+		sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+	}
+	return NewClientWithSources(cfg, sources, dataDir, creds)
+}
+
+func NewClientWithSources(cfg *config.Config, sources []engine.LuaSource, dataDir string, creds session.CredentialStore) (*Client, error) {
+	eng, err := engine.NewEngineWithSources(sources, cfg, dataDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating engine: %w", err)
 	}
@@ -188,16 +204,18 @@ func NewClient(cfg *config.Config, scriptDirs []string, dataDir string, creds se
 		events:         make(chan types.Event, 256),
 		ignore:         NewIgnoreFilter(),
 		inputVariables: cloneVariables(defaultProfile.Variables),
+		liveValues:     make(map[string]string),
 		openURL:        func(u string) { go OpenBrowser(u) },
 		desktopNotify:  sendDesktopNotification,
 	}
 	c.ignore.SetVariables(c.inputVariables)
 	c.allowScriptNotifications.Store(cfg.Notifications.Desktop.AllowScriptNotifications)
-	c.notificationSound.Store(cfg.Notifications.Desktop.Sound)
+	c.notificationSound.Store(cfg.Notifications.Desktop.ScriptSound)
 	c.SetSemicolonDelay(time.Duration(cfg.Commands.SemicolonDelayMS) * time.Millisecond)
 	c.SetUnbusyDelay(time.Duration(cfg.Commands.UnbusyDelayMS) * time.Millisecond)
 	eng.SetNotifyHandler(c.sendNotification)
 	eng.SetPraetorScriptHandler(c.SendInput)
+	eng.SetVariableHandlers(c.inputVariable, c.setInputVariable)
 	return c, nil
 }
 
@@ -299,7 +317,55 @@ func (c *Client) inputVariableSnapshot() map[string]string {
 	return cloneVariables(c.inputVariables)
 }
 
+func (c *Client) liveValueSnapshot() map[string]string {
+	c.liveValueMu.RLock()
+	defer c.liveValueMu.RUnlock()
+	values := make(map[string]string, len(c.liveValues))
+	for name, value := range c.liveValues {
+		values[name] = value
+	}
+	return values
+}
+
+func (c *Client) updateLiveValues(ev *types.SKOOTUpdateEvent) bool {
+	c.liveValueMu.Lock()
+	defer c.liveValueMu.Unlock()
+	changed := false
+	for name, value := range map[string]*int{
+		"my.health":      ev.Health,
+		"my.fatigue":     ev.Fatigue,
+		"my.encumbrance": ev.Encumbrance,
+		"my.satiation":   ev.Satiation,
+	} {
+		if value == nil {
+			continue
+		}
+		text := strconv.Itoa(*value)
+		if previous, ok := c.liveValues[name]; !ok || previous != text {
+			c.liveValues[name] = text
+			changed = true
+		}
+	}
+	return changed
+}
+
+func (c *Client) clearLiveValues() {
+	c.liveValueMu.Lock()
+	clear(c.liveValues)
+	c.liveValueMu.Unlock()
+}
+
+func (c *Client) inputVariable(name string) (string, bool) {
+	c.inputMu.RLock()
+	defer c.inputMu.RUnlock()
+	value, ok := c.inputVariables[name]
+	return value, ok
+}
+
 func (c *Client) setInputVariable(name, value string) error {
+	if !config.ValidVariableName(name) {
+		return fmt.Errorf("invalid variable name %q", name)
+	}
 	c.inputVariableSetMu.Lock()
 	defer c.inputVariableSetMu.Unlock()
 
@@ -366,6 +432,12 @@ func (c *Client) SetDesktopNotificationHandler(fn func(title, message string, so
 	c.desktopNotify = fn
 }
 
+// SetDiscordNotifier installs the shared Discord destination used by Lua
+// notify() calls. Rule-based notifications are routed by DesktopNotifier.
+func (c *Client) SetDiscordNotifier(notifier *DiscordNotifier) {
+	c.discordNotify = notifier
+}
+
 func cloneVariables(variables map[string]string) map[string]string {
 	cloned := make(map[string]string, len(variables))
 	for name, value := range variables {
@@ -428,6 +500,7 @@ func (c *Client) Run() {
 	// disconnect and now): those commands must not burst onto a fresh login.
 	c.Engine.Queue().Clear()
 	c.clearInputChains(sess)
+	c.clearLiveValues()
 
 	c.cancelMu.Lock()
 	c.userDisconnect = false
@@ -501,6 +574,7 @@ func (c *Client) Run() {
 
 	c.Engine.Queue().Clear()
 	c.clearInputChains(sess)
+	c.clearLiveValues()
 
 	reason := "connection closed"
 	if userInitiated {
@@ -526,6 +600,7 @@ func (c *Client) Disconnect() {
 	// DisconnectedEvent with the empty (logout) reason.
 	sess := c.session()
 	c.clearInputChains(sess)
+	c.clearLiveValues()
 	sess.Close()
 
 	// Reset the engine to a clean slate for the next session: switching to the
@@ -561,6 +636,8 @@ func (c *Client) sendCommand(sess *session.Session, input string) error {
 	sendErr := sess.Send(input)
 	if sendErr != nil {
 		log.Printf("[CLIENT] send error: %v", sendErr)
+	} else {
+		c.emit(types.GameCommandSentEvent{Command: input})
 	}
 
 	// Echo the sent command in the output pane as italic text.
@@ -614,11 +691,11 @@ func (c *Client) UnbusyDelay() time.Duration {
 }
 
 // SendInput processes one single-line command submitted by a user. It expands
-// ${name} / ${name:fallback} variables, ;; and && separators, and $() control
-// steps atomically before sending any result. Variables are snapshotted afresh for every call,
-// so saved changes are immediately visible to typed input and action sets.
-// Generated commands skip further input expansion, so variables cannot recurse
-// and an expanded value cannot inject syntax.
+// saved ${name} / ${name:fallback} variables, ;; and && separators, and $()
+// control steps atomically before sending any result. Saved variables are
+// snapshotted afresh for every call; read-only ${my.*} values resolve when each
+// step executes. Generated commands skip saved-variable expansion, so values
+// cannot recurse or inject syntax.
 func (c *Client) SendInput(input string) error {
 	variables := c.inputVariableSnapshot()
 	commands, err := commandinput.Expand(input, variables)
@@ -644,7 +721,11 @@ func (c *Client) SendInput(input string) error {
 
 	sess := c.session()
 	if len(commands) == 1 && commands[0].Kind == commandinput.KindSend {
-		return c.sendCommand(sess, commands[0].Text)
+		resolved, err := commandinput.ResolveLiveCommand(commands[0], c.liveValueSnapshot())
+		if err != nil {
+			return fmt.Errorf("resolving live PraetorScript value: %w", err)
+		}
+		return c.sendCommand(sess, resolved.Text)
 	}
 	chain := c.startInputChain(sess, len(commands))
 	if chain == nil {
@@ -723,7 +804,7 @@ func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinpu
 			defer timer.Stop()
 			select {
 			case <-timer.C:
-				_ = c.dispatchInputCommand(chain, commands)
+				c.dispatchScheduledInputCommand(chain, commands)
 			case <-chain.cancel:
 				return
 			}
@@ -732,7 +813,13 @@ func (c *Client) scheduleInputCommands(chain *inputChain, commands []commandinpu
 		c.setInputChainStatus(chain, chain.total-len(commands)+1, "unbusy", "", 0, 0, 0)
 		c.enqueueInputWaiter(chain, commands)
 	default:
-		_ = c.dispatchInputCommand(chain, commands)
+		c.dispatchScheduledInputCommand(chain, commands)
+	}
+}
+
+func (c *Client) dispatchScheduledInputCommand(chain *inputChain, commands []commandinput.Command) {
+	if err := c.dispatchInputCommand(chain, commands); err != nil {
+		c.emit(types.ErrorEvent{Context: "PraetorScript", Err: err})
 	}
 }
 
@@ -746,7 +833,12 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		return nil
 	}
 
-	current := commands[0]
+	rawCurrent := commands[0]
+	current, err := commandinput.ResolveLiveCommand(rawCurrent, c.liveValueSnapshot())
+	if err != nil {
+		c.finishInputChain(chain)
+		return fmt.Errorf("resolving live PraetorScript value: %w", err)
+	}
 	remaining := commands[1:]
 	switch current.Kind {
 	case commandinput.KindWait:
@@ -754,8 +846,11 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		c.scheduleInputWait(chain, current.Duration, remaining)
 		return nil
 	case commandinput.KindWaitFor:
-		if c.registerInputReaction(chain, current.Match, current.Cancel, "", current.Timeout, 0, 0, remaining) == nil {
+		reaction := c.registerInputReaction(chain, current, "", true, remaining)
+		if reaction == nil {
 			c.finishInputChain(chain)
+		} else {
+			c.advanceInputOnLiveValues()
 		}
 		return nil
 	case commandinput.KindNotify:
@@ -764,7 +859,7 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		c.scheduleInputCommands(chain, remaining)
 		return nil
 	case commandinput.KindRepeat:
-		reaction := c.registerInputReaction(chain, current.Match, current.Cancel, current.Text, 0, current.Max, current.Count, remaining)
+		reaction := c.registerInputReaction(chain, current, rawCurrent.Text, false, remaining)
 		if reaction == nil {
 			c.finishInputChain(chain)
 			return nil
@@ -774,6 +869,8 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 			c.finishInputChain(chain)
 			return err
 		}
+		c.armInputReactionValues(reaction)
+		c.advanceInputOnLiveValues()
 		return nil
 	case commandinput.KindSetVariable:
 		c.setInputChainStatus(chain, chain.total-len(commands)+1, "set-var", current.Variable, 0, 0, 0)
@@ -800,7 +897,12 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 	var waiter *inputContinuation
 	var reaction *inputReaction
 	if len(remaining) > 0 && remaining[0].Kind == commandinput.KindWaitFor {
-		reaction = c.registerInputReaction(chain, remaining[0].Match, remaining[0].Cancel, "", remaining[0].Timeout, 0, 0, remaining[1:])
+		next, resolveErr := commandinput.ResolveLiveCommand(remaining[0], c.liveValueSnapshot())
+		if resolveErr != nil {
+			c.finishInputChain(chain)
+			return fmt.Errorf("resolving live PraetorScript value: %w", resolveErr)
+		}
+		reaction = c.registerInputReaction(chain, next, "", false, remaining[1:])
 	} else if len(remaining) > 0 && remaining[0].Wait == commandinput.WaitUnbusy {
 		// The continuation is armed before this command is sent so a fast
 		// response cannot be missed. Publish that pending step at the same time;
@@ -812,7 +914,7 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 	if reaction == nil && waiter == nil {
 		c.setInputChainStatus(chain, chain.total-len(commands)+1, "send", current.Text, 0, 0, 0)
 	}
-	if err := c.sendCommand(chain.sess, commands[0].Text); err != nil {
+	if err := c.sendCommand(chain.sess, current.Text); err != nil {
 		if waiter != nil {
 			c.removeInputWaiter(waiter)
 		}
@@ -823,6 +925,8 @@ func (c *Client) dispatchInputCommand(chain *inputChain, commands []commandinput
 		return err
 	}
 	if reaction != nil {
+		c.armInputReactionValues(reaction)
+		c.advanceInputOnLiveValues()
 		return nil
 	}
 	if len(remaining) == 0 {
@@ -845,44 +949,67 @@ func (c *Client) scheduleInputWait(chain *inputChain, duration time.Duration, co
 	}()
 }
 
-func (c *Client) registerInputReaction(chain *inputChain, match, cancel, repeat string, timeout time.Duration, max, count int, commands []commandinput.Command) *inputReaction {
+func (c *Client) registerInputReaction(chain *inputChain, command commandinput.Command, repeatTemplate string, valuesArmed bool, commands []commandinput.Command) *inputReaction {
 	c.inputChainMu.Lock()
 	if _, ok := c.inputChains[chain]; !ok || c.session() != chain.sess {
 		c.inputChainMu.Unlock()
 		return nil
 	}
 	reaction := &inputReaction{
-		chain:    chain,
-		commands: commands,
-		match:    match,
-		cancel:   cancel,
-		repeat:   repeat,
-		timeout:  timeout,
-		done:     make(chan struct{}),
-		max:      max,
-		count:    count,
+		chain:           chain,
+		commands:        commands,
+		match:           command.Match,
+		matchCondition:  command.MatchCondition,
+		cancel:          command.Cancel,
+		cancelCondition: command.CancelCondition,
+		repeat:          command.Text,
+		repeatTemplate:  repeatTemplate,
+		valuesArmed:     valuesArmed,
+		timeout:         command.Timeout,
+		done:            make(chan struct{}),
+		max:             command.Max,
+		count:           command.Count,
 	}
 	step := chain.total - len(commands)
-	if repeat != "" {
+	if repeatTemplate != "" {
 		reaction.attempts = 1
-		attemptLimit := max
-		if count > 0 {
-			attemptLimit = count
+		attemptLimit := command.Max
+		if command.Count > 0 {
+			attemptLimit = command.Count
 		}
-		setInputChainStatusLocked(chain, step, "repeat", repeat, timeout, reaction.attempts, attemptLimit)
+		setInputChainStatusLocked(chain, step, "repeat", command.Text, command.Timeout, reaction.attempts, attemptLimit)
 	} else {
-		setInputChainStatusLocked(chain, step, "wait-for", match, timeout, 0, 0)
+		detail := command.Match
+		if command.MatchCondition != nil {
+			detail = formatValueCondition(command.MatchCondition)
+		}
+		setInputChainStatusLocked(chain, step, "wait-for", detail, command.Timeout, 0, 0)
 	}
 	c.inputReactions = append(c.inputReactions, reaction)
-	if repeat != "" {
+	if repeatTemplate != "" {
 		// Register before sending so a fast unbusy response cannot be missed.
 		c.inputWaiters = append(c.inputWaiters, &inputContinuation{chain: chain, reaction: reaction})
 	}
 	c.inputChainMu.Unlock()
-	if timeout > 0 {
+	if command.Timeout > 0 {
 		go c.expireInputReaction(reaction)
 	}
 	return reaction
+}
+
+func formatValueCondition(condition *commandinput.ValueCondition) string {
+	if condition == nil {
+		return ""
+	}
+	return "my." + condition.Field + " " + condition.Operator + " " + condition.Operand
+}
+
+func (c *Client) armInputReactionValues(reaction *inputReaction) {
+	c.inputChainMu.Lock()
+	defer c.inputChainMu.Unlock()
+	if c.inputReactionIsActiveLocked(reaction) {
+		reaction.valuesArmed = true
+	}
 }
 
 func (c *Client) removeInputReaction(target *inputReaction) {
@@ -926,6 +1053,9 @@ func (c *Client) expireInputReaction(reaction *inputReaction) {
 		}
 		kind := "wait-for"
 		detail := reaction.match
+		if reaction.matchCondition != nil {
+			detail = formatValueCondition(reaction.matchCondition)
+		}
 		if reaction.repeat != "" {
 			kind = "repeat"
 			detail = reaction.repeat
@@ -941,6 +1071,13 @@ func (c *Client) expireInputReaction(reaction *inputReaction) {
 func (c *Client) sendInputNotification(title, message string) {
 	if c.desktopNotify != nil {
 		go c.desktopNotify(title, message, c.notificationSound.Load())
+	}
+	if c.discordNotify != nil {
+		go func() {
+			if err := c.discordNotify.Send(context.Background(), NotificationCategoryScript, title, message); err != nil {
+				log.Printf("[NOTIFY] Discord delivery failed: %v", err)
+			}
+		}()
 	}
 	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
@@ -1141,6 +1278,51 @@ func (c *Client) advanceInputOnText(text string) {
 	}
 }
 
+func (c *Client) advanceInputOnLiveValues() {
+	values := c.liveValueSnapshot()
+	c.inputChainMu.Lock()
+	sess := c.session()
+	var completed []*inputReaction
+	var evaluationErrors []error
+	for i := 0; i < len(c.inputReactions); {
+		reaction := c.inputReactions[i]
+		if reaction.chain.sess != sess || !reaction.valuesArmed {
+			i++
+			continue
+		}
+		cancelled, err := commandinput.EvaluateValueCondition(reaction.cancelCondition, values)
+		if err != nil {
+			c.cancelInputChainLocked(reaction.chain)
+			evaluationErrors = append(evaluationErrors, err)
+			continue
+		}
+		if cancelled {
+			c.cancelInputChainLocked(reaction.chain)
+			continue
+		}
+		matched, err := commandinput.EvaluateValueCondition(reaction.matchCondition, values)
+		if err != nil {
+			c.cancelInputChainLocked(reaction.chain)
+			evaluationErrors = append(evaluationErrors, err)
+			continue
+		}
+		if matched {
+			c.removeInputReactionLocked(reaction)
+			completed = append(completed, reaction)
+			continue
+		}
+		i++
+	}
+	c.inputChainMu.Unlock()
+
+	for _, err := range evaluationErrors {
+		c.emit(types.ErrorEvent{Context: "PraetorScript", Err: fmt.Errorf("evaluating live condition: %w", err)})
+	}
+	for _, reaction := range completed {
+		c.scheduleInputCommands(reaction.chain, reaction.commands)
+	}
+}
+
 func (c *Client) inputReactionIsActiveLocked(target *inputReaction) bool {
 	for _, reaction := range c.inputReactions {
 		if reaction == target {
@@ -1167,10 +1349,17 @@ func (c *Client) scheduleRepeatAfterUnbusy(reaction *inputReaction) {
 }
 
 func (c *Client) retryInputReaction(reaction *inputReaction) {
+	repeat, resolveErr := commandinput.ExpandLiveValues(reaction.repeatTemplate, c.liveValueSnapshot())
 	c.inputChainMu.Lock()
 	if _, ok := c.inputChains[reaction.chain]; !ok || c.session() != reaction.chain.sess ||
 		!c.inputReactionIsActiveLocked(reaction) {
 		c.inputChainMu.Unlock()
+		return
+	}
+	if resolveErr != nil {
+		c.cancelInputChainLocked(reaction.chain)
+		c.inputChainMu.Unlock()
+		c.emit(types.ErrorEvent{Context: "PraetorScript", Err: fmt.Errorf("resolving live repeat command: %w", resolveErr)})
 		return
 	}
 	if reaction.count > 0 && reaction.attempts >= reaction.count {
@@ -1190,16 +1379,17 @@ func (c *Client) retryInputReaction(reaction *inputReaction) {
 		return
 	}
 	reaction.attempts++
+	reaction.repeat = repeat
 	attemptLimit := reaction.max
 	if reaction.count > 0 {
 		attemptLimit = reaction.count
 	}
-	setInputChainStatusLocked(reaction.chain, reaction.chain.step, "repeat", reaction.repeat, 0, reaction.attempts, attemptLimit)
+	setInputChainStatusLocked(reaction.chain, reaction.chain.step, "repeat", repeat, 0, reaction.attempts, attemptLimit)
 	// Re-arm before sending for the same fast-response reason as the first try.
 	c.inputWaiters = append(c.inputWaiters, &inputContinuation{chain: reaction.chain, reaction: reaction})
 	c.inputChainMu.Unlock()
 
-	if err := c.sendCommand(reaction.chain.sess, reaction.repeat); err != nil {
+	if err := c.sendCommand(reaction.chain.sess, repeat); err != nil {
 		c.removeInputReaction(reaction)
 		c.finishInputChain(reaction.chain)
 	}
@@ -1231,7 +1421,7 @@ func (c *Client) cancelInputChainLocked(chain *inputChain) {
 
 func (c *Client) scheduleInputAfterUnbusy(pending *inputContinuation) {
 	if pending.chain.unbusyDelay <= 0 {
-		_ = c.dispatchInputCommand(pending.chain, pending.commands)
+		c.dispatchScheduledInputCommand(pending.chain, pending.commands)
 		return
 	}
 	go func() {
@@ -1239,7 +1429,7 @@ func (c *Client) scheduleInputAfterUnbusy(pending *inputContinuation) {
 		defer timer.Stop()
 		select {
 		case <-timer.C:
-			_ = c.dispatchInputCommand(pending.chain, pending.commands)
+			c.dispatchScheduledInputCommand(pending.chain, pending.commands)
 		case <-pending.chain.cancel:
 			return
 		}
@@ -1281,12 +1471,14 @@ func (c *Client) clearInputChains(sess *session.Session) {
 // Blocking here propagates backpressure through the line channel to TCP, which
 // is the correct response to a UI that cannot keep up.
 //
-// Status, SKOOT bar, and command events stay droppable: those are coalescible
-// snapshots where the newest supersedes the old, so a dropped one costs nothing.
+// Status and SKOOT bar events stay droppable: those are coalescible snapshots
+// where the newest supersedes the old, so a dropped one costs nothing. A
+// GameCommandSentEvent is guaranteed because character-profile detection uses
+// it to follow play/sleep commands after PraetorScript expansion and dispatch.
 func (c *Client) emit(ev types.Event) {
 	switch ev.(type) {
 	case types.ConnectedEvent, types.DisconnectedEvent, types.ModeChangeEvent,
-		types.GameTextEvent, types.SuppressedGameTextEvent:
+		types.GameTextEvent, types.SuppressedGameTextEvent, types.GameCommandSentEvent:
 		c.events <- ev
 	default:
 		select {
@@ -1373,6 +1565,9 @@ func (c *Client) handleSkoot(line string) {
 
 	// Update engine status values for Lua access.
 	c.Engine.Status().Update(ev.Health, ev.Fatigue, ev.Encumbrance, ev.Satiation)
+	if c.updateLiveValues(ev) {
+		c.advanceInputOnLiveValues()
+	}
 }
 
 // handleSecret processes SECRET lines by performing the auth handshake.
@@ -1415,7 +1610,9 @@ func (c *Client) handleGameText(line string) {
 	// missed them because the raw line started with a tag, not "SKOOT ".
 	stripped := strings.TrimSpace(result.Text)
 	if strings.HasPrefix(stripped, "SKOOT ") || strings.HasPrefix(stripped, "MAPURL ") {
-		log.Printf("[CLIENT] filtered HTML-wrapped protocol line: %s", stripped)
+		// Routine protocol recovery belongs with wire-level receive tracing. The
+		// [RECV:] prefix routes it to DEBUG instead of filling normal INFO logs.
+		log.Printf("[RECV:PROTOCOL-WRAPPED] %s", stripped)
 		if strings.HasPrefix(stripped, "SKOOT ") {
 			c.handleSkoot(stripped)
 		}
@@ -1743,7 +1940,7 @@ func (c *Client) handleLocalCommand(input string) error {
 			IsEcho:    true,
 		})
 
-	case "/maps":
+	case "/maps", "/map":
 		rest := strings.TrimSpace(strings.TrimPrefix(input, parts[0]))
 		if rest == "" {
 			c.emit(types.MapsOpenMenuEvent{})
@@ -1793,6 +1990,15 @@ func (c *Client) handleLocalCommand(input string) error {
 
 	default:
 		log.Printf("[CLIENT] unknown command: %s", cmd)
+		c.emit(types.GameTextEvent{
+			Styled: []types.StyledSegment{{
+				Text:   fmt.Sprintf("unknown command %q (type /help for commands)", cmd),
+				Color:  "#e8a838",
+				Italic: true,
+			}},
+			Timestamp: time.Now(),
+			IsEcho:    true,
+		})
 	}
 	return nil
 }

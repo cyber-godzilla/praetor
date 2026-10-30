@@ -32,7 +32,7 @@ export class WailsTransport implements PraetorTransport {
   async quit(): Promise<void> {
     window.runtime?.Quit();
   }
-  showLocalNotification(_title: string, _message: string): void {}
+  showLocalNotification(_title: string, _message: string, _sound = false): void {}
   async requestNotificationPermission(): Promise<"unsupported"> {
     return "unsupported";
   }

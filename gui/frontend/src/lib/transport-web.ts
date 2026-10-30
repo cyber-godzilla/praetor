@@ -3,10 +3,12 @@ import type {
   AccountState,
   ConnectResult,
   CredentialStoreStatus,
-  DesktopNotificationsConfig,
   InitState,
   KudosConfig,
   WireEvent,
+  ScriptManagerState,
+  ManagedScriptSourceConfig,
+  ManagedScriptUpdateStatus,
 } from "./types";
 import type {
   PraetorTransport,
@@ -167,6 +169,76 @@ export class WebTransport implements PraetorTransport {
       case "ReloadScripts":
         await this.request("POST", "/api/v1/scripts/reload", {});
         return undefined as T;
+      case "TestDiscordNotification":
+		await this.request("POST", "/api/v1/notifications/discord/test", {});
+		return undefined as T;
+      case "GetScriptManager":
+        return (await this.request<ScriptManagerState>("GET", "/api/v1/scripts/sources")) as T;
+      case "InstallManagedScript": {
+        const result = await this.request<ConfigMutationResponse & { source: ManagedScriptSourceConfig }>(
+          "POST", "/api/v1/scripts/sources", { url: args[0] },
+        );
+        this.acceptConfigMutation(result);
+        return result.source as T;
+      }
+      case "CheckManagedScript": {
+        const result = await this.request<{
+          status: ManagedScriptUpdateStatus;
+          config?: AppConfig;
+          revision?: number;
+        }>(
+          "POST", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/check`, {},
+        );
+        if (result.config && typeof result.revision === "number") {
+          this.acceptConfigMutation({ config: result.config, revision: result.revision });
+        }
+        return result.status as T;
+      }
+      case "UpdateManagedScript": {
+        const result = await this.request<ConfigMutationResponse & { source: ManagedScriptSourceConfig }>(
+          "POST", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/update`, {},
+        );
+        this.acceptConfigMutation(result);
+        return result.source as T;
+      }
+      case "RemoveManagedScript": {
+        const result = await this.request<ConfigMutationResponse>(
+          "DELETE", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}`,
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
+      case "SetManagedScriptStartupCheck": {
+        const result = await this.request<ConfigMutationResponse>(
+          "PUT", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/startup-check`,
+          { enabled: args[1] },
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
+      case "SetManagedScriptEnabled": {
+        const result = await this.request<ConfigMutationResponse>(
+          "PUT", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/enabled`,
+          { enabled: args[1], stopAutomation: args[2] ?? false },
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
+      case "SetManagedScriptTrust": {
+        const result = await this.request<ConfigMutationResponse>(
+          "PUT", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/trust`,
+          { trust: args[1], stopAutomation: args[2] ?? false },
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
+      case "ReorderManagedScripts": {
+        const result = await this.request<ConfigMutationResponse>(
+          "PUT", "/api/v1/scripts/source-order", { ids: args[0] },
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
       case "PickScriptDir":
         // Browser clients cannot open a native picker on the server host. The
         // web scripts editor accepts server-side paths as text instead.
@@ -280,6 +352,10 @@ export class WebTransport implements PraetorTransport {
         // Startup update checks are intentionally owned by the native shell;
         // do not repeat them once per connected browser.
         return fallback;
+      case "SetWindowFocused":
+        // Focus is browser-local; App.svelte applies focus-aware delivery in
+        // the tab and never mutates the shared server process.
+        return undefined as T;
       default:
         if (settingsOperations[method]) {
           await this.updateSetting(settingsOperations[method], settingPayload(method, args));
@@ -329,9 +405,9 @@ export class WebTransport implements PraetorTransport {
     await this.webLogout();
   }
 
-  showLocalNotification(title: string, message: string): void {
+  showLocalNotification(title: string, message: string, sound = false): void {
     if ("Notification" in window && Notification.permission === "granted") {
-      new Notification(title, { body: message });
+      new Notification(title, { body: message, silent: !sound });
     }
   }
 
@@ -772,6 +848,7 @@ export const settingsOperations: Record<string, string> = {
   SetOutputFontSize: "output-font-size",
   SetGUILayout: "gui-layout",
   SetViewLayout: "view-layout",
+  SetProfileViewLayout: "profile-view-layout",
   SetSelectedActionSetID: "selected-action-set",
   SetCRTEffects: "crt-effects",
   SetHighlights: "highlights",
@@ -779,10 +856,16 @@ export const settingsOperations: Record<string, string> = {
   SetWoundHighlights: "wound-highlights",
   SetCustomTabs: "custom-tabs",
   SetActionSets: "action-sets",
+  SetActionSetInheritance: "action-set-inheritance",
+  DeleteActionSetEverywhere: "action-set-delete-everywhere",
   SetQuickCycleModes: "quick-cycle-modes",
+  SetQuickCycleInheritance: "quick-cycle-inheritance",
   SetHighPriority: "high-priority",
+  SetHighPriorityInheritance: "high-priority-inheritance",
   SetInputVariables: "input-variables",
   SetCharacterProfiles: "character-profiles",
+  SetCharacterProfileAutoSwitch: "character-profile-auto-switch",
+  SwitchCharacterProfile: "character-profile-selection",
   SetIgnoreOOC: "ignore-ooc",
   SetIgnoreThink: "ignore-think",
   SetNotifications: "notifications",
@@ -808,6 +891,15 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "CurrentMode",
   "SetMode",
   "ReloadScripts",
+  "GetScriptManager",
+  "InstallManagedScript",
+  "CheckManagedScript",
+  "UpdateManagedScript",
+  "RemoveManagedScript",
+  "SetManagedScriptStartupCheck",
+  "SetManagedScriptEnabled",
+  "SetManagedScriptTrust",
+  "ReorderManagedScripts",
   "PickScriptDir",
   "PickSendFile",
   "StartFileSend",
@@ -821,6 +913,7 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "PlayActive",
   "PlayStatus",
   "RefreshGraphics",
+	"TestDiscordNotification",
   "ClipboardGet",
   "ClipboardSet",
   "GetKudos",
@@ -841,10 +934,14 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "CalcRankBonus",
   "CalcTrainingCosts",
   "CheckForUpdate",
+  "SetWindowFocused",
   ...Object.keys(settingsOperations),
 ]);
 
 function settingPayload(method: string, args: any[]): unknown {
+	if (method === "SwitchCharacterProfile") {
+		return { profileID: args[0], stopAutomation: args[1] ?? false };
+	}
   if (method === "SetCRTEffects") {
     return { scanlines: args[0], roll: args[1], bloom: args[2] };
   }
@@ -853,6 +950,9 @@ function settingPayload(method: string, args: any[]): unknown {
   }
   if (method === "SetViewLayout") {
     return { layout: args[0], customViews: args[1] };
+  }
+  if (method === "SetProfileViewLayout") {
+    return { profileID: args[0], layout: args[1], customViews: args[2] };
   }
   return args[0];
 }

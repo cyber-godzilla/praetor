@@ -402,6 +402,35 @@ return M
 	}
 }
 
+func TestEngine_SetPersistenceNamespaceSwitchesAndRestoresCharacterState(t *testing.T) {
+	modesDir, libDir := setupEngineTestDirs(t)
+	dataDir := t.TempDir()
+	if err := NewPersistentStore(dataDir, "character-one").Save(map[string]interface{}{"stance": "guard"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := NewPersistentStore(dataDir, "character-two").Save(map[string]interface{}{"stance": "attack"}); err != nil {
+		t.Fatal(err)
+	}
+	e, err := NewEngine([]string{modesDir, libDir}, nil, dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+
+	if err := e.SetPersistenceNamespace("character-one"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := e.State().GetValue("stance"); !ok || got.String() != "guard" {
+		t.Fatalf("first namespace stance = %v, %v", got, ok)
+	}
+	if err := e.SetPersistenceNamespace("character-two"); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := e.State().GetValue("stance"); !ok || got.String() != "attack" {
+		t.Fatalf("second namespace stance = %v, %v", got, ok)
+	}
+}
+
 func TestEngine_SetMode_DeferredRecursionLandsOnTarget(t *testing.T) {
 	modesDir, libDir := setupEngineTestDirs(t)
 	writeEngineMode(t, modesDir, "a", `

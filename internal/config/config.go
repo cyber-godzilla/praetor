@@ -43,23 +43,49 @@ func (d Duration) MarshalYAML() (interface{}, error) {
 }
 
 type Config struct {
-	Server            ServerConfig            `yaml:"server"`
-	Commands          CommandsConfig          `yaml:"commands"`
-	CharacterProfiles CharacterProfilesConfig `yaml:"character_profiles"`
-	DisplayProfiles   DisplayProfilesConfig   `yaml:"display_profiles"`
-	Credentials       CredentialsConfig       `yaml:"credentials"`
-	Scripts           []string                `yaml:"scripts"`
-	UI                UIConfig                `yaml:"ui"`
-	Highlights        []HighlightConfig       `yaml:"highlights"`
-	WoundHighlights   WoundHighlightConfig    `yaml:"wound_highlights"`
-	SpeechColors      []SpeechColorConfig     `yaml:"speech_colors"`
-	Kudos             KudosConfig             `yaml:"kudos"`
-	Ignorelist        Ignorelist              `yaml:"ignorelist"`
-	Notifications     NotificationsConfig     `yaml:"notifications"`
-	Logging           LoggingConfig           `yaml:"logging"`
-	Updates           UpdatesConfig           `yaml:"updates"`
-	Play              PlayConfig              `yaml:"play"`
-	Onboarding        OnboardingConfig        `yaml:"onboarding"`
+	Server            ServerConfig                `yaml:"server"`
+	Commands          CommandsConfig              `yaml:"commands"`
+	CharacterProfiles CharacterProfilesConfig     `yaml:"character_profiles"`
+	DisplayProfiles   DisplayProfilesConfig       `yaml:"display_profiles"`
+	Credentials       CredentialsConfig           `yaml:"credentials"`
+	Scripts           []string                    `yaml:"scripts"`
+	ManagedScripts    []ManagedScriptSourceConfig `yaml:"managed_scripts,omitempty"`
+	UI                UIConfig                    `yaml:"ui"`
+	// Highlights is a migration-only alias for configurations written before
+	// highlight rules became character-scoped. Validate moves it into profiles.
+	Highlights      []HighlightConfig    `yaml:"highlights,omitempty" json:"-"`
+	WoundHighlights WoundHighlightConfig `yaml:"wound_highlights"`
+	SpeechColors    []SpeechColorConfig  `yaml:"speech_colors"`
+	Kudos           KudosConfig          `yaml:"kudos"`
+	Ignorelist      Ignorelist           `yaml:"ignorelist"`
+	Notifications   NotificationsConfig  `yaml:"notifications"`
+	Logging         LoggingConfig        `yaml:"logging"`
+	Updates         UpdatesConfig        `yaml:"updates"`
+	Play            PlayConfig           `yaml:"play"`
+	Onboarding      OnboardingConfig     `yaml:"onboarding"`
+}
+
+const (
+	ScriptTrustRestricted = "restricted"
+	ScriptTrustTrusted    = "trusted"
+	ScriptTrackingTag     = "tag"
+	ScriptTrackingBranch  = "branch"
+)
+
+// ManagedScriptSourceConfig records one Git repository owned by Praetor's
+// Script Manager. Local user-controlled directories remain in Config.Scripts;
+// the manager never writes to or deletes those paths.
+type ManagedScriptSourceConfig struct {
+	ID               string `yaml:"id"`
+	Name             string `yaml:"name"`
+	URL              string `yaml:"url"`
+	Enabled          bool   `yaml:"enabled"`
+	Trust            string `yaml:"trust"`
+	CheckOnStartup   bool   `yaml:"check_on_startup"`
+	Tracking         string `yaml:"tracking"` // tag or branch
+	Ref              string `yaml:"ref"`      // installed tag or tracked branch
+	InstalledCommit  string `yaml:"installed_commit"`
+	InstalledVersion string `yaml:"installed_version,omitempty"`
 }
 
 // UpdatesConfig controls the GUI's startup check against GitHub releases.
@@ -135,7 +161,7 @@ const (
 
 type HighlightConfig struct {
 	Pattern string `yaml:"pattern"`
-	Style   string `yaml:"style"` // red, gold, green, blue
+	Style   string `yaml:"style"` // selectable Colorword style name
 	Active  bool   `yaml:"active"`
 }
 
@@ -244,26 +270,55 @@ type Ignorelist struct {
 
 type NotificationsConfig struct {
 	Desktop DesktopNotificationsConfig `yaml:"desktop"`
+	Discord DiscordNotificationsConfig `yaml:"discord"`
 }
 
 type DesktopNotificationsConfig struct {
 	AllowScriptNotifications bool                  `yaml:"allow_script_notifications"`
 	Sound                    bool                  `yaml:"sound"`
+	ScriptSound              bool                  `yaml:"script_sound,omitempty"`
 	HealthBelow              ThresholdConfig       `yaml:"health_below"`
 	FatigueBelow             ThresholdConfig       `yaml:"fatigue_below"`
 	Patterns                 []NotifyPatternConfig `yaml:"patterns"`
 }
 
+const (
+	NotificationWhenAlways      = "always"
+	NotificationWhenUnfocused   = "unfocused"
+	NotificationDeliveryDesktop = "desktop"
+	NotificationDeliveryDiscord = "discord"
+	NotificationDeliveryBoth    = "both"
+	NotificationDeliveryNeither = "neither"
+)
+
+// DiscordNotificationsConfig controls the optional Discord webhook delivery
+// destination. The webhook URL is a credential: callers must never log it or
+// include it in delivery errors.
+type DiscordNotificationsConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	WebhookURL string `yaml:"webhook_url"`
+	Health     bool   `yaml:"health"`
+	Fatigue    bool   `yaml:"fatigue"`
+	Patterns   bool   `yaml:"patterns"`
+	Scripts    bool   `yaml:"scripts"`
+}
+
 type ThresholdConfig struct {
-	Enabled   bool `yaml:"enabled"`
-	Threshold int  `yaml:"threshold"`
+	Enabled   bool   `yaml:"enabled"`
+	Threshold int    `yaml:"threshold"`
+	When      string `yaml:"when,omitempty"`
+	Sound     bool   `yaml:"sound,omitempty"`
+	Delivery  string `yaml:"delivery,omitempty"`
 }
 
 type NotifyPatternConfig struct {
-	Pattern string `yaml:"pattern"`
-	Title   string `yaml:"title"`   // custom notification title
-	Message string `yaml:"message"` // custom notification message
-	Enabled bool   `yaml:"enabled"`
+	Pattern  string `yaml:"pattern"`
+	Title    string `yaml:"title"`   // custom notification title
+	Message  string `yaml:"message"` // custom notification message
+	Enabled  bool   `yaml:"enabled"`
+	When     string `yaml:"when,omitempty"`
+	Sound    bool   `yaml:"sound,omitempty"`
+	Delivery string `yaml:"delivery,omitempty"`
 }
 
 type LoggingConfig struct {
@@ -386,19 +441,21 @@ const (
 	ComponentIDVariables = "c043ea23-cb1d-4a30-97bd-01e588969d26"
 )
 
-// DisplayProfilesConfig is a registry from the outset. Character-profile
-// association is added after the account/character selection prerequisite.
+// DisplayProfilesConfig stores the global Default layout plus one inherited,
+// independently editable layout for every non-default character profile.
 type DisplayProfilesConfig struct {
 	DefaultID string                 `yaml:"default_id"`
 	Profiles  []DisplayProfileConfig `yaml:"profiles"`
 }
 
 type DisplayProfileConfig struct {
-	ID              string                   `yaml:"id"`
-	Name            string                   `yaml:"name"`
-	SidebarsVisible bool                     `yaml:"sidebars_visible"`
-	Main            []DisplayComponentConfig `yaml:"main"`
-	Sidebars        []DisplaySidebarConfig   `yaml:"sidebars"`
+	ID                 string                   `yaml:"id"`
+	Name               string                   `yaml:"name"`
+	CharacterProfileID string                   `yaml:"character_profile_id,omitempty"`
+	SidebarsVisible    bool                     `yaml:"sidebars_visible"`
+	Main               []DisplayComponentConfig `yaml:"main"`
+	Bench              []DisplayComponentConfig `yaml:"bench"`
+	Sidebars           []DisplaySidebarConfig   `yaml:"sidebars"`
 }
 
 // DisplaySidebarConfig owns the ordered component list for one independently
@@ -407,13 +464,15 @@ type DisplaySidebarConfig struct {
 	ID         string                   `yaml:"id"`
 	Name       string                   `yaml:"name"`
 	Enabled    bool                     `yaml:"enabled"`
+	Collapsed  bool                     `yaml:"collapsed,omitempty"`
 	Side       string                   `yaml:"side"`
 	Width      int                      `yaml:"width"`
 	Components []DisplayComponentConfig `yaml:"components"`
 }
 
-// DisplayComponentConfig places one UUID-addressed component. Built-ins use
-// the fixed IDs above; Custom View IDs are generated UUIDs.
+// DisplayComponentConfig places one UUID-addressed component in Main, a
+// sidebar, or the Bench. Built-ins use the fixed IDs above; Custom View IDs
+// are generated UUIDs.
 type DisplayComponentConfig struct {
 	ComponentID   string `yaml:"component_id"`
 	SidebarHeight int    `yaml:"sidebar_height,omitempty"`
@@ -444,25 +503,44 @@ type ActionButton struct {
 // used whenever no game character is active.
 const DefaultCharacterProfileID = "b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50"
 
+// Character setting modes make a live-inherited collection distinguishable
+// from an intentionally empty character-specific collection.
+const (
+	CharacterSettingInherit   = "inherit"
+	CharacterSettingCustomize = "customize"
+)
+
+// CharacterVariablesIndependent marks the post-migration representation in
+// which each profile stores its complete variable list.
+const CharacterVariablesIndependent = "independent"
+
 // CharacterProfilesConfig stores the global Default plus account/character
 // profiles selected from the game's play-number flow.
 type CharacterProfilesConfig struct {
-	DefaultID string                   `yaml:"default_id"`
-	Profiles  []CharacterProfileConfig `yaml:"profiles"`
+	DefaultID  string                   `yaml:"default_id"`
+	AutoSwitch bool                     `yaml:"auto_switch"`
+	Profiles   []CharacterProfileConfig `yaml:"profiles"`
 }
 
 // CharacterProfileConfig owns settings whose values are expected to change
 // with the played character. Display placement will reference this profile in
 // a later slice; it intentionally remains outside this type for now.
 type CharacterProfileConfig struct {
-	ID                  string            `yaml:"id"`
-	Name                string            `yaml:"name"`
-	Account             string            `yaml:"account,omitempty"`
-	CharacterNumber     int               `yaml:"character_number,omitempty"`
-	Variables           map[string]string `yaml:"variables"`
-	CustomViews         []CustomTabConfig `yaml:"custom_views"`
-	ActionSets          []ActionSet       `yaml:"action_sets"`
-	SelectedActionSetID string            `yaml:"selected_action_set_id,omitempty"`
+	ID                   string            `yaml:"id"`
+	Name                 string            `yaml:"name"`
+	Account              string            `yaml:"account,omitempty"`
+	CharacterNumber      int               `yaml:"character_number,omitempty"`
+	VariablesMode        string            `yaml:"variables_mode,omitempty"`
+	Variables            map[string]string `yaml:"variables"`
+	CustomViews          []CustomTabConfig `yaml:"custom_views"`
+	Highlights           []HighlightConfig `yaml:"highlights"`
+	ActionSetsMode       string            `yaml:"action_sets_mode,omitempty"`
+	ActionSets           []ActionSet       `yaml:"action_sets"`
+	SelectedActionSetID  string            `yaml:"selected_action_set_id,omitempty"`
+	QuickCycleMode       string            `yaml:"quick_cycle_mode,omitempty"`
+	QuickCycleModes      []string          `yaml:"quick_cycle_modes,omitempty"`
+	PriorityCommandsMode string            `yaml:"priority_commands_mode,omitempty"`
+	HighPriority         []string          `yaml:"high_priority,omitempty"`
 }
 
 // CharacterProfileIdentity is the editable identity projection used by the
@@ -527,6 +605,84 @@ func (c *Config) DefaultCharacterProfile() *CharacterProfileConfig {
 	return nil
 }
 
+// CharacterProfileByID returns a configured character profile by its stable
+// identity. Callers that mutate the result must hold their config lock.
+func (c *Config) CharacterProfileByID(id string) *CharacterProfileConfig {
+	for i := range c.CharacterProfiles.Profiles {
+		if c.CharacterProfiles.Profiles[i].ID == id {
+			return &c.CharacterProfiles.Profiles[i]
+		}
+	}
+	return nil
+}
+
+// ResolvedVariables returns the selected character's independent variable
+// list. Default is a creation template, not a live inheritance source.
+func (c *Config) ResolvedVariables(profileID string) map[string]string {
+	resolved := map[string]string{}
+	profile := c.CharacterProfileByID(profileID)
+	if profile == nil {
+		profile = c.DefaultCharacterProfile()
+	}
+	if profile != nil {
+		for name, value := range profile.Variables {
+			resolved[name] = value
+		}
+	}
+	return resolved
+}
+
+// ResolvedActionSets returns the profile's customized membership or the live
+// Default collection when it inherits.
+func (c *Config) ResolvedActionSets(profileID string) []ActionSet {
+	profile := c.CharacterProfileByID(profileID)
+	if profile == nil {
+		profile = c.DefaultCharacterProfile()
+	}
+	if profile != nil && profile.ID != c.CharacterProfiles.DefaultID && profile.ActionSetsMode == CharacterSettingInherit {
+		profile = c.DefaultCharacterProfile()
+	}
+	if profile == nil {
+		return []ActionSet{}
+	}
+	return cloneActionSets(profile.ActionSets)
+}
+
+// ResolvedQuickCycleModes returns a defensive copy and preserves an explicit
+// customized empty list.
+func (c *Config) ResolvedQuickCycleModes(profileID string) []string {
+	profile := c.CharacterProfileByID(profileID)
+	if profile != nil && profile.ID != c.CharacterProfiles.DefaultID && profile.QuickCycleMode == CharacterSettingCustomize {
+		return cloneStringsNonNil(profile.QuickCycleModes)
+	}
+	return cloneStringsNonNil(c.UI.QuickCycleModes)
+}
+
+// ResolvedHighPriority returns a defensive copy of the effective priority
+// command list for a character.
+func (c *Config) ResolvedHighPriority(profileID string) []string {
+	profile := c.CharacterProfileByID(profileID)
+	if profile != nil && profile.ID != c.CharacterProfiles.DefaultID && profile.PriorityCommandsMode == CharacterSettingCustomize {
+		return cloneStringsNonNil(profile.HighPriority)
+	}
+	return cloneStringsNonNil(c.Commands.HighPriority)
+}
+
+func cloneActionSets(source []ActionSet) []ActionSet {
+	result := make([]ActionSet, len(source))
+	for i := range source {
+		result[i] = source[i]
+		result[i].Buttons = append([]ActionButton(nil), source[i].Buttons...)
+	}
+	return result
+}
+
+func cloneStringsNonNil(source []string) []string {
+	result := make([]string, len(source))
+	copy(result, source)
+	return result
+}
+
 func (c *Config) DefaultDisplayProfile() *DisplayProfileConfig {
 	for i := range c.DisplayProfiles.Profiles {
 		if c.DisplayProfiles.Profiles[i].ID == c.DisplayProfiles.DefaultID {
@@ -534,6 +690,19 @@ func (c *Config) DefaultDisplayProfile() *DisplayProfileConfig {
 		}
 	}
 	return nil
+}
+
+// DisplayProfileForCharacter returns the character-specific layout when one
+// exists and otherwise falls back to the global Default layout.
+func (c *Config) DisplayProfileForCharacter(characterProfileID string) *DisplayProfileConfig {
+	if characterProfileID != "" && characterProfileID != c.CharacterProfiles.DefaultID {
+		for i := range c.DisplayProfiles.Profiles {
+			if c.DisplayProfiles.Profiles[i].CharacterProfileID == characterProfileID {
+				return &c.DisplayProfiles.Profiles[i]
+			}
+		}
+	}
+	return c.DefaultDisplayProfile()
 }
 
 // PlaceUnplacedCustomViewsInDefault gives editors without placement controls
@@ -546,6 +715,9 @@ func (c *Config) PlaceUnplacedCustomViewsInDefault() {
 	}
 	placed := map[string]bool{}
 	for _, component := range profile.Main {
+		placed[component.ComponentID] = true
+	}
+	for _, component := range profile.Bench {
 		placed[component.ComponentID] = true
 	}
 	for _, sidebar := range profile.Sidebars {
@@ -570,6 +742,7 @@ func defaultDisplayProfile() DisplayProfileConfig {
 			{ComponentID: ComponentIDMetrics},
 			{ComponentID: ComponentIDDebug},
 		},
+		Bench: []DisplayComponentConfig{},
 		Sidebars: []DisplaySidebarConfig{
 			{
 				ID: DefaultSidebarOneID, Name: "Sidebar 1", Enabled: true, Side: "right", Width: 260,
@@ -605,13 +778,19 @@ func Defaults() *Config {
 			HighPriority:     []string{},
 		},
 		CharacterProfiles: CharacterProfilesConfig{
-			DefaultID: DefaultCharacterProfileID,
+			DefaultID:  DefaultCharacterProfileID,
+			AutoSwitch: true,
 			Profiles: []CharacterProfileConfig{{
-				ID:          DefaultCharacterProfileID,
-				Name:        "Default",
-				Variables:   map[string]string{},
-				CustomViews: []CustomTabConfig{},
-				ActionSets:  []ActionSet{},
+				ID:                   DefaultCharacterProfileID,
+				Name:                 "Default",
+				VariablesMode:        CharacterVariablesIndependent,
+				Variables:            map[string]string{},
+				CustomViews:          []CustomTabConfig{},
+				Highlights:           []HighlightConfig{},
+				ActionSetsMode:       CharacterSettingCustomize,
+				ActionSets:           []ActionSet{},
+				QuickCycleMode:       CharacterSettingCustomize,
+				PriorityCommandsMode: CharacterSettingCustomize,
 			}},
 		},
 		DisplayProfiles: DisplayProfilesConfig{
@@ -625,7 +804,8 @@ func Defaults() *Config {
 				KeyEnv: "PRAETOR_CREDENTIALS_KEY",
 			},
 		},
-		Scripts: []string{},
+		Scripts:        []string{},
+		ManagedScripts: []ManagedScriptSourceConfig{},
 		UI: UIConfig{
 			DisplayMode:          "sidebar",
 			DefaultTab:           "all",
@@ -649,7 +829,6 @@ func Defaults() *Config {
 			MobileShowTabBar:     true,
 			NumpadNavigation:     "numlock",
 		},
-		Highlights: []HighlightConfig{},
 		WoundHighlights: WoundHighlightConfig{
 			Cuts:      "red",
 			Bruises:   "purple",
@@ -667,13 +846,18 @@ func Defaults() *Config {
 				HealthBelow: ThresholdConfig{
 					Enabled:   true,
 					Threshold: 25,
+					When:      NotificationWhenAlways,
+					Delivery:  NotificationDeliveryDesktop,
 				},
 				FatigueBelow: ThresholdConfig{
 					Enabled:   false,
 					Threshold: 10,
+					When:      NotificationWhenAlways,
+					Delivery:  NotificationDeliveryDesktop,
 				},
 				Patterns: []NotifyPatternConfig{},
 			},
+			Discord: DiscordNotificationsConfig{},
 		},
 		Logging: LoggingConfig{
 			App: AppLoggingConfig{
@@ -714,9 +898,17 @@ func Save(cfg *Config, path string) error {
 	}
 
 	// Preserve the existing file's permissions; default to 0644 for a new file.
+	// A Discord webhook URL is a credential, so configurations containing one
+	// are always restricted to the current OS user.
 	perm := os.FileMode(0644)
 	if info, statErr := os.Stat(path); statErr == nil {
 		perm = info.Mode().Perm()
+	}
+	if strings.TrimSpace(cfg.Notifications.Discord.WebhookURL) != "" {
+		perm &= 0o600
+		if perm == 0 {
+			perm = 0o600
+		}
 	}
 
 	return atomicfile.Write(path, data, perm)
@@ -739,13 +931,54 @@ func Load(path string) (*Config, error) {
 	migrateMobileOutputFontSize(cfg, data)
 	migrateLegacyOnboarding(cfg, data)
 	migrateLegacyCharacterProfiles(cfg, data)
+	migrateIndependentCharacterVariables(cfg, data)
 	migrateLegacyDisplayProfiles(cfg, data)
+	migrateLegacyNotificationRules(cfg, data)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validating config: %w", err)
 	}
 
 	return cfg, nil
+}
+
+func migrateLegacyNotificationRules(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	notifications, _ := raw["notifications"].(map[string]interface{})
+	desktop, _ := notifications["desktop"].(map[string]interface{})
+	if _, ok := desktop["script_sound"]; !ok {
+		cfg.Notifications.Desktop.ScriptSound = cfg.Notifications.Desktop.Sound
+	}
+	clearMissing := func(rawRule map[string]interface{}, when *string, sound *bool, delivery *string) {
+		if _, ok := rawRule["when"]; !ok {
+			*when = ""
+		}
+		if _, ok := rawRule["sound"]; !ok {
+			*sound = false
+		}
+		if _, ok := rawRule["delivery"]; !ok {
+			*delivery = ""
+		}
+	}
+	if rule, ok := desktop["health_below"].(map[string]interface{}); ok {
+		clearMissing(rule, &cfg.Notifications.Desktop.HealthBelow.When, &cfg.Notifications.Desktop.HealthBelow.Sound, &cfg.Notifications.Desktop.HealthBelow.Delivery)
+	}
+	if rule, ok := desktop["fatigue_below"].(map[string]interface{}); ok {
+		clearMissing(rule, &cfg.Notifications.Desktop.FatigueBelow.When, &cfg.Notifications.Desktop.FatigueBelow.Sound, &cfg.Notifications.Desktop.FatigueBelow.Delivery)
+	}
+	if rules, ok := desktop["patterns"].([]interface{}); ok {
+		for i, rawRule := range rules {
+			if i >= len(cfg.Notifications.Desktop.Patterns) {
+				break
+			}
+			if rule, ok := rawRule.(map[string]interface{}); ok {
+				clearMissing(rule, &cfg.Notifications.Desktop.Patterns[i].When, &cfg.Notifications.Desktop.Patterns[i].Sound, &cfg.Notifications.Desktop.Patterns[i].Delivery)
+			}
+		}
+	}
 }
 
 // migrateLegacyCharacterProfiles moves the settings that predate character
@@ -764,20 +997,64 @@ func migrateLegacyCharacterProfiles(cfg *Config, data []byte) {
 		variables[name] = value
 	}
 	cfg.CharacterProfiles = CharacterProfilesConfig{
-		DefaultID: DefaultCharacterProfileID,
+		DefaultID:  DefaultCharacterProfileID,
+		AutoSwitch: true,
 		Profiles: []CharacterProfileConfig{{
-			ID:                  DefaultCharacterProfileID,
-			Name:                "Default",
-			Variables:           variables,
-			CustomViews:         append([]CustomTabConfig(nil), cfg.UI.CustomTabs...),
-			ActionSets:          append([]ActionSet(nil), cfg.UI.ActionSets...),
-			SelectedActionSetID: cfg.UI.SelectedActionSetID,
+			ID:                   DefaultCharacterProfileID,
+			Name:                 "Default",
+			VariablesMode:        CharacterVariablesIndependent,
+			Variables:            variables,
+			CustomViews:          append([]CustomTabConfig(nil), cfg.UI.CustomTabs...),
+			ActionSetsMode:       CharacterSettingCustomize,
+			ActionSets:           append([]ActionSet(nil), cfg.UI.ActionSets...),
+			SelectedActionSetID:  cfg.UI.SelectedActionSetID,
+			QuickCycleMode:       CharacterSettingCustomize,
+			PriorityCommandsMode: CharacterSettingCustomize,
 		}},
 	}
 	cfg.Commands.Variables = nil
 	cfg.UI.CustomTabs = nil
 	cfg.UI.ActionSets = nil
 	cfg.UI.SelectedActionSetID = ""
+}
+
+// migrateIndependentCharacterVariables materializes the former per-key live
+// inheritance into each existing character once. The marker prevents later
+// Default edits from being copied over a character's independent list.
+func migrateIndependentCharacterVariables(cfg *Config, data []byte) {
+	var raw map[string]interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return
+	}
+	characterProfiles, _ := raw["character_profiles"].(map[string]interface{})
+	rawProfiles, _ := characterProfiles["profiles"].([]interface{})
+	defaultProfile := cfg.DefaultCharacterProfile()
+	defaults := map[string]string{}
+	if defaultProfile != nil {
+		for name, value := range defaultProfile.Variables {
+			defaults[name] = value
+		}
+	}
+	for i := range cfg.CharacterProfiles.Profiles {
+		profile := &cfg.CharacterProfiles.Profiles[i]
+		markedIndependent := false
+		if i < len(rawProfiles) {
+			if rawProfile, ok := rawProfiles[i].(map[string]interface{}); ok {
+				_, markedIndependent = rawProfile["variables_mode"]
+			}
+		}
+		if profile.ID != cfg.CharacterProfiles.DefaultID && !markedIndependent {
+			materialized := make(map[string]string, len(defaults)+len(profile.Variables))
+			for name, value := range defaults {
+				materialized[name] = value
+			}
+			for name, value := range profile.Variables {
+				materialized[name] = value
+			}
+			profile.Variables = materialized
+		}
+		profile.VariablesMode = CharacterVariablesIndependent
+	}
 }
 
 // migrateLegacyDisplayProfiles converts the fixed three-sidebar/location model
@@ -964,6 +1241,8 @@ func (c *Config) Validate() error {
 	}
 
 	c.normalizeCharacterProfiles()
+	c.normalizeCharacterHighlights()
+	c.normalizeManagedScripts()
 
 	// Commands
 	if c.Commands.DefaultDelay.Duration < 100*time.Millisecond {
@@ -1059,34 +1338,13 @@ func (c *Config) Validate() error {
 	default:
 		c.UI.NumpadNavigation = "numlock"
 	}
-	allCustomViews := make([]CustomTabConfig, 0)
-	for _, profile := range c.CharacterProfiles.Profiles {
-		allCustomViews = append(allCustomViews, profile.CustomViews...)
-	}
-	c.normalizeDisplayProfiles(allCustomViews)
+	c.normalizeDisplayProfiles()
 	// Clear migration-only aliases so Save writes one canonical copy.
 	c.Commands.Variables = nil
 	c.UI.CustomTabs = nil
 	c.UI.ActionSets = nil
 	c.UI.SelectedActionSetID = ""
 	c.UI.GUILayout = GUILayoutConfig{}
-
-	// Highlights
-	validStyles := map[string]bool{"red": true, "gold": true, "green": true, "blue": true}
-	kept := c.Highlights[:0]
-	for i := range c.Highlights {
-		// Drop empty/whitespace-only patterns: a case-insensitive empty-substring
-		// match highlights every line. Reachable only by hand-editing config.yaml.
-		if strings.TrimSpace(c.Highlights[i].Pattern) == "" {
-			log.Printf("[CONFIG] dropping highlight with empty pattern")
-			continue
-		}
-		if !validStyles[c.Highlights[i].Style] {
-			c.Highlights[i].Style = "gold"
-		}
-		kept = append(kept, c.Highlights[i])
-	}
-	c.Highlights = kept
 
 	// Wound highlighting is opt-in. Empty family values occur naturally when
 	// loading a pre-feature config, so repair each independently to its category
@@ -1137,6 +1395,7 @@ func (c *Config) Validate() error {
 	if c.Notifications.Desktop.FatigueBelow.Threshold < 0 || c.Notifications.Desktop.FatigueBelow.Threshold > 100 {
 		c.Notifications.Desktop.FatigueBelow.Threshold = 10
 	}
+	c.normalizeNotificationRules()
 
 	// Logging
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
@@ -1148,6 +1407,122 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func normalizeNotificationRule(when, delivery *string, sound *bool, legacySound, legacyDiscord bool) {
+	if *when != NotificationWhenAlways && *when != NotificationWhenUnfocused {
+		*when = NotificationWhenAlways
+	}
+	switch *delivery {
+	case NotificationDeliveryDesktop, NotificationDeliveryDiscord, NotificationDeliveryBoth, NotificationDeliveryNeither:
+		return
+	}
+	if legacyDiscord {
+		*delivery = NotificationDeliveryBoth
+	} else {
+		*delivery = NotificationDeliveryDesktop
+	}
+	*sound = legacySound
+}
+
+func deliveryIncludesDiscord(delivery string) bool {
+	return delivery == NotificationDeliveryDiscord || delivery == NotificationDeliveryBoth
+}
+
+func (c *Config) normalizeNotificationRules() {
+	desktop := &c.Notifications.Desktop
+	discord := &c.Notifications.Discord
+	normalizeNotificationRule(&desktop.HealthBelow.When, &desktop.HealthBelow.Delivery, &desktop.HealthBelow.Sound, desktop.Sound, discord.Health)
+	normalizeNotificationRule(&desktop.FatigueBelow.When, &desktop.FatigueBelow.Delivery, &desktop.FatigueBelow.Sound, desktop.Sound, discord.Fatigue)
+	for i := range desktop.Patterns {
+		normalizeNotificationRule(&desktop.Patterns[i].When, &desktop.Patterns[i].Delivery, &desktop.Patterns[i].Sound, desktop.Sound, discord.Patterns)
+	}
+	discord.Health = deliveryIncludesDiscord(desktop.HealthBelow.Delivery)
+	discord.Fatigue = deliveryIncludesDiscord(desktop.FatigueBelow.Delivery)
+	discord.Patterns = false
+	desktop.Sound = desktop.HealthBelow.Sound || desktop.FatigueBelow.Sound
+	for _, pattern := range desktop.Patterns {
+		discord.Patterns = discord.Patterns || deliveryIncludesDiscord(pattern.Delivery)
+		desktop.Sound = desktop.Sound || pattern.Sound
+	}
+}
+
+// Normalize applies migration-safe defaults and synchronizes the deprecated
+// aggregate destination flags used by older shells.
+func (n *NotificationsConfig) Normalize() {
+	temporary := Config{Notifications: *n}
+	temporary.normalizeNotificationRules()
+	*n = temporary.Notifications
+}
+
+// normalizeCharacterHighlights migrates the former global collection and then
+// validates each profile independently. A nil profile collection means it was
+// written before character-scoped highlights existed; an explicit [] remains
+// an intentionally empty profile after subsequent loads.
+func (c *Config) normalizeCharacterHighlights() {
+	for i := range c.CharacterProfiles.Profiles {
+		profile := &c.CharacterProfiles.Profiles[i]
+		if profile.Highlights == nil {
+			profile.Highlights = append([]HighlightConfig(nil), c.Highlights...)
+			if profile.Highlights == nil {
+				profile.Highlights = []HighlightConfig{}
+			}
+		}
+		kept := profile.Highlights[:0]
+		for _, highlight := range profile.Highlights {
+			if strings.TrimSpace(highlight.Pattern) == "" {
+				log.Printf("[CONFIG] dropping highlight with empty pattern from profile %q", profile.Name)
+				continue
+			}
+			highlight.Pattern = strings.TrimSpace(highlight.Pattern)
+			style, ok := colorwords.LookupStyle(highlight.Style)
+			if !ok {
+				highlight.Style = "gold"
+			} else {
+				highlight.Style = style.Name
+			}
+			kept = append(kept, highlight)
+		}
+		profile.Highlights = kept
+	}
+	c.Highlights = nil
+}
+
+func (c *Config) normalizeManagedScripts() {
+	seen := make(map[string]bool, len(c.ManagedScripts))
+	for i := range c.ManagedScripts {
+		source := &c.ManagedScripts[i]
+		source.ID = strings.TrimSpace(source.ID)
+		if !ValidUUID(source.ID) || seen[strings.ToLower(source.ID)] {
+			source.ID = newUUID()
+		}
+		seen[strings.ToLower(source.ID)] = true
+		source.URL = strings.TrimSpace(source.URL)
+		source.Name = strings.TrimSpace(source.Name)
+		if source.Name == "" {
+			source.Name = managedScriptName(source.URL)
+		}
+		if source.Trust != ScriptTrustTrusted && source.Trust != ScriptTrustRestricted {
+			source.Trust = ScriptTrustRestricted
+		}
+		if source.Tracking != ScriptTrackingTag && source.Tracking != ScriptTrackingBranch {
+			source.Tracking = ScriptTrackingBranch
+		}
+	}
+	if c.ManagedScripts == nil {
+		c.ManagedScripts = []ManagedScriptSourceConfig{}
+	}
+}
+
+func managedScriptName(rawURL string) string {
+	trimmed := strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(rawURL), "/"), ".git")
+	if slash := strings.LastIndex(trimmed, "/"); slash >= 0 {
+		trimmed = trimmed[slash+1:]
+	}
+	if trimmed == "" {
+		return "Scripts"
+	}
+	return trimmed
 }
 
 func (c *Config) normalizeCharacterProfiles() {
@@ -1174,6 +1549,7 @@ func (c *Config) normalizeCharacterProfiles() {
 	seenComponentIDs := make(map[string]bool)
 	for i := range profiles {
 		profile := &profiles[i]
+		hadActionSets := profile.ActionSets != nil
 		if i == defaultIndex {
 			if !ValidUUID(profile.ID) {
 				profile.ID = DefaultCharacterProfileID
@@ -1184,6 +1560,9 @@ func (c *Config) normalizeCharacterProfiles() {
 			}
 			profile.Account = ""
 			profile.CharacterNumber = 0
+			profile.ActionSetsMode = CharacterSettingCustomize
+			profile.QuickCycleMode = CharacterSettingCustomize
+			profile.PriorityCommandsMode = CharacterSettingCustomize
 		} else {
 			profile.Name = strings.TrimSpace(profile.Name)
 			if profile.Name == "" {
@@ -1196,8 +1575,22 @@ func (c *Config) normalizeCharacterProfiles() {
 			if profile.CharacterNumber < 0 {
 				profile.CharacterNumber = 0
 			}
+			if profile.ActionSetsMode != CharacterSettingInherit && profile.ActionSetsMode != CharacterSettingCustomize {
+				if hadActionSets {
+					profile.ActionSetsMode = CharacterSettingCustomize
+				} else {
+					profile.ActionSetsMode = CharacterSettingInherit
+				}
+			}
+			if profile.QuickCycleMode != CharacterSettingInherit && profile.QuickCycleMode != CharacterSettingCustomize {
+				profile.QuickCycleMode = CharacterSettingInherit
+			}
+			if profile.PriorityCommandsMode != CharacterSettingInherit && profile.PriorityCommandsMode != CharacterSettingCustomize {
+				profile.PriorityCommandsMode = CharacterSettingInherit
+			}
 		}
 		seen[strings.ToLower(profile.ID)] = true
+		profile.VariablesMode = CharacterVariablesIndependent
 		if profile.Variables == nil {
 			profile.Variables = map[string]string{}
 		}
@@ -1223,12 +1616,21 @@ func (c *Config) normalizeCharacterProfiles() {
 		if profile.ActionSets == nil {
 			profile.ActionSets = []ActionSet{}
 		}
-		profile.SelectedActionSetID = normalizeSelectedActionSetID(profile.SelectedActionSetID, profile.ActionSets)
+		if profile.QuickCycleModes == nil && profile.QuickCycleMode == CharacterSettingCustomize {
+			profile.QuickCycleModes = []string{}
+		}
+		if profile.HighPriority == nil && profile.PriorityCommandsMode == CharacterSettingCustomize {
+			profile.HighPriority = []string{}
+		}
 	}
 	c.CharacterProfiles.Profiles = profiles
+	for i := range c.CharacterProfiles.Profiles {
+		profile := &c.CharacterProfiles.Profiles[i]
+		profile.SelectedActionSetID = normalizeSelectedActionSetID(profile.SelectedActionSetID, c.ResolvedActionSets(profile.ID))
+	}
 }
 
-func (c *Config) normalizeDisplayProfiles(custom []CustomTabConfig) {
+func (c *Config) normalizeDisplayProfiles() {
 	profiles := c.DisplayProfiles.Profiles
 	defaultIndex := -1
 	if ValidUUID(c.DisplayProfiles.DefaultID) {
@@ -1248,6 +1650,70 @@ func (c *Config) normalizeDisplayProfiles(custom []CustomTabConfig) {
 		c.DisplayProfiles.DefaultID = DefaultDisplayProfileID
 	}
 
+	defaultCharacter := c.DefaultCharacterProfile()
+	defaultCustom := []CustomTabConfig{}
+	if defaultCharacter != nil {
+		defaultCustom = defaultCharacter.CustomViews
+	}
+
+	sourceProfiles := append([]DisplayProfileConfig(nil), profiles...)
+	defaultProfile := sourceProfiles[defaultIndex]
+	if !ValidUUID(defaultProfile.ID) {
+		defaultProfile.ID = DefaultDisplayProfileID
+		c.DisplayProfiles.DefaultID = defaultProfile.ID
+	}
+	if strings.TrimSpace(defaultProfile.Name) == "" {
+		defaultProfile.Name = "Default"
+	}
+	defaultProfile.CharacterProfileID = ""
+	seenSidebarIDs := map[string]bool{}
+	normalizeDisplayProfile(&defaultProfile, defaultCustom, seenSidebarIDs)
+
+	characterByID := make(map[string]*CharacterProfileConfig, len(c.CharacterProfiles.Profiles))
+	for i := range c.CharacterProfiles.Profiles {
+		character := &c.CharacterProfiles.Profiles[i]
+		if character.ID != c.CharacterProfiles.DefaultID {
+			characterByID[character.ID] = character
+		}
+	}
+
+	result := profiles[:0]
+	result = append(result, defaultProfile)
+	seenProfiles := map[string]bool{strings.ToLower(defaultProfile.ID): true}
+	seenCharacters := map[string]bool{}
+	for i := range sourceProfiles {
+		if i == defaultIndex {
+			continue
+		}
+		profile := sourceProfiles[i]
+		character := characterByID[profile.CharacterProfileID]
+		if character == nil || seenCharacters[profile.CharacterProfileID] {
+			continue
+		}
+		if !ValidUUID(profile.ID) || seenProfiles[strings.ToLower(profile.ID)] {
+			profile.ID = newUUID()
+		}
+		profile.Name = character.Name
+		normalizeDisplayProfile(&profile, character.CustomViews, seenSidebarIDs)
+		result = append(result, profile)
+		seenProfiles[strings.ToLower(profile.ID)] = true
+		seenCharacters[profile.CharacterProfileID] = true
+	}
+
+	for i := range c.CharacterProfiles.Profiles {
+		character := &c.CharacterProfiles.Profiles[i]
+		if character.ID == c.CharacterProfiles.DefaultID || seenCharacters[character.ID] {
+			continue
+		}
+		profile := cloneDisplayProfileForCharacter(defaultProfile, defaultCustom, *character)
+		normalizeDisplayProfile(&profile, character.CustomViews, seenSidebarIDs)
+		result = append(result, profile)
+		seenCharacters[character.ID] = true
+	}
+	c.DisplayProfiles.Profiles = result
+}
+
+func normalizeDisplayProfile(profile *DisplayProfileConfig, custom []CustomTabConfig, seenSidebars map[string]bool) {
 	allowed := make(map[string]bool, len(builtinComponentKinds)+len(custom))
 	for id := range builtinComponentKinds {
 		allowed[id] = true
@@ -1255,74 +1721,111 @@ func (c *Config) normalizeDisplayProfiles(custom []CustomTabConfig) {
 	for _, view := range custom {
 		allowed[view.ID] = true
 	}
-	seenProfiles := map[string]bool{}
-	for i := range profiles {
-		profile := &profiles[i]
-		if i == defaultIndex {
-			if !ValidUUID(profile.ID) {
-				profile.ID = DefaultDisplayProfileID
-				c.DisplayProfiles.DefaultID = profile.ID
+	seenComponents := map[string]bool{}
+	profile.Main = normalizeDisplayComponents(profile.Main, allowed, seenComponents, false)
+	if !seenComponents[ComponentIDAll] {
+		profile.Main = append([]DisplayComponentConfig{{ComponentID: ComponentIDAll}}, profile.Main...)
+		seenComponents[ComponentIDAll] = true
+	} else {
+		for i, component := range profile.Main {
+			if component.ComponentID == ComponentIDAll && i != 0 {
+				profile.Main = append([]DisplayComponentConfig{component}, append(profile.Main[:i], profile.Main[i+1:]...)...)
+				break
 			}
-			if strings.TrimSpace(profile.Name) == "" {
-				profile.Name = "Default"
-			}
-		} else {
-			profile.Name = strings.TrimSpace(profile.Name)
-			if profile.Name == "" {
-				profile.Name = "Display Profile"
-			}
-			if !ValidUUID(profile.ID) || seenProfiles[strings.ToLower(profile.ID)] {
-				profile.ID = newUUID()
-			}
-		}
-		seenProfiles[strings.ToLower(profile.ID)] = true
-
-		seenComponents := map[string]bool{}
-		profile.Main = normalizeDisplayComponents(profile.Main, allowed, seenComponents, false)
-		if !seenComponents[ComponentIDAll] {
-			profile.Main = append([]DisplayComponentConfig{{ComponentID: ComponentIDAll}}, profile.Main...)
-			seenComponents[ComponentIDAll] = true
-		} else {
-			for i, component := range profile.Main {
-				if component.ComponentID == ComponentIDAll && i != 0 {
-					profile.Main = append([]DisplayComponentConfig{component}, append(profile.Main[:i], profile.Main[i+1:]...)...)
-					break
-				}
-			}
-		}
-
-		seenSidebars := map[string]bool{}
-		for j := range profile.Sidebars {
-			sidebar := &profile.Sidebars[j]
-			if !ValidUUID(sidebar.ID) || seenSidebars[strings.ToLower(sidebar.ID)] {
-				sidebar.ID = newUUID()
-			}
-			seenSidebars[strings.ToLower(sidebar.ID)] = true
-			sidebar.Name = strings.TrimSpace(sidebar.Name)
-			if sidebar.Name == "" {
-				sidebar.Name = fmt.Sprintf("Sidebar %d", j+1)
-			}
-			if sidebar.Side != "left" && sidebar.Side != "right" {
-				sidebar.Side = "right"
-			}
-			if sidebar.Width < 180 {
-				sidebar.Width = 260
-			} else if sidebar.Width > 600 {
-				sidebar.Width = 600
-			}
-			sidebar.Components = normalizeDisplayComponents(sidebar.Components, allowed, seenComponents, true)
-			if sidebar.Components == nil {
-				sidebar.Components = []DisplayComponentConfig{}
-			}
-		}
-		if profile.Main == nil {
-			profile.Main = []DisplayComponentConfig{{ComponentID: ComponentIDAll}}
-		}
-		if profile.Sidebars == nil {
-			profile.Sidebars = []DisplaySidebarConfig{}
 		}
 	}
-	c.DisplayProfiles.Profiles = profiles
+
+	for j := range profile.Sidebars {
+		sidebar := &profile.Sidebars[j]
+		if !ValidUUID(sidebar.ID) || seenSidebars[strings.ToLower(sidebar.ID)] {
+			sidebar.ID = newUUID()
+		}
+		seenSidebars[strings.ToLower(sidebar.ID)] = true
+		sidebar.Name = strings.TrimSpace(sidebar.Name)
+		if sidebar.Name == "" {
+			sidebar.Name = fmt.Sprintf("Sidebar %d", j+1)
+		}
+		if sidebar.Side != "left" && sidebar.Side != "right" {
+			sidebar.Side = "right"
+		}
+		if sidebar.Width < 180 {
+			sidebar.Width = 260
+		} else if sidebar.Width > 600 {
+			sidebar.Width = 600
+		}
+		sidebar.Components = normalizeDisplayComponents(sidebar.Components, allowed, seenComponents, true)
+		if sidebar.Components == nil {
+			sidebar.Components = []DisplayComponentConfig{}
+		}
+	}
+	profile.Bench = normalizeDisplayComponents(profile.Bench, allowed, seenComponents, true)
+	for _, componentID := range builtinComponentOrder {
+		if !seenComponents[componentID] {
+			profile.Bench = append(profile.Bench, DisplayComponentConfig{
+				ComponentID: componentID, SidebarHeight: defaultComponentHeight(componentID),
+			})
+			seenComponents[componentID] = true
+		}
+	}
+	for _, view := range custom {
+		if !seenComponents[view.ID] {
+			profile.Bench = append(profile.Bench, DisplayComponentConfig{
+				ComponentID: view.ID, SidebarHeight: defaultComponentHeight(view.ID),
+			})
+			seenComponents[view.ID] = true
+		}
+	}
+	if profile.Main == nil {
+		profile.Main = []DisplayComponentConfig{{ComponentID: ComponentIDAll}}
+	}
+	if profile.Sidebars == nil {
+		profile.Sidebars = []DisplaySidebarConfig{}
+	}
+	if profile.Bench == nil {
+		profile.Bench = []DisplayComponentConfig{}
+	}
+}
+
+func cloneDisplayProfileForCharacter(source DisplayProfileConfig, defaultCustom []CustomTabConfig, character CharacterProfileConfig) DisplayProfileConfig {
+	customIDs := make(map[string]string, len(defaultCustom))
+	used := make(map[int]bool, len(character.CustomViews))
+	for defaultIndex, view := range defaultCustom {
+		target := -1
+		for candidateIndex, candidate := range character.CustomViews {
+			if !used[candidateIndex] && candidate.Name == view.Name {
+				target = candidateIndex
+				break
+			}
+		}
+		if target < 0 && defaultIndex < len(character.CustomViews) && !used[defaultIndex] {
+			target = defaultIndex
+		}
+		if target >= 0 {
+			customIDs[view.ID] = character.CustomViews[target].ID
+			used[target] = true
+		}
+	}
+	cloneComponents := func(items []DisplayComponentConfig) []DisplayComponentConfig {
+		cloned := append([]DisplayComponentConfig(nil), items...)
+		for i := range cloned {
+			if replacement := customIDs[cloned[i].ComponentID]; replacement != "" {
+				cloned[i].ComponentID = replacement
+			}
+		}
+		return cloned
+	}
+	cloned := source
+	cloned.ID = newUUID()
+	cloned.Name = character.Name
+	cloned.CharacterProfileID = character.ID
+	cloned.Main = cloneComponents(source.Main)
+	cloned.Bench = cloneComponents(source.Bench)
+	cloned.Sidebars = append([]DisplaySidebarConfig(nil), source.Sidebars...)
+	for i := range cloned.Sidebars {
+		cloned.Sidebars[i].ID = newUUID()
+		cloned.Sidebars[i].Components = cloneComponents(source.Sidebars[i].Components)
+	}
+	return cloned
 }
 
 func normalizeDisplayComponents(components []DisplayComponentConfig, allowed, seen map[string]bool, sidebar bool) []DisplayComponentConfig {
@@ -1404,6 +1907,18 @@ var builtinComponentKinds = map[string]string{
 	ComponentIDVariables: "variables",
 }
 
+var builtinComponentOrder = []string{
+	ComponentIDAll,
+	ComponentIDMetrics,
+	ComponentIDDebug,
+	ComponentIDMap,
+	ComponentIDCompass,
+	ComponentIDVitals,
+	ComponentIDActions,
+	ComponentIDModes,
+	ComponentIDVariables,
+}
+
 // BuiltinComponentKinds returns the fixed UUID-to-renderer registry. Returning
 // a copy prevents callers from mutating configuration identity.
 func BuiltinComponentKinds() map[string]string {
@@ -1454,6 +1969,7 @@ func displayProfileFromLegacy(layout GUILayoutConfig, customIDs map[string]strin
 		Name:            "Default",
 		SidebarsVisible: layout.SidebarsVisible,
 		Main:            []DisplayComponentConfig{{ComponentID: ComponentIDAll}},
+		Bench:           []DisplayComponentConfig{},
 		Sidebars:        make([]DisplaySidebarConfig, 0, len(layout.Sidebars)),
 	}
 	views := append([]ViewLayoutConfig(nil), layout.Views...)
@@ -1505,8 +2021,9 @@ func displayProfileFromLegacy(layout GUILayoutConfig, customIDs map[string]strin
 	return profile
 }
 
-// FindDisplayComponent returns a copy of a component placement from main or a
-// sidebar. Its container and order remain owned by the display profile.
+// FindDisplayComponent returns a copy of a component placement from Main, a
+// sidebar, or the Bench. Its container and order remain owned by the display
+// profile.
 func FindDisplayComponent(profile DisplayProfileConfig, id string) (DisplayComponentConfig, bool) {
 	for _, component := range profile.Main {
 		if component.ComponentID == id {
@@ -1518,6 +2035,11 @@ func FindDisplayComponent(profile DisplayProfileConfig, id string) (DisplayCompo
 			if component.ComponentID == id {
 				return component, true
 			}
+		}
+	}
+	for _, component := range profile.Bench {
+		if component.ComponentID == id {
+			return component, true
 		}
 	}
 	return DisplayComponentConfig{}, false

@@ -19,6 +19,7 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/commandinput"
 	"github.com/cyber-godzilla/praetor/internal/config"
+	"github.com/cyber-godzilla/praetor/internal/engine"
 	"github.com/cyber-godzilla/praetor/internal/graphics"
 	"github.com/cyber-godzilla/praetor/internal/kitty"
 	"github.com/cyber-godzilla/praetor/internal/logging"
@@ -424,7 +425,7 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
 		if w.cfg != nil && w.cfgPath != "" {
-			w.cfg.Highlights = msg.Highlights
+			w.cfg.DefaultCharacterProfile().Highlights = msg.Highlights
 			if err := config.Save(w.cfg, w.cfgPath); err != nil {
 				log.Printf("saving config: %v", err)
 			}
@@ -486,7 +487,12 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for _, d := range msg.Dirs {
 				expanded = append(expanded, expandPath(d))
 			}
-			if err := w.gc.Engine.UpdateScriptDirs(expanded); err != nil {
+			var managed []config.ManagedScriptSourceConfig
+			if w.cfg != nil {
+				managed = w.cfg.ManagedScripts
+			}
+			sources := buildScriptSources(expanded, managed, w.configDir)
+			if err := w.gc.Engine.UpdateScriptSources(sources); err != nil {
 				log.Printf("updating script dirs: %v", err)
 			}
 		}
@@ -538,6 +544,7 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		newApp, cmd := w.app.Update(msg)
 		w.app = newApp.(ui.App)
 		if msg.Changed {
+			msg.Config.ScriptSound = msg.Config.Sound
 			if w.cfg != nil && w.cfgPath != "" {
 				w.cfg.Notifications.Desktop = msg.Config
 				if err := config.Save(w.cfg, w.cfgPath); err != nil {
@@ -706,6 +713,22 @@ func expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
+func buildScriptSources(scriptDirs []string, managed []config.ManagedScriptSourceConfig, configDir string) []engine.LuaSource {
+	sources := make([]engine.LuaSource, 0, len(scriptDirs)+len(managed))
+	for _, dir := range scriptDirs {
+		sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+	}
+	managedRoot := filepath.Join(configDir, "managed-scripts")
+	for _, source := range managed {
+		if source.Enabled {
+			sources = append(sources, engine.LuaSource{
+				Path: filepath.Join(managedRoot, source.ID), Trust: source.Trust,
+			})
+		}
+	}
+	return sources
+}
+
 func describePersistentValue(val interface{}) string {
 	switch v := val.(type) {
 	case map[string]interface{}:
@@ -836,7 +859,8 @@ func main() {
 		log.Fatalf("creating credential store: %v", err)
 	}
 
-	gc, err := client.NewClient(cfg, scriptDirs, dataDir, creds)
+	scriptSources := buildScriptSources(scriptDirs, cfg.ManagedScripts, configDir)
+	gc, err := client.NewClientWithSources(cfg, scriptSources, dataDir, creds)
 	if err != nil {
 		log.Fatalf("creating client: %v", err)
 	}
@@ -877,12 +901,15 @@ func main() {
 
 	// Desktop notifications.
 	desktopNotify := client.NewDesktopNotifier(cfg.Notifications.Desktop)
+	discordNotify := client.NewDiscordNotifier(cfg.Notifications.Discord)
+	desktopNotify.SetDiscordNotifier(discordNotify)
+	gc.SetDiscordNotifier(discordNotify)
 	defaultProfile := cfg.DefaultCharacterProfile()
 	desktopNotify.SetVariables(defaultProfile.Variables)
 
 	gfxMode := graphics.Detect()
 	log.Printf("[GRAPHICS] detected mode: %s", gfxMode)
-	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, cfg.Highlights, cfg.WoundHighlights, cfg.SpeechColors, defaultProfile.Variables, *debugFlag, cfg.UI.ColorWords, defaultProfile.CustomViews, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
+	app := ui.NewApp(cfg.UI.DisplayMode, cfg.UI.DefaultTab, cfg.UI.Scrollback, accounts, cfg.UI.SidebarWidth, cfg.UI.MinimapScale, cfg.UI.MinimapHeight, cfg.UI.QuickCycleModes, defaultProfile.Highlights, cfg.WoundHighlights, cfg.SpeechColors, defaultProfile.Variables, *debugFlag, cfg.UI.ColorWords, defaultProfile.CustomViews, version, cfg.UI.HideIPs, cfg.UI.EchoTyped, cfg.UI.EchoScript, cfg.Logging.Session.Enabled, logDir, scriptDirs, cfg.Commands.HighPriority, cfg.Ignorelist.OOC, cfg.Ignorelist.Think, cfg.Notifications.Desktop, gfxMode)
 
 	w := wrapper{app: app, gc: gc, cfg: cfg, cfgPath: cfgFile, dataDir: dataDir, configDir: configDir, desktopNotify: desktopNotify, sessionLog: sessLog, sessionsDir: sessionsDir}
 	p := tea.NewProgram(w, tea.WithAltScreen(), tea.WithMouseCellMotion())

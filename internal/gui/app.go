@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -11,8 +12,10 @@ import (
 
 	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
+	"github.com/cyber-godzilla/praetor/internal/commandinput"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/engine"
+	"github.com/cyber-godzilla/praetor/internal/scriptmanager"
 	"github.com/cyber-godzilla/praetor/internal/session"
 	"github.com/cyber-godzilla/praetor/internal/speechcolor"
 	"github.com/cyber-godzilla/praetor/internal/types"
@@ -99,6 +102,14 @@ type GuiApp struct {
 	playRand  func(min, max time.Duration) time.Duration
 	// playCheck overrides the pre-flight guard in tests; nil means the real check.
 	playCheck func() error
+
+	// Managed script operations are serialized because each one coordinates a
+	// repository checkout with the persisted source list. Status has a separate
+	// lock so the UI can read progress without waiting on a network operation.
+	scriptManagerMu sync.Mutex
+	scriptStatusMu  sync.RWMutex
+	scriptStatuses  map[string]scriptmanager.UpdateStatus
+	scriptCheckStop context.CancelFunc
 }
 
 // NewGuiApp constructs the facade around bootstrapped Deps and an Emitter.
@@ -115,6 +126,7 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 		eventStop:           make(chan struct{}),
 		eventLimit:          guiEventBacklogLimit(deps.Config.UI.Scrollback),
 		activeProfileID:     deps.Config.CharacterProfiles.DefaultID,
+		scriptStatuses:      make(map[string]scriptmanager.UpdateStatus),
 	}
 	a.colorWords.Store(deps.Config.UI.ColorWords)
 	a.speechColors.Store(cloneSpeechColors(deps.Config.SpeechColors))
@@ -128,7 +140,7 @@ func NewGuiApp(deps *Deps, emitter Emitter) *GuiApp {
 		})
 	}
 	if deps.Client != nil && deps.ConfigPath != "" {
-		deps.Client.SetInputVariableSaver(a.SetInputVariables)
+		deps.Client.SetInputVariableSaver(a.persistResolvedInputVariables)
 	}
 	return a
 }
@@ -175,7 +187,9 @@ func (a *GuiApp) Start() {
 		return
 	}
 	a.started = true
-	a.eventWG.Add(2)
+	checkContext, stopChecks := context.WithCancel(context.Background())
+	a.scriptCheckStop = stopChecks
+	a.eventWG.Add(3)
 	a.mu.Unlock()
 
 	go func() {
@@ -185,6 +199,10 @@ func (a *GuiApp) Start() {
 	go func() {
 		defer a.eventWG.Done()
 		a.eventProcessLoop()
+	}()
+	go func() {
+		defer a.eventWG.Done()
+		a.checkStartupScriptSources(checkContext)
 	}()
 }
 
@@ -251,17 +269,18 @@ func enqueueGUIEvent(queue []types.Event, event types.Event, limit int) ([]types
 func isBulkGUIEvent(event types.Event) bool {
 	switch event.(type) {
 	case types.GameTextEvent, types.SuppressedGameTextEvent, types.StatusUpdateEvent,
-		types.SKOOTUpdateEvent, types.MapURLEvent:
+		types.SKOOTUpdateEvent, types.MapURLEvent, types.GameCommandSentEvent:
 		return true
 	default:
 		return false
 	}
 }
 
-// handleCoreEventSideEffects runs before the bounded display queue. None of
-// these operations waits for the native webview: session logging is queued,
-// play cue delivery is non-blocking, and desktop notifications launch outside
-// the caller. This preserves behavior even if old render-only events are shed.
+// handleCoreEventSideEffects runs before the bounded display queue and never
+// waits for the native webview. Session logging is queued, play cue delivery is
+// non-blocking, and desktop notifications launch outside the caller. A rare
+// play/sleep command may serialize a character transition against activityMu;
+// keeping it here guarantees that display-backlog shedding cannot lose it.
 func (a *GuiApp) handleCoreEventSideEffects(event types.Event) {
 	switch e := event.(type) {
 	case types.GameTextEvent:
@@ -290,6 +309,10 @@ func (a *GuiApp) handleCoreEventSideEffects(event types.Event) {
 	case types.ModeChangeEvent:
 		if !a.stopping.Load() && a.deps.DesktopNotify != nil {
 			a.deps.DesktopNotify.Prune()
+		}
+	case types.GameCommandSentEvent:
+		if !a.stopping.Load() {
+			a.observeCharacterSelection(e.Command)
 		}
 	}
 }
@@ -346,6 +369,9 @@ func (a *GuiApp) Shutdown() {
 		a.closing = true
 		a.mu.Unlock()
 		a.stopping.Store(true)
+		if a.scriptCheckStop != nil {
+			a.scriptCheckStop()
+		}
 
 		a.activityMu.Lock()
 		a.StopPlay()
@@ -867,6 +893,21 @@ func (a *GuiApp) Send(input string) {
 // separators; a single line additionally receives ;; / && chaining and $()
 // control steps before dispatch.
 func (a *GuiApp) SendInput(input string) error {
+	trimmedInput := strings.TrimSpace(input)
+	// TEC owns a leading double quote as its targeted-speech shorthand. It is
+	// deliberately unmatched, so do not feed it to the quoted argument parser
+	// used to recognize /character; the normal game-input path must receive it.
+	if !strings.HasPrefix(trimmedInput, `"`) {
+		if parts, err := commandinput.SplitWords(trimmedInput); err != nil {
+			return err
+		} else if len(parts) > 0 && strings.EqualFold(parts[0], "/character") {
+			if len(parts) == 1 {
+				a.emit([]WireEvent{{Kind: KindOpenMenu, OpenMenu: "menu-character"}})
+				return nil
+			}
+			return a.SelectCharacterProfile(strings.Join(parts[1:], " "), false)
+		}
+	}
 	a.activityMu.Lock()
 	defer a.activityMu.Unlock()
 	a.waitForStoppedPlay()
@@ -876,7 +917,6 @@ func (a *GuiApp) SendInput(input string) error {
 	if err := a.send(input, true); err != nil {
 		return err
 	}
-	a.observeCharacterSelection(input)
 	return nil
 }
 

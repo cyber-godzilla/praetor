@@ -171,7 +171,55 @@ test("/guide opens the welcome wiki links without navigating automatically", asy
   await page.keyboard.press("Enter");
 
   await expect(page.getByText("Welcome to Praetor", { exact: true })).toBeVisible();
+  const settings = page.getByRole("navigation", { name: "Praetor settings" });
+  await expect(settings).toBeVisible();
+  await expect(settings.locator("button.active")).toHaveText("Application");
   expect(await backend.args("OpenURL")).toEqual([]);
+});
+
+test("slash-command editors open within their owning settings section", async ({ page, backend }) => {
+  async function submit(command: string) {
+    await backend.input.fill(command);
+    await page.keyboard.press("Enter");
+  }
+
+  async function expectSection(dialogName: string, section: string) {
+    const dialog = page.getByRole("dialog", { name: dialogName, exact: true });
+    await expect(dialog).toBeVisible();
+    const settings = dialog.getByRole("navigation", { name: "Praetor settings" });
+    await expect(settings).toBeVisible();
+    await expect(settings.locator("button.active")).toHaveText(section);
+    await dialog.getByLabel("Close").click();
+  }
+
+  await submit("/help");
+  await expectSection("Help", "Tools & help");
+
+  await submit("/guide");
+  await expectSection("Welcome to Praetor", "Application");
+
+  await submit("/list");
+  await expectSection("Switch Mode", "Automation");
+
+  await submit("/kudos");
+  await expectSection("Kudos", "Tools & help");
+
+  await submit("/notes");
+  await expectSection("Notes", "Tools & help");
+
+  await submit("/character");
+  const characterMenu = page.getByRole("dialog", { name: "Praetor / Character", exact: true });
+  await expect(characterMenu).toBeVisible();
+  await expect(characterMenu.getByRole("navigation", { name: "Praetor settings" }).locator("button.active"))
+    .toHaveText("Character");
+  await expect(page.getByRole("menu", { name: "Choose character profile" })).toHaveCount(0);
+  await characterMenu.getByLabel("Close").click();
+
+  for (const route of ["wiki", "maps", "calc"]) {
+    await backend.events([{ kind: "openMenu", openMenu: route }]);
+    const title = route === "wiki" ? "Wiki bookmarks" : route === "maps" ? "Map bookmarks" : "Rank-Bonus Calculator";
+    await expectSection(title, "Tools & help");
+  }
 });
 
 test("Shift+Enter inserts a newline; Enter sends the block as one message", async ({ page, backend }) => {

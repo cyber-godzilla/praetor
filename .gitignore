@@ -7,6 +7,9 @@
 /internal/webassets/dist/*
 !/internal/webassets/dist/.keep
 /gui/frontend/artifacts/
+# Local UI mockups and rendered review galleries; production UI and tests live
+# under src/ and e2e/. These may contain machine-specific preview paths.
+/gui/frontend/prototypes/
 __pycache__/
 *.py[cod]
 # Chocolatey pack artifacts staged at release time.

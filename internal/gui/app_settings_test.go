@@ -78,6 +78,76 @@ func TestSetSpeechColorsValidatesPersistsAndPublishes(t *testing.T) {
 	}
 }
 
+func TestSetHighlightsTargetsActiveCharacterAndAcceptsColorwordStyles(t *testing.T) {
+	a, _ := newCharacterProfileTestApp(t)
+	if err := a.SetCharacterProfiles([]config.CharacterProfileIdentity{
+		{ID: config.DefaultCharacterProfileID, Name: "Default"},
+		{ID: testCharacterProfileID, Name: "Marcus", Account: "one", CharacterNumber: 1},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SwitchCharacterProfile(testCharacterProfileID, false); err != nil {
+		t.Fatal(err)
+	}
+	want := []config.HighlightConfig{{Pattern: "a gladius", Style: "cinnabar", Active: true}}
+	if err := a.SetHighlights(want); err != nil {
+		t.Fatalf("SetHighlights: %v", err)
+	}
+	if got := a.cfg().CharacterProfileByID(testCharacterProfileID).Highlights; len(got) != 1 || got[0] != want[0] {
+		t.Fatalf("active character highlights = %+v", got)
+	}
+	if got := a.cfg().DefaultCharacterProfile().Highlights; len(got) != 0 {
+		t.Fatalf("active character edit changed Default highlights: %+v", got)
+	}
+	if err := a.SetHighlights([]config.HighlightConfig{{Pattern: "x", Style: "not-a-colorword", Active: true}}); err == nil {
+		t.Fatal("SetHighlights accepted an invalid Colorword style")
+	}
+}
+
+func TestSetDiscordNotificationsValidatesPersistsAndApplies(t *testing.T) {
+	cfg := config.Defaults()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	discord := client.NewDiscordNotifier(cfg.Notifications.Discord)
+	a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, DiscordNotify: discord}, &captureEmitter{})
+
+	want := config.DiscordNotificationsConfig{
+		Enabled:    true,
+		WebhookURL: "https://discord.com/api/webhooks/123/secret-token",
+		Health:     true,
+		Patterns:   true,
+	}
+	all := cfg.Notifications
+	all.Discord = want
+	all.Desktop.HealthBelow.Delivery = config.NotificationDeliveryBoth
+	all.Desktop.Patterns = []config.NotifyPatternConfig{{
+		Pattern: "warning", Enabled: true, When: config.NotificationWhenAlways,
+		Delivery: config.NotificationDeliveryBoth,
+	}}
+	if err := a.SetNotifications(all); err != nil {
+		t.Fatalf("SetNotifications: %v", err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.Notifications.Discord != want {
+		t.Fatalf("persisted Discord config = %+v, want %+v", loaded.Notifications.Discord, want)
+	}
+	if got := discord.Config(); got != want {
+		t.Fatalf("live Discord config = %+v, want %+v", got, want)
+	}
+
+	invalid := want
+	invalid.WebhookURL = "https://example.com/steal"
+	all.Discord = invalid
+	if err := a.SetNotifications(all); err == nil {
+		t.Fatal("SetNotifications accepted a non-Discord webhook")
+	}
+	if got := discord.Config(); got != want {
+		t.Fatalf("invalid update changed live config to %+v", got)
+	}
+}
+
 func TestSetWoundHighlightsValidatesPersistsAndPublishes(t *testing.T) {
 	cfg := config.Defaults()
 	path := filepath.Join(t.TempDir(), "config.yaml")

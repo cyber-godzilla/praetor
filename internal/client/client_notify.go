@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os/exec"
@@ -26,6 +27,17 @@ type DesktopNotifier struct {
 	variables   map[string]string
 	warningSink func(string)
 	warningLast map[string]time.Time
+	discord     *DiscordNotifier
+	focused     bool
+}
+
+// SetDiscordNotifier adds the optional remote delivery destination. Matching
+// and cooldowns remain owned by DesktopNotifier so both destinations observe
+// exactly the same rule decisions.
+func (dn *DesktopNotifier) SetDiscordNotifier(notifier *DiscordNotifier) {
+	dn.mu.Lock()
+	dn.discord = notifier
+	dn.mu.Unlock()
 }
 
 // NotificationSink receives notifications after rule evaluation and cooldown
@@ -40,6 +52,26 @@ type NotificationSinkFunc func(title, message string)
 
 func (f NotificationSinkFunc) Notify(title, message string) { f(title, message) }
 
+// NotificationOptions carries the per-rule presentation choices to shells
+// that can honor them locally (notably each praetor-web browser).
+type NotificationOptions struct {
+	Sound             bool
+	OnlyWhenUnfocused bool
+}
+
+type NotificationOptionsSink interface {
+	NotifyWithOptions(title, message string, options NotificationOptions)
+}
+
+type NotificationOptionsSinkFunc func(title, message string, options NotificationOptions)
+
+func (f NotificationOptionsSinkFunc) Notify(title, message string) {
+	f(title, message, NotificationOptions{})
+}
+func (f NotificationOptionsSinkFunc) NotifyWithOptions(title, message string, options NotificationOptions) {
+	f(title, message, options)
+}
+
 type NativeNotificationSink struct {
 	Sound bool
 }
@@ -49,10 +81,13 @@ func (s NativeNotificationSink) Notify(title, message string) {
 }
 
 type compiledNotifyPattern struct {
-	pattern string
-	title   string
-	message string
-	enabled bool
+	pattern  string
+	title    string
+	message  string
+	enabled  bool
+	when     string
+	sound    bool
+	delivery string
 }
 
 // NewDesktopNotifier creates a notifier from config.
@@ -71,10 +106,19 @@ func NewDesktopNotifier(cfg config.DesktopNotificationsConfig) *DesktopNotifier 
 			title:   p.Title,
 			message: p.Message,
 			enabled: p.Enabled,
+			when:    p.When, sound: p.Sound, delivery: p.Delivery,
 		})
 	}
 
 	return dn
+}
+
+// SetFocused lets the native shell suppress rules configured for background
+// delivery. Web browsers apply the same option independently in each tab.
+func (dn *DesktopNotifier) SetFocused(focused bool) {
+	dn.mu.Lock()
+	dn.focused = focused
+	dn.mu.Unlock()
 }
 
 // SetWarningSink installs the in-app destination for rule diagnostics.
@@ -122,6 +166,7 @@ func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
 			title:   p.Title,
 			message: p.Message,
 			enabled: p.Enabled,
+			when:    p.When, sound: p.Sound, delivery: p.Delivery,
 		})
 	}
 }
@@ -129,30 +174,28 @@ func (dn *DesktopNotifier) UpdateConfig(cfg config.DesktopNotificationsConfig) {
 // CheckHealth sends a desktop notification if health drops below threshold.
 func (dn *DesktopNotifier) CheckHealth(health int) {
 	dn.mu.RLock()
-	enabled := dn.cfg.HealthBelow.Enabled
-	threshold := dn.cfg.HealthBelow.Threshold
+	rule := dn.cfg.HealthBelow
 	dn.mu.RUnlock()
 
-	if !enabled {
+	if !rule.Enabled {
 		return
 	}
-	if health <= threshold {
-		dn.send("Health Warning", fmt.Sprintf("Health at %d%%", health), "health")
+	if health <= rule.Threshold {
+		dn.sendRule("Health Warning", fmt.Sprintf("Health at %d%%", health), "health", rule.When, rule.Sound, rule.Delivery)
 	}
 }
 
 // CheckFatigue sends a desktop notification if fatigue drops below threshold.
 func (dn *DesktopNotifier) CheckFatigue(fatigue int) {
 	dn.mu.RLock()
-	enabled := dn.cfg.FatigueBelow.Enabled
-	threshold := dn.cfg.FatigueBelow.Threshold
+	rule := dn.cfg.FatigueBelow
 	dn.mu.RUnlock()
 
-	if !enabled {
+	if !rule.Enabled {
 		return
 	}
-	if fatigue <= threshold {
-		dn.send("Fatigue Warning", fmt.Sprintf("Fatigue at %d%%", fatigue), "fatigue")
+	if fatigue <= rule.Threshold {
+		dn.sendRule("Fatigue Warning", fmt.Sprintf("Fatigue at %d%%", fatigue), "fatigue", rule.When, rule.Sound, rule.Delivery)
 	}
 }
 
@@ -191,7 +234,7 @@ func (dn *DesktopNotifier) CheckText(text string) {
 		if msg == "" {
 			msg = text
 		}
-		dn.send(title, msg, "pattern:"+p.pattern)
+		dn.sendRule(title, msg, "pattern:"+p.pattern, p.when, p.sound, p.delivery)
 		return // one notification per text line
 	}
 }
@@ -237,7 +280,35 @@ func (dn *DesktopNotifier) warn(key, message string) {
 
 // send dispatches a desktop notification with rate limiting.
 func (dn *DesktopNotifier) send(title, message, dedupKey string) {
+	dn.mu.RLock()
+	when, sound, delivery := config.NotificationWhenAlways, dn.cfg.Sound, config.NotificationDeliveryDesktop
+	switch notificationCategoryForKey(dedupKey) {
+	case NotificationCategoryHealth:
+		when, sound, delivery = dn.cfg.HealthBelow.When, dn.cfg.HealthBelow.Sound, dn.cfg.HealthBelow.Delivery
+	case NotificationCategoryFatigue:
+		when, sound, delivery = dn.cfg.FatigueBelow.When, dn.cfg.FatigueBelow.Sound, dn.cfg.FatigueBelow.Delivery
+	}
+	dn.mu.RUnlock()
+	dn.sendRule(title, message, dedupKey, when, sound, delivery)
+}
+
+func (dn *DesktopNotifier) sendRule(title, message, dedupKey, when string, sound bool, delivery string) {
 	dn.mu.Lock()
+	if when != config.NotificationWhenUnfocused {
+		when = config.NotificationWhenAlways
+	}
+	if delivery == "" {
+		delivery = config.NotificationDeliveryDesktop
+	}
+	desktop := delivery == config.NotificationDeliveryDesktop || delivery == config.NotificationDeliveryBoth
+	discordDelivery := delivery == config.NotificationDeliveryDiscord || delivery == config.NotificationDeliveryBoth
+	if when == config.NotificationWhenUnfocused && dn.focused {
+		desktop = false
+	}
+	if !desktop && !discordDelivery {
+		dn.mu.Unlock()
+		return
+	}
 
 	now := time.Now()
 	if last, ok := dn.lastSent[dedupKey]; ok {
@@ -248,10 +319,39 @@ func (dn *DesktopNotifier) send(title, message, dedupKey string) {
 	}
 	dn.lastSent[dedupKey] = now
 	sink := dn.sink
+	discord := dn.discord
 	dn.mu.Unlock()
 
-	if sink != nil {
-		sink.Notify(title, message)
+	options := NotificationOptions{Sound: sound, OnlyWhenUnfocused: when == config.NotificationWhenUnfocused}
+	if desktop && sink != nil {
+		if configured, ok := sink.(NotificationOptionsSink); ok {
+			configured.NotifyWithOptions(title, message, options)
+		} else if _, native := sink.(NativeNotificationSink); native {
+			go sendDesktopNotification(title, message, sound)
+		} else {
+			sink.Notify(title, message)
+		}
+	}
+	if discordDelivery && discord != nil {
+		category := notificationCategoryForKey(dedupKey)
+		go func() {
+			if err := discord.Send(context.Background(), category, title, message); err != nil {
+				log.Printf("[NOTIFY] Discord delivery failed: %v", err)
+			}
+		}()
+	}
+}
+
+func notificationCategoryForKey(key string) NotificationCategory {
+	switch {
+	case key == "health":
+		return NotificationCategoryHealth
+	case key == "fatigue":
+		return NotificationCategoryFatigue
+	case strings.HasPrefix(key, "pattern:"):
+		return NotificationCategoryPattern
+	default:
+		return NotificationCategoryScript
 	}
 }
 

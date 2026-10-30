@@ -103,6 +103,30 @@ S.patterns = {'pattern1', 'pattern2'}
 return S
 ```
 
+## Source trust and isolation
+
+Managed repositories install disabled and **Restricted**. Each enabled
+Restricted source runs in its own Lua state, so its globals, library cache, and
+standard-library mutations cannot reach another source. Restricted scripts
+receive Praetor's documented automation APIs and Lua's base, table, string,
+math, and coroutine libraries. Filesystem, process, environment, and debug
+access are absent: `os`, `io`, `debug`, `package`, `dofile`, `loadfile`,
+`load`, `loadstring`, `getfenv`, `setfenv`, and `collectgarbage` are not
+available.
+
+Restricted `require("lib_name")` accepts ordinary Lua module names and searches
+only `lib_name.lua` or `lib_name/init.lua` inside that managed source. Absolute
+paths, traversal, cross-source imports, native modules, and symlink escapes are
+rejected. `print()` is retained for diagnostics, with bounded message length
+and rate limiting. Every Lua callback still has Praetor's execution deadline.
+
+A player can explicitly mark a managed source **Trusted** in Script Manager.
+Trusted sources share the legacy Lua state and full standard library, including
+`os`, `io`, `debug`, and normal `package.path` imports. Existing configured
+local directories remain Trusted for backward compatibility. Restricted code
+cannot receive a Trusted function, userdata, thread, or metatable through
+`state`; portable scalar/table data is copied across state boundaries instead.
+
 ## Pattern Matching
 
 The `match` field supports:
@@ -155,21 +179,45 @@ Per-mode state that persists across reactions within a session. Cleared on mode 
 ```lua
 state.get(key)             -- Get a value (returns nil if not set)
 state.set(key, value)      -- Set a value (string, number, boolean, or table)
-state.persist(key)         -- Mark key to survive mode switches and app restarts
+state.persist(key)         -- Preserve accumulated long-term data across restarts
+state.unpersist(key)       -- Delete a formerly persistent value (migration use)
 state.display(key, label)  -- Show this key's value in the sidebar and enable /toggle, /set
 state.mode                 -- Read-only: current mode name (string)
 ```
 
+Ordinary `state` values are private execution details and are cleared when the
+mode changes. Do not persist mode steps, arguments, preferences, or workflow
+handoff values. Put player-visible durable values in character variables and
+pass short-lived handoff values as mode arguments.
+
 ### Persistent State
 
-Keys marked with `state.persist(key)` are:
+Keys marked with `state.persist(key)` are intended for accumulated long-term
+records such as maps, observations, and lifetime statistics. They are:
 - Preserved when the mode switches (not cleared)
 - Saved to disk (debounced, every 5 seconds)
 - Loaded on next app launch
 
-Values can be any Lua type including tables. Persistent data is scoped per-username and stored at `~/.local/share/praetor/persistent_state.json`.
+Values can be any Lua type including tables. Persistent data follows the active
+character profile (Default uses the authenticated account namespace) and is
+stored at `~/.local/share/praetor/persistent_state.json`.
 
 Manage persistent data via Esc → Persistent Data (view, export as JSON, clear).
+
+### Character variables
+
+Lua can read and synchronously write the active character profile's
+player-visible variables:
+
+```lua
+variables.get(name)         -- String value, or nil when missing
+variables.set(name, value)  -- Persist a string before Lua continues
+```
+
+These are the same values shown under **Variables** and expanded by `${name}`.
+Use them for durable script inputs, preferences, and values a player may need
+to inspect or edit when resuming a workflow. Names use the same identifier
+rules as `/set-variable`; failed validation or saving raises a Lua error.
 
 ## Status
 

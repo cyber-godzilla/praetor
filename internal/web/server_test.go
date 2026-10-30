@@ -380,6 +380,26 @@ func loginRequest(t *testing.T, handler http.Handler) (*http.Cookie, string) {
 	return cookies[0], body.CSRF
 }
 
+func TestScriptManagerStateIsAvailableToAuthenticatedBrowsers(t *testing.T) {
+	_, handler := newTestServer(t)
+	cookie, _ := loginRequest(t, handler)
+	request := httptest.NewRequest(http.MethodGet, "http://praetor.test/api/v1/scripts/sources", nil)
+	request.Host = "praetor.test"
+	request.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var state appgui.ScriptManagerState
+	if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if state.SuggestedURL == "" || state.LocalDirectories == nil || state.Managed == nil {
+		t.Fatalf("script manager state = %+v", state)
+	}
+}
+
 func TestServerAuthStaticAndProtectedBoundary(t *testing.T) {
 	_, handler := newTestServer(t)
 
@@ -485,6 +505,50 @@ func TestServerRetainAppLogsSetting(t *testing.T) {
 	}
 }
 
+func TestServerDiscordNotificationSettingAndTestRoute(t *testing.T) {
+	srv, handler := newTestServer(t)
+	cookie, csrf := loginRequest(t, handler)
+
+	notifications := config.Defaults().Notifications
+	notifications.Discord = config.DiscordNotificationsConfig{
+		Enabled:    true,
+		WebhookURL: "https://discord.com/api/webhooks/123/secret-token",
+		Health:     true,
+	}
+	notifications.Desktop.HealthBelow.Delivery = config.NotificationDeliveryBoth
+	value, err := json.Marshal(notifications)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"expectedRevision":1,"value":%s}`, value)
+	req := httptest.NewRequest(http.MethodPut, "http://praetor.test/api/v1/settings/notifications", strings.NewReader(body))
+	req.Host = "praetor.test"
+	req.Header.Set("Origin", "http://praetor.test")
+	req.Header.Set("X-Praetor-CSRF", csrf)
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(cookie)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("setting status=%d body=%s", response.Code, response.Body.String())
+	}
+	if got := srv.app.GetConfig().Notifications.Discord; got != notifications.Discord {
+		t.Fatalf("Discord setting = %+v, want %+v", got, notifications.Discord)
+	}
+
+	// The dedicated test route is mutating/external and must retain the same
+	// origin and CSRF protection as settings writes. Missing CSRF is rejected
+	// before any webhook request can be attempted.
+	testReq := httptest.NewRequest(http.MethodPost, "http://praetor.test/api/v1/notifications/discord/test", nil)
+	testReq.Host = "praetor.test"
+	testReq.AddCookie(cookie)
+	testResponse := httptest.NewRecorder()
+	handler.ServeHTTP(testResponse, testReq)
+	if testResponse.Code != http.StatusForbidden {
+		t.Fatalf("unprotected Discord test status=%d body=%s", testResponse.Code, testResponse.Body.String())
+	}
+}
+
 func TestServerMobileWebSettings(t *testing.T) {
 	tests := []struct {
 		operation string
@@ -535,6 +599,11 @@ func TestServerMobileWebSettings(t *testing.T) {
 			matches: func(cfg *config.Config) bool {
 				return len(cfg.CharacterProfiles.Profiles) == 2 && cfg.CharacterProfiles.Profiles[1].Account == "PlayerOne"
 			},
+		},
+		{
+			operation: "character-profile-auto-switch",
+			value:     false,
+			matches:   func(cfg *config.Config) bool { return !cfg.CharacterProfiles.AutoSwitch },
 		},
 	}
 

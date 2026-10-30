@@ -38,6 +38,32 @@ func NewPersistentStore(dataDir, username string) *PersistentStore {
 	}
 }
 
+// DeletePersistentNamespace removes one owner from the shared state file while
+// preserving all others. Missing files and namespaces are already clean.
+func DeletePersistentNamespace(dataDir, namespace string) error {
+	filePath := filepath.Join(dataDir, persistentFileName)
+	raw, err := os.ReadFile(filePath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("reading persistent state: %w", err)
+	}
+	var allUsers map[string]map[string]interface{}
+	if err := json.Unmarshal(raw, &allUsers); err != nil {
+		return fmt.Errorf("parsing persistent state: %w", err)
+	}
+	if _, exists := allUsers[namespace]; !exists {
+		return nil
+	}
+	delete(allUsers, namespace)
+	out, err := json.MarshalIndent(allUsers, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling persistent state: %w", err)
+	}
+	return atomicfile.Write(filePath, out, 0644)
+}
+
 // SetSnapshotFunc sets the function called to get the current persistent state snapshot.
 func (ps *PersistentStore) SetSnapshotFunc(fn func() map[string]interface{}) {
 	ps.mu.Lock()

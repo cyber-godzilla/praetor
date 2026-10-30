@@ -1,10 +1,12 @@
 package gui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/cyber-godzilla/praetor/internal/client"
 	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"github.com/cyber-godzilla/praetor/internal/config"
 )
@@ -253,7 +255,10 @@ func (a *GuiApp) SetDisplayMode(mode string) error {
 // SetGUISidebarsVisible persists the GUI/web global sidebar toggle without
 // rewriting the TUI's independent sidebar/topbar preference.
 func (a *GuiApp) SetGUISidebarsVisible(visible bool) error {
-	return a.withConfig(func() { a.cfg().DefaultDisplayProfile().SidebarsVisible = visible })
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	a.cfg().DisplayProfileForCharacter(a.ActiveCharacterProfileID()).SidebarsVisible = visible
+	return a.save()
 }
 
 // SetNumpadNavigation persists the numpad-navigation mode (numlock/always/off).
@@ -340,15 +345,22 @@ func (a *GuiApp) SetCompassScale(scale float64) error {
 
 // SetHighlights replaces the highlight rules.
 func (a *GuiApp) SetHighlights(highlights []config.HighlightConfig) error {
-	validStyles := map[string]bool{"red": true, "gold": true, "green": true, "blue": true}
-	for _, highlight := range highlights {
-		if !validStyles[highlight.Style] {
+	normalized := make([]config.HighlightConfig, len(highlights))
+	for i, highlight := range highlights {
+		highlight.Pattern = strings.TrimSpace(highlight.Pattern)
+		if highlight.Pattern == "" {
+			return fmt.Errorf("highlight patterns must not be empty")
+		}
+		style, ok := colorwords.LookupStyle(highlight.Style)
+		if !ok {
 			return fmt.Errorf("invalid highlight style %q", highlight.Style)
 		}
+		highlight.Style = style.Name
+		normalized[i] = highlight
 	}
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	a.cfg().Highlights = highlights
+	a.activeCharacterProfileLocked().Highlights = normalized
 	return a.save()
 }
 
@@ -424,6 +436,13 @@ func (a *GuiApp) SetCustomTabs(tabs []config.CustomTabConfig) error {
 // its Custom View definitions. Editors stage both together so a placement can
 // never refer to a view that was only half-created or already deleted.
 func (a *GuiApp) SetViewLayout(layout config.DisplayProfileConfig, custom []config.CustomTabConfig) error {
+	return a.SetProfileViewLayout(a.ActiveCharacterProfileID(), layout, custom)
+}
+
+// SetProfileViewLayout updates any character-owned view collection from the
+// global View Library. SetViewLayout remains the active-character convenience
+// binding used by the Layout editor.
+func (a *GuiApp) SetProfileViewLayout(profileID string, layout config.DisplayProfileConfig, custom []config.CustomTabConfig) error {
 	seenNames := make(map[string]bool, len(custom))
 	for _, view := range custom {
 		name := strings.TrimSpace(view.Name)
@@ -439,10 +458,15 @@ func (a *GuiApp) SetViewLayout(layout config.DisplayProfileConfig, custom []conf
 	custom = config.NormalizeCustomViewIDs(custom)
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	a.activeCharacterProfileLocked().CustomViews = custom
-	current := a.cfg().DefaultDisplayProfile()
+	profile := a.cfg().CharacterProfileByID(profileID)
+	current := a.cfg().DisplayProfileForCharacter(profileID)
+	if profile == nil || current == nil {
+		return fmt.Errorf("character profile %q does not exist", profileID)
+	}
+	profile.CustomViews = custom
 	layout.ID = current.ID
 	layout.Name = current.Name
+	layout.CharacterProfileID = current.CharacterProfileID
 	*current = layout
 	if err := a.cfg().Validate(); err != nil {
 		return err
@@ -453,22 +477,33 @@ func (a *GuiApp) SetViewLayout(layout config.DisplayProfileConfig, custom []conf
 // SetActionSets replaces the sidebar quick-action sets.
 func (a *GuiApp) SetActionSets(sets []config.ActionSet) error {
 	sets = config.NormalizeActionSetIDs(sets)
+	if sets == nil {
+		sets = []config.ActionSet{}
+	}
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
 	profile := a.activeCharacterProfileLocked()
+	profile.ActionSetsMode = config.CharacterSettingCustomize
+	// Action Set UUIDs make selection and membership stable; they do not make
+	// the mutable definition global. A character that starts by copying an
+	// inherited set may retain its ID, but editing that character must never
+	// rewrite another profile's copy.
 	profile.ActionSets = sets
-	found := false
-	for _, set := range sets {
-		if set.ID == profile.SelectedActionSetID {
-			found = true
-			break
+	for profileIndex := range a.cfg().CharacterProfiles.Profiles {
+		candidate := &a.cfg().CharacterProfiles.Profiles[profileIndex]
+		resolved := a.cfg().ResolvedActionSets(candidate.ID)
+		found := false
+		for _, set := range resolved {
+			if set.ID == candidate.SelectedActionSetID {
+				found = true
+				break
+			}
 		}
-	}
-	if !found {
-		if len(sets) > 0 {
-			profile.SelectedActionSetID = sets[0].ID
-		} else {
-			profile.SelectedActionSetID = ""
+		if !found {
+			candidate.SelectedActionSetID = ""
+			if len(resolved) > 0 {
+				candidate.SelectedActionSetID = resolved[0].ID
+			}
 		}
 	}
 	return a.save()
@@ -480,7 +515,7 @@ func (a *GuiApp) SetSelectedActionSetID(id string) error {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
 	profile := a.activeCharacterProfileLocked()
-	for _, set := range profile.ActionSets {
+	for _, set := range a.cfg().ResolvedActionSets(profile.ID) {
 		if set.ID == id {
 			profile.SelectedActionSetID = id
 			return a.save()
@@ -493,7 +528,32 @@ func (a *GuiApp) SetSelectedActionSetID(id string) error {
 func (a *GuiApp) SetQuickCycleModes(modes []string) error {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	a.cfg().UI.QuickCycleModes = modes
+	profile := a.activeCharacterProfileLocked()
+	if profile.ID == a.cfg().CharacterProfiles.DefaultID {
+		a.cfg().UI.QuickCycleModes = append([]string(nil), modes...)
+	} else {
+		profile.QuickCycleMode = config.CharacterSettingCustomize
+		profile.QuickCycleModes = append([]string{}, modes...)
+	}
+	return a.save()
+}
+
+// SetQuickCycleInheritance switches the active character between live Default
+// values and a character-owned list. Customizing begins with the effective
+// list so the transition is lossless.
+func (a *GuiApp) SetQuickCycleInheritance(inherit bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	profile := a.activeCharacterProfileLocked()
+	if profile.ID == a.cfg().CharacterProfiles.DefaultID {
+		return fmt.Errorf("the Default profile cannot inherit quick-cycle modes")
+	}
+	if inherit {
+		profile.QuickCycleMode = config.CharacterSettingInherit
+	} else {
+		profile.QuickCycleModes = a.cfg().ResolvedQuickCycleModes(profile.ID)
+		profile.QuickCycleMode = config.CharacterSettingCustomize
+	}
 	return a.save()
 }
 
@@ -502,14 +562,99 @@ func (a *GuiApp) SetQuickCycleModes(modes []string) error {
 func (a *GuiApp) SetHighPriority(cmds []string) error {
 	a.configMu.Lock()
 	defer a.configMu.Unlock()
-	old := append([]string(nil), a.cfg().Commands.HighPriority...)
-	a.cfg().Commands.HighPriority = cmds
+	profile := a.activeCharacterProfileLocked()
+	old := a.cfg().ResolvedHighPriority(profile.ID)
+	if profile.ID == a.cfg().CharacterProfiles.DefaultID {
+		a.cfg().Commands.HighPriority = append([]string(nil), cmds...)
+	} else {
+		profile.PriorityCommandsMode = config.CharacterSettingCustomize
+		profile.HighPriority = append([]string{}, cmds...)
+	}
 	a.client().Engine.SetHighPriority(cmds)
 	if err := a.save(); err != nil {
 		a.client().Engine.SetHighPriority(old)
 		return err
 	}
 	return nil
+}
+
+// SetHighPriorityInheritance changes whether the active character follows the
+// Default priority-command list.
+func (a *GuiApp) SetHighPriorityInheritance(inherit bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	profile := a.activeCharacterProfileLocked()
+	if profile.ID == a.cfg().CharacterProfiles.DefaultID {
+		return fmt.Errorf("the Default profile cannot inherit priority commands")
+	}
+	old := a.cfg().ResolvedHighPriority(profile.ID)
+	if inherit {
+		profile.PriorityCommandsMode = config.CharacterSettingInherit
+	} else {
+		profile.HighPriority = a.cfg().ResolvedHighPriority(profile.ID)
+		profile.PriorityCommandsMode = config.CharacterSettingCustomize
+	}
+	resolved := a.cfg().ResolvedHighPriority(profile.ID)
+	a.client().Engine.SetHighPriority(resolved)
+	if err := a.save(); err != nil {
+		a.client().Engine.SetHighPriority(old)
+		return err
+	}
+	return nil
+}
+
+// SetActionSetInheritance changes whether the active character follows the
+// Default Action Set collection.
+func (a *GuiApp) SetActionSetInheritance(inherit bool) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	profile := a.activeCharacterProfileLocked()
+	if profile.ID == a.cfg().CharacterProfiles.DefaultID {
+		return fmt.Errorf("the Default profile cannot inherit Action Sets")
+	}
+	if inherit {
+		profile.ActionSetsMode = config.CharacterSettingInherit
+	} else {
+		profile.ActionSets = a.cfg().ResolvedActionSets(profile.ID)
+		profile.ActionSetsMode = config.CharacterSettingCustomize
+	}
+	profile.SelectedActionSetID = ""
+	resolved := a.cfg().ResolvedActionSets(profile.ID)
+	if len(resolved) > 0 {
+		profile.SelectedActionSetID = resolved[0].ID
+	}
+	return a.save()
+}
+
+// DeleteActionSetEverywhere removes every profile copy with the stable Action
+// Set ID. Ordinary removal in SetActionSets affects only the active profile.
+func (a *GuiApp) DeleteActionSetEverywhere(id string) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	found := false
+	for profileIndex := range a.cfg().CharacterProfiles.Profiles {
+		profile := &a.cfg().CharacterProfiles.Profiles[profileIndex]
+		kept := profile.ActionSets[:0]
+		for _, set := range profile.ActionSets {
+			if set.ID == id {
+				found = true
+				continue
+			}
+			kept = append(kept, set)
+		}
+		profile.ActionSets = kept
+		if profile.SelectedActionSetID == id {
+			profile.SelectedActionSetID = ""
+			resolved := a.cfg().ResolvedActionSets(profile.ID)
+			if len(resolved) > 0 {
+				profile.SelectedActionSetID = resolved[0].ID
+			}
+		}
+	}
+	if !found {
+		return fmt.Errorf("unknown Action Set ID %q", id)
+	}
+	return a.save()
 }
 
 // SetInputVariables replaces the name/value map used for ${name} and
@@ -525,16 +670,39 @@ func (a *GuiApp) SetInputVariables(variables map[string]string) error {
 	for name, value := range variables {
 		cloned[name] = value
 	}
+	var resolved map[string]string
 	return a.withConfigApplied(
-		func() { a.activeCharacterProfileLocked().Variables = cloned },
 		func() {
-			a.client().SetInputVariables(cloned)
+			profile := a.activeCharacterProfileLocked()
+			profile.Variables = cloned
+			resolved = a.cfg().ResolvedVariables(profile.ID)
+		},
+		func() {
+			a.client().SetInputVariables(resolved)
 			if a.deps.DesktopNotify != nil {
-				a.deps.DesktopNotify.SetVariables(cloned)
+				a.deps.DesktopNotify.SetVariables(resolved)
 			}
-			a.inputVariables.Store(cloneStringMap(cloned))
+			a.inputVariables.Store(cloneStringMap(resolved))
 		},
 	)
+}
+
+// persistResolvedInputVariables stores the client's full effective snapshot
+// (used by /set-variable and PraetorScript directives) as the active
+// character's independent variable list.
+func (a *GuiApp) persistResolvedInputVariables(variables map[string]string) error {
+	a.configMu.Lock()
+	defer a.configMu.Unlock()
+	profile := a.activeCharacterProfileLocked()
+	profile.Variables = cloneStringMap(variables)
+	if err := a.save(); err != nil {
+		return err
+	}
+	if a.deps.DesktopNotify != nil {
+		a.deps.DesktopNotify.SetVariables(variables)
+	}
+	a.inputVariables.Store(cloneStringMap(variables))
+	return nil
 }
 
 // SetIgnoreOOC replaces the OOC ignorelist and applies it live.
@@ -565,45 +733,103 @@ func (a *GuiApp) SetIgnoreThink(names []string) error {
 	return nil
 }
 
-// SetNotifications replaces desktop notification settings and applies them.
-func (a *GuiApp) SetNotifications(cfg config.DesktopNotificationsConfig) error {
-	if cfg.HealthBelow.Threshold < 0 || cfg.HealthBelow.Threshold > 100 ||
-		cfg.FatigueBelow.Threshold < 0 || cfg.FatigueBelow.Threshold > 100 {
+// SetNotifications replaces all notification destinations atomically and
+// applies them live.
+func (a *GuiApp) SetNotifications(cfg config.NotificationsConfig) error {
+	if cfg.Desktop.HealthBelow.Threshold < 0 || cfg.Desktop.HealthBelow.Threshold > 100 ||
+		cfg.Desktop.FatigueBelow.Threshold < 0 || cfg.Desktop.FatigueBelow.Threshold > 100 {
 		return fmt.Errorf("notification thresholds must be between 0 and 100")
 	}
-	if err := a.withConfig(func() {
-		a.cfg().Notifications.Desktop = cfg
-	}); err != nil {
-		return err
+	cfg.Discord.WebhookURL = strings.TrimSpace(cfg.Discord.WebhookURL)
+	if cfg.Discord.Enabled && cfg.Discord.WebhookURL == "" {
+		return fmt.Errorf("a Discord webhook URL is required when Discord notifications are enabled")
 	}
-	a.client().SetScriptNotificationPreferences(cfg.AllowScriptNotifications, cfg.Sound)
+	if cfg.Discord.WebhookURL != "" {
+		if err := client.ValidateDiscordWebhookURL(cfg.Discord.WebhookURL); err != nil {
+			return err
+		}
+	}
+	cfg.Normalize()
+	return a.withConfigApplied(
+		func() { a.cfg().Notifications = cfg },
+		func() {
+			if a.deps.Client != nil {
+				a.client().SetScriptNotificationPreferences(cfg.Desktop.AllowScriptNotifications, cfg.Desktop.ScriptSound)
+			}
+			if a.deps.DesktopNotify != nil {
+				a.deps.DesktopNotify.UpdateConfig(cfg.Desktop)
+			}
+			a.applyDiscordNotifications(cfg.Discord)
+		},
+	)
+}
+
+// SetWindowFocused updates focus-aware native notification rules. Web clients
+// make this decision per browser from the options carried on each event.
+func (a *GuiApp) SetWindowFocused(focused bool) {
 	if a.deps.DesktopNotify != nil {
-		a.deps.DesktopNotify.UpdateConfig(cfg)
+		a.deps.DesktopNotify.SetFocused(focused)
 	}
-	return nil
+}
+
+func (a *GuiApp) applyDiscordNotifications(cfg config.DiscordNotificationsConfig) {
+	if a.deps.DiscordNotify == nil {
+		a.deps.DiscordNotify = client.NewDiscordNotifier(cfg)
+		if a.deps.DesktopNotify != nil {
+			a.deps.DesktopNotify.SetDiscordNotifier(a.deps.DiscordNotify)
+		}
+		if a.deps.Client != nil {
+			a.deps.Client.SetDiscordNotifier(a.deps.DiscordNotify)
+		}
+		return
+	}
+	a.deps.DiscordNotify.UpdateConfig(cfg)
+}
+
+// TestDiscordNotification performs a bounded synchronous delivery so the UI
+// can report success or failure directly to the player.
+func (a *GuiApp) TestDiscordNotification() error {
+	if a.deps.DiscordNotify == nil {
+		return fmt.Errorf("Discord notifications are not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	return a.deps.DiscordNotify.SendTest(ctx)
 }
 
 // SetScriptDirs replaces the Lua script directories and reloads modes from the
 // new locations.
 func (a *GuiApp) SetScriptDirs(dirs []string) error {
 	a.configMu.Lock()
-	defer a.configMu.Unlock()
 	expanded := make([]string, 0, len(dirs))
 	for _, d := range dirs {
 		expanded = append(expanded, expandPath(d))
 	}
 	oldDirs := append([]string(nil), a.cfg().Scripts...)
 	oldExpanded := append([]string(nil), a.deps.ScriptDirs...)
-	if err := a.client().Engine.UpdateScriptDirs(expanded); err != nil {
-		return err
-	}
+	oldRuntime := a.client().Engine.ScriptSources()
 	a.cfg().Scripts = append([]string(nil), dirs...)
 	a.deps.ScriptDirs = expanded
+	nextRuntime := a.scriptGraphSourcesLocked()
+	a.configMu.Unlock()
+
+	// Mode files execute while they load and may persist a variable through the
+	// GUI callback. Keep configuration unlocked during that execution.
+	if err := a.client().Engine.UpdateScriptSources(nextRuntime); err != nil {
+		a.configMu.Lock()
+		a.cfg().Scripts = oldDirs
+		a.deps.ScriptDirs = oldExpanded
+		a.configMu.Unlock()
+		return err
+	}
+	a.configMu.Lock()
 	if err := a.save(); err != nil {
 		a.cfg().Scripts = oldDirs
 		a.deps.ScriptDirs = oldExpanded
-		_ = a.client().Engine.UpdateScriptDirs(oldExpanded)
+		a.configMu.Unlock()
+		_ = a.client().Engine.UpdateScriptSources(oldRuntime)
 		return err
 	}
+	a.configMu.Unlock()
 	return nil
 }

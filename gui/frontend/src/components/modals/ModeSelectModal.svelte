@@ -35,7 +35,7 @@
   }
 </script>
 
-<Modal title="Switch Mode" wide>
+<Modal title="Switch Mode" wide back>
   {#if (store.modeNames ?? []).length === 0}
     <p class="dim empty">No Lua modes loaded. Add script directories in the menu, then reload scripts.</p>
   {/if}

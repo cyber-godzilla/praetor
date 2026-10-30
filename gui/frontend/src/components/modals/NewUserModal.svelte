@@ -21,7 +21,7 @@
   ];
 </script>
 
-<Modal title="Welcome to Praetor">
+<Modal title="Welcome to Praetor" back>
   <p class="intro">
     These wiki pages will help you get oriented. Nothing opens automatically;
     choose any page you would like to read.

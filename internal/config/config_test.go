@@ -22,7 +22,7 @@ func TestDefaults_AppLoggingIsInfoAndRetentionOff(t *testing.T) {
 
 func TestValidate_DropsEmptyHighlightPattern(t *testing.T) {
 	c := Defaults()
-	c.Highlights = []HighlightConfig{
+	c.DefaultCharacterProfile().Highlights = []HighlightConfig{
 		{Pattern: "gold", Style: "gold", Active: true},
 		{Pattern: "", Style: "red", Active: true},
 		{Pattern: "   ", Style: "blue", Active: true},
@@ -30,8 +30,9 @@ func TestValidate_DropsEmptyHighlightPattern(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatalf("Validate: %v", err)
 	}
-	if len(c.Highlights) != 1 || c.Highlights[0].Pattern != "gold" {
-		t.Fatalf("empty-pattern highlights not dropped: %+v", c.Highlights)
+	highlights := c.DefaultCharacterProfile().Highlights
+	if len(highlights) != 1 || highlights[0].Pattern != "gold" {
+		t.Fatalf("empty-pattern highlights not dropped: %+v", highlights)
 	}
 }
 
@@ -91,6 +92,26 @@ func TestSave_IsAtomic_NoLeftoverTempAndPreservesPerms(t *testing.T) {
 		if e.Name() != "config.yaml" {
 			t.Errorf("unexpected leftover file after Save: %q", e.Name())
 		}
+	}
+}
+
+func TestSave_DiscordWebhookRestrictsConfigPermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("ui: {}\n"), 0o644); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	cfg := Defaults()
+	cfg.Notifications.Discord.WebhookURL = "https://discord.com/api/webhooks/123/secret"
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("config permissions with webhook = %o, want 600", got)
 	}
 }
 
@@ -494,20 +515,42 @@ func TestValidateMobileOutputFontSizeRange(t *testing.T) {
 
 func TestValidate_HighlightStyle(t *testing.T) {
 	cfg := Defaults()
-	cfg.Highlights = []HighlightConfig{
+	cfg.DefaultCharacterProfile().Highlights = []HighlightConfig{
 		{Pattern: "test", Style: "invalid", Active: true},
-		{Pattern: "ok", Style: "red", Active: true},
+		{Pattern: "ok", Style: "cinnabar", Active: true},
 	}
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
 
-	if cfg.Highlights[0].Style != "gold" {
-		t.Errorf("invalid style should be corrected to 'gold', got %q", cfg.Highlights[0].Style)
+	highlights := cfg.DefaultCharacterProfile().Highlights
+	if highlights[0].Style != "gold" {
+		t.Errorf("invalid style should be corrected to 'gold', got %q", highlights[0].Style)
 	}
-	if cfg.Highlights[1].Style != "red" {
-		t.Errorf("valid style should be unchanged, got %q", cfg.Highlights[1].Style)
+	if highlights[1].Style != "cinnabar" {
+		t.Errorf("valid Colorword style should be unchanged, got %q", highlights[1].Style)
+	}
+}
+
+func TestValidateMigratesGlobalHighlightsIntoCharacterProfiles(t *testing.T) {
+	cfg := Defaults()
+	cfg.Highlights = []HighlightConfig{{Pattern: "legacy loot", Style: "red", Active: true}}
+	cfg.DefaultCharacterProfile().Highlights = nil
+	cfg.CharacterProfiles.Profiles = append(cfg.CharacterProfiles.Profiles, CharacterProfileConfig{
+		ID: "2a764b7a-4145-44d9-9574-3bc2f0fe29cd", Name: "Marcus", Account: "one", CharacterNumber: 1,
+	})
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if cfg.Highlights != nil {
+		t.Fatalf("legacy top-level highlights were not cleared: %+v", cfg.Highlights)
+	}
+	for _, profile := range cfg.CharacterProfiles.Profiles {
+		if len(profile.Highlights) != 1 || profile.Highlights[0].Pattern != "legacy loot" {
+			t.Fatalf("profile %q highlights = %+v", profile.Name, profile.Highlights)
+		}
 	}
 }
 
@@ -563,6 +606,22 @@ func TestValidate_NotificationThresholds(t *testing.T) {
 	}
 }
 
+func TestValidateMigratesNotificationDeliveryIntoEachRule(t *testing.T) {
+	cfg := Defaults()
+	cfg.Notifications.Desktop.Sound = true
+	cfg.Notifications.Discord.Health = true
+	cfg.Notifications.Desktop.HealthBelow.When = ""
+	cfg.Notifications.Desktop.HealthBelow.Delivery = ""
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	rule := cfg.Notifications.Desktop.HealthBelow
+	if rule.When != NotificationWhenAlways || rule.Delivery != NotificationDeliveryBoth || !rule.Sound {
+		t.Fatalf("migrated health rule = %+v", rule)
+	}
+}
+
 func TestDefaults_NotificationSoundIsOptIn(t *testing.T) {
 	if Defaults().Notifications.Desktop.Sound {
 		t.Fatal("notification sound should default off")
@@ -572,6 +631,16 @@ func TestDefaults_NotificationSoundIsOptIn(t *testing.T) {
 func TestDefaults_ScriptNotificationsAreOptIn(t *testing.T) {
 	if Defaults().Notifications.Desktop.AllowScriptNotifications {
 		t.Fatal("script notifications should default off")
+	}
+}
+
+func TestDefaults_DiscordNotificationsAreOptIn(t *testing.T) {
+	cfg := Defaults().Notifications.Discord
+	if cfg.Enabled || cfg.Health || cfg.Fatigue || cfg.Patterns || cfg.Scripts {
+		t.Fatalf("Discord notifications should default off: %+v", cfg)
+	}
+	if cfg.WebhookURL != "" {
+		t.Fatal("Discord webhook should default empty")
 	}
 }
 

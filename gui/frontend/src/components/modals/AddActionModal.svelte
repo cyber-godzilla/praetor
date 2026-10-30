@@ -13,7 +13,7 @@
     if (!valid || saving) return; // guard invalid input and double-submit
     saving = true;
     // Deep-clone so we don't mutate the reactive store objects before persisting.
-    const sets: ActionSet[] = (store.characterProfile()?.ActionSets ?? []).map((s) => ({
+    const sets: ActionSet[] = store.resolvedActionSets().map((s) => ({
       ID: s.ID,
       Name: s.Name,
       Buttons: (s.Buttons ?? []).map((b) => ({ ...b })),

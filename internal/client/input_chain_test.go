@@ -591,6 +591,132 @@ func TestClient_SendInput_WaitForCancelStopsWholeChain(t *testing.T) {
 	}
 }
 
+func TestClient_SendInput_WaitForLiveValueChecksCurrentAndFutureSkoot(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(0)
+
+	c.processLine("SKOOT 8 Health,80")
+	if err := c.SendInput(`$(wait-for my.health >= 75);;already`); err != nil {
+		t.Fatalf("SendInput(current): %v", err)
+	}
+	receiveCommand(t, received, "already")
+
+	if err := c.SendInput(`$(wait-for my.health >= 90);;later`); err != nil {
+		t.Fatalf("SendInput(future): %v", err)
+	}
+	receiveNoCommand(t, received, 100*time.Millisecond)
+	c.processLine("SKOOT 8 Health,95")
+	receiveCommand(t, received, "later")
+}
+
+func TestClient_SendInput_LiveCancelConditionStopsChain(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.processLine("SKOOT 8 Health,80")
+
+	if err := c.SendInput(`$(wait-for "safe" cancel-on my.health <= 25);;stale`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	c.processLine("SKOOT 8 Health,20")
+	receiveNoCommand(t, received, 100*time.Millisecond)
+	if c.InputChainActive() {
+		t.Fatal("InputChainActive = true after live cancellation condition")
+	}
+}
+
+func TestClient_SendInput_RepeatUntilLiveValueSendsOnceThenCompletes(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(0)
+	c.SetUnbusyDelay(0)
+	c.processLine("SKOOT 8 Fatigue,10")
+
+	if err := c.SendInput(`$(repeat "rest" until my.fatigue <= 20);;look`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "rest")
+	receiveCommand(t, received, "look")
+	waitForInputChainInactive(t, c)
+}
+
+func TestClient_SendInput_LiveInterpolationResolvesWhenStepExecutes(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(0)
+	c.processLine("SKOOT 8 Health,40")
+
+	if err := c.SendInput(`$(wait-for "go");;say health ${my.health}`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	c.processLine("SKOOT 8 Health,70")
+	c.processLine("go")
+	receiveCommand(t, received, "say health 70")
+}
+
+func TestClient_SendInput_DirectCommandExpandsLiveValue(t *testing.T) {
+	srv, wsURL, received := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.processLine("SKOOT 8 Health,63")
+
+	if err := c.SendInput(`say health ${my.health}`); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	receiveCommand(t, received, "say health 63")
+}
+
+func TestClient_SendInput_LiveInterpolationUpdatesVariablesAndNotification(t *testing.T) {
+	srv, wsURL, _ := newRecordingServer(t)
+	defer srv.Close()
+	c := newDiscTestClient(t)
+	connectTestSession(t, c, wsURL)
+	c.SetSemicolonDelay(time.Millisecond)
+	c.desktopNotify = nil
+	c.SetInputVariables(map[string]string{"total": "10"})
+	c.processLine("SKOOT 8 Health,40")
+
+	input := `$(wait-for "go");;$(set-var snapshot ${my.health});;$(add-var total ${my.health});;$(notify "Vitals" "Health ${my.health}")`
+	if err := c.SendInput(input); err != nil {
+		t.Fatalf("SendInput: %v", err)
+	}
+	c.processLine("SKOOT 8 Health,7")
+	c.processLine("go")
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		values := c.inputVariableSnapshot()
+		if values["snapshot"] == "7" && values["total"] == "17" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("variables = %#v, want snapshot=7 and total=17", values)
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	for {
+		select {
+		case event := <-c.Events():
+			notification, ok := event.(types.NotificationEvent)
+			if ok && notification.Title == "Vitals" && notification.Message == "Health 7" {
+				return
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("did not receive the late-bound Vitals notification")
+		}
+	}
+}
+
 func TestClient_SendInput_OneLineCanCompleteMultipleWaitForReactions(t *testing.T) {
 	srv, wsURL, received := newRecordingServer(t)
 	defer srv.Close()

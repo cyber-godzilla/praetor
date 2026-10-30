@@ -51,6 +51,15 @@ type GameTextEvent struct {
 
 func (GameTextEvent) eventMarker() {}
 
+// GameCommandSentEvent reports a non-local command after the session accepted
+// it for delivery. Shells use it for side effects that must follow the actual
+// expanded PraetorScript command rather than the original submitted expression.
+type GameCommandSentEvent struct {
+	Command string
+}
+
+func (GameCommandSentEvent) eventMarker() {}
+
 // IgnoreChannel mirrors internal/client.IgnoreChannel. It is declared
 // here so internal/types does not import internal/client (which would
 // be a cycle — client already imports types).

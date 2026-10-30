@@ -2,10 +2,12 @@ package ui
 
 import (
 	"sort"
+	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/cyber-godzilla/praetor/internal/colorwords"
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/textutil"
 	"github.com/cyber-godzilla/praetor/internal/types"
@@ -13,15 +15,25 @@ import (
 	"github.com/cyber-godzilla/praetor/internal/wildcard"
 )
 
-// Highlight style definitions: red, gold, green, blue.
-var highlightStyles = map[string]lipgloss.Style{
-	"red":   lipgloss.NewStyle().Background(lipgloss.Color("#cc0000")).Foreground(lipgloss.Color("#ffffff")),
-	"gold":  lipgloss.NewStyle().Background(lipgloss.Color("#cc9900")).Foreground(lipgloss.Color("#000000")),
-	"green": lipgloss.NewStyle().Background(lipgloss.Color("#00aa00")).Foreground(lipgloss.Color("#000000")),
-	"blue":  lipgloss.NewStyle().Background(lipgloss.Color("#0055cc")).Foreground(lipgloss.Color("#ffffff")),
-}
-
 var styleNames = []string{"red", "gold", "green", "blue"}
+
+func highlightStyle(name string) lipgloss.Style {
+	option, ok := colorwords.LookupStyle(name)
+	if !ok || len(option.Colors) == 0 {
+		option, _ = colorwords.LookupStyle("gold")
+	}
+	background := option.Colors[0]
+	foreground := "#000000"
+	if len(background) == 7 && background[0] == '#' {
+		if value, err := strconv.ParseUint(background[1:], 16, 24); err == nil {
+			red, green, blue := float64((value>>16)&255), float64((value>>8)&255), float64(value&255)
+			if (0.2126*red+0.7152*green+0.0722*blue)/255 < 0.46 {
+				foreground = "#ffffff"
+			}
+		}
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color(background)).Foreground(lipgloss.Color(foreground))
+}
 
 // MenuHighlightsMsg signals the menu to open the highlights manager.
 type MenuHighlightsMsg struct{}
@@ -221,10 +233,7 @@ func (hm HighlightsManager) View() string {
 			if h.Active {
 				check = lipgloss.NewStyle().Foreground(colorGreen).Render("● ")
 			}
-			style, ok := highlightStyles[h.Style]
-			if !ok {
-				style = highlightStyles["gold"]
-			}
+			style := highlightStyle(h.Style)
 			preview := style.Render(" " + h.Style + " ")
 			patternStyle := lipgloss.NewStyle().Foreground(colorDim)
 			cursor := "    "

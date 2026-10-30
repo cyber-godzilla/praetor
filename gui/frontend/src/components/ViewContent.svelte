@@ -23,7 +23,7 @@
 {:else if view?.kind === "vitals"}
   <VitalsView {compact} />
 {:else if view?.kind === "actions"}
-  <div class="workspace" class:compact><ActionsTab /></div>
+  <div class="workspace" class:compact><ActionsTab {compact} /></div>
 {:else if view?.kind === "modes"}
   <div class="workspace" class:compact><ModesTab /></div>
 {:else if view?.kind === "variables"}

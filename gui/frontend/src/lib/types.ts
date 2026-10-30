@@ -89,6 +89,8 @@ export interface ConnPayload {
 export interface NotifyPayload {
   title: string;
   message: string;
+  sound?: boolean;
+  onlyWhenUnfocused?: boolean;
 }
 
 export interface ErrorPayload {
@@ -192,6 +194,7 @@ export interface DisplaySidebarConfig {
   ID: string;
   Name: string;
   Enabled: boolean;
+  Collapsed?: boolean;
   Side: "left" | "right";
   Width: number;
   Components: DisplayComponentConfig[];
@@ -200,8 +203,10 @@ export interface DisplaySidebarConfig {
 export interface DisplayProfileConfig {
   ID: string;
   Name: string;
+  CharacterProfileID?: string;
   SidebarsVisible: boolean;
   Main: DisplayComponentConfig[];
+  Bench: DisplayComponentConfig[];
   Sidebars: DisplaySidebarConfig[];
 }
 
@@ -224,6 +229,9 @@ export interface ActionSet {
 export interface ThresholdConfig {
   Enabled: boolean;
   Threshold: number;
+  When?: "always" | "unfocused";
+  Sound?: boolean;
+  Delivery?: "desktop" | "discord" | "both" | "neither";
 }
 
 export interface NotifyPatternConfig {
@@ -231,14 +239,32 @@ export interface NotifyPatternConfig {
   Title: string;
   Message: string;
   Enabled: boolean;
+  When?: "always" | "unfocused";
+  Sound?: boolean;
+  Delivery?: "desktop" | "discord" | "both" | "neither";
 }
 
 export interface DesktopNotificationsConfig {
   AllowScriptNotifications: boolean;
   Sound: boolean;
+  ScriptSound?: boolean;
   HealthBelow: ThresholdConfig;
   FatigueBelow: ThresholdConfig;
   Patterns: NotifyPatternConfig[] | null;
+}
+
+export interface DiscordNotificationsConfig {
+  Enabled: boolean;
+  WebhookURL: string;
+  Health: boolean;
+  Fatigue: boolean;
+  Patterns: boolean;
+  Scripts: boolean;
+}
+
+export interface NotificationsConfig {
+  Desktop: DesktopNotificationsConfig;
+  Discord: DiscordNotificationsConfig;
 }
 
 export interface KudosQueueEntry {
@@ -256,10 +282,17 @@ export interface CharacterProfileConfig {
   Name: string;
   Account?: string;
   CharacterNumber?: number;
+  VariablesMode?: "independent";
   Variables: Record<string, string> | null;
   CustomViews: CustomTabConfig[] | null;
+  Highlights?: HighlightConfig[] | null;
+  ActionSetsMode?: "inherit" | "customize";
   ActionSets: ActionSet[] | null;
   SelectedActionSetID: string;
+  QuickCycleMode?: "inherit" | "customize";
+  QuickCycleModes?: string[] | null;
+  PriorityCommandsMode?: "inherit" | "customize";
+  HighPriority?: string[] | null;
 }
 
 export interface CharacterProfileIdentity {
@@ -271,6 +304,7 @@ export interface CharacterProfileIdentity {
 
 export interface CharacterProfilesConfig {
   DefaultID: string;
+  AutoSwitch: boolean;
   Profiles: CharacterProfileConfig[];
 }
 
@@ -314,13 +348,15 @@ export interface AppConfig {
   CharacterProfiles: CharacterProfilesConfig;
   DisplayProfiles: DisplayProfilesConfig;
   Scripts: string[] | null;
+  ManagedScripts?: ManagedScriptSourceConfig[] | null;
   UI: UIConfig;
-  Highlights: HighlightConfig[] | null;
+  /** Legacy pre-profile field; new configurations store highlights per character. */
+  Highlights?: HighlightConfig[] | null;
   WoundHighlights: WoundHighlightConfig;
   SpeechColors: SpeechColorConfig[] | null;
   Kudos: KudosConfig;
   Ignorelist: { OOC: string[] | null; Think: string[] | null };
-  Notifications: { Desktop: DesktopNotificationsConfig };
+  Notifications: NotificationsConfig;
   Logging: {
     App: { Retain: boolean };
     Session: { Enabled: boolean; Path: string };
@@ -328,6 +364,51 @@ export interface AppConfig {
   };
   Updates: { Check: boolean };
   Onboarding: { WelcomeShown: boolean };
+}
+
+export interface ManagedScriptSourceConfig {
+  ID: string;
+  Name: string;
+  URL: string;
+  Enabled: boolean;
+  Trust: "restricted" | "trusted";
+  CheckOnStartup: boolean;
+  Tracking: "tag" | "branch";
+  Ref: string;
+  InstalledCommit: string;
+  InstalledVersion?: string;
+}
+
+export interface ManagedScriptUpdateStatus {
+  available: boolean;
+  updated: boolean;
+  version: string;
+  commit: string;
+  tracking: string;
+  ref: string;
+  error?: string;
+}
+
+export interface ManagedScriptSourceView {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  trust: string;
+  checkOnStartup: boolean;
+  tracking: string;
+  ref: string;
+  installedCommit: string;
+  installedVersion: string;
+  status: ManagedScriptUpdateStatus;
+  canEnable: boolean;
+}
+
+export interface ScriptManagerState {
+  localDirectories: string[];
+  managed: ManagedScriptSourceView[];
+  suggestedURL: string;
+  suggestedInstalled: boolean;
 }
 
 // UpdateInfo mirrors internal/update.Info (json tags).

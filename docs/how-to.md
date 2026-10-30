@@ -36,12 +36,12 @@ a main tab or any UUID-addressed sidebar. To create one that captures think and
 OOC messages:
 
 1. Press **Esc** to open the menu
-2. Select **Layout**
-3. Under **Filtered text components**, enter `Think/OOC` and press **+**
-4. Drag the component into a sidebar, or unplace it and use that sidebar's
-   **Add component by ID** picker
-5. Add match rules for `thinks aloud`, `You think aloud`, and `?m OOC>`
-6. Close the editor; placement and filter changes save immediately
+2. Select **View Library**
+3. Under **Filtered text views**, enter `Think/OOC` and press **+**
+4. Add match rules for `thinks aloud`, `You think aloud`, and `?m OOC>`
+5. Close the library, select **Layout**, then drag `Think/OOC` from the
+   **Bench** into the desired sidebar
+6. Close the editor; view and placement changes save immediately
 
 Rules use case-insensitive wildcard patterns: `*` matches any characters, `?`
 matches one character, and `\*` or `\?` match literal wildcard characters.
@@ -56,7 +56,7 @@ deleted directly in the editor.
 
 ## Create a "Combat/Skills" View
 
-1. Press **Esc** → **Layout**, add a Custom View named `Combat`, and choose its location
+1. Press **Esc** → **View Library** and add a filtered text view named `Combat`
 2. Add match rules for the text you want to capture, for example:
    - `[Success:`
    - `*You hit*`
@@ -64,7 +64,7 @@ deleted directly in the editor.
    - `*damages you*`
    - `*You begin to*`
    - `*skill in*`
-3. Press **Save**
+3. Open **Layout** and drag `Combat` from the **Bench** to a main tab or sidebar
 
 Text matching any include rule will appear in both All and your Custom View.
 
@@ -148,8 +148,9 @@ right arm is badly scratched` and `Her face is completely black and blue`.
 
 The inspection severity mapping is provisional. Bleeding text, plural or
 treated wounds, unknown phrases, incomplete healer descriptions, and the
-still-unverified level-5 burn description are left unchanged. Completing the
-catalogue is tracked as a [0.6.0 release blocker](release-0.6.0.md#wound-language-catalogue-blocking).
+still-unverified level-5 burn description are left unchanged. The verified
+subset is accepted for 0.6.0; the remaining catalogue is tracked as
+[follow-up work](release-0.6.0.md#wound-language-catalogue-provisional-accepted-for-060).
 
 ---
 
@@ -211,7 +212,7 @@ Commands can be echoed back in the output window as italic text. The two sources
 
 **Custom View routing:** Exclude-only Custom Views do not receive command
 echoes by default (otherwise they would catch every echo, since exclude rules
-match everything not explicitly excluded). Use **Esc → Layout → Custom Views**
+match everything not explicitly excluded). Use **Esc → View Library**
 to toggle **Route command echoes**. The setting only affects exclude-only views;
 views with active match rules already filter echoes through those rules.
 

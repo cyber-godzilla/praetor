@@ -72,6 +72,8 @@ func TestExpand(t *testing.T) {
 		{name: "fallback cannot inject directive", in: "say ${message:$(wait 5)}", want: []Command{{Text: "say $(wait 5)"}}},
 		{name: "variable cannot inject separator", in: "say ${message}&&wave", vars: map[string]string{"message": "one&&two"}, want: []Command{{Text: "say one&&two"}, {Text: "wave", Wait: WaitUnbusy}}},
 		{name: "non recursive variables", in: "say ${message}", vars: map[string]string{"message": "${target}", "target": "Marcus"}, want: []Command{{Text: "say ${target}"}}},
+		{name: "live value remains late bound", in: "say Health: ${my.health}", want: []Command{{Text: "say Health: ${my.health}"}}},
+		{name: "live value fallback remains late bound", in: "say Health: ${my.health:unknown}", want: []Command{{Text: "say Health: ${my.health:unknown}"}}},
 		{name: "literal variable syntax", in: `say \${target}`, vars: map[string]string{"target": "Marcus"}, want: []Command{{Text: "say ${target}"}}},
 		{name: "wait directive", in: `look;;$(wait 1.25);;inventory`, want: []Command{{Text: "look"}, {Kind: KindWait, Duration: 1250 * time.Millisecond, Wait: WaitDelay}, {Text: "inventory", Wait: WaitDelay}}},
 		{name: "wait variable", in: `$(wait ${delay})`, vars: map[string]string{"delay": "0.5"}, want: []Command{{Kind: KindWait, Duration: 500 * time.Millisecond}}},
@@ -81,14 +83,21 @@ func TestExpand(t *testing.T) {
 		{name: "wait-for bounded", in: `$(wait-for "The gate opens" timeout 30)`, want: []Command{{Kind: KindWaitFor, Match: "The gate opens", Timeout: 30 * time.Second}}},
 		{name: "wait-for cancel and variable timeout", in: `$(wait-for "open" cancel-on "locked" timeout ${limit:2.5})`, want: []Command{{Kind: KindWaitFor, Match: "open", Cancel: "locked", Timeout: 2500 * time.Millisecond}}},
 		{name: "wait-for clauses accept either order", in: `$(wait-for "open" timeout 4 cancel-on "locked")`, want: []Command{{Kind: KindWaitFor, Match: "open", Cancel: "locked", Timeout: 4 * time.Second}}},
+		{name: "wait-for live condition", in: `$(wait-for my.health >= 75)`, want: []Command{{Kind: KindWaitFor, MatchCondition: &ValueCondition{Field: "health", Operator: ">=", Operand: "75"}}}},
+		{name: "wait-for live condition with saved threshold", in: `$(wait-for my.fatigue < ${target:20} timeout 30)`, want: []Command{{Kind: KindWaitFor, MatchCondition: &ValueCondition{Field: "fatigue", Operator: "<", Operand: "20"}, Timeout: 30 * time.Second}}},
+		{name: "wait-for text with live cancellation", in: `$(wait-for "safe" cancel-on my.health <= 25)`, want: []Command{{Kind: KindWaitFor, Match: "safe", CancelCondition: &ValueCondition{Field: "health", Operator: "<=", Operand: "25"}}}},
+		{name: "wait-for live condition with text cancellation", in: `$(wait-for my.health >= 75 cancel-on "poisoned")`, want: []Command{{Kind: KindWaitFor, MatchCondition: &ValueCondition{Field: "health", Operator: ">=", Operand: "75"}, Cancel: "poisoned"}}},
 		{name: "notify directive", in: `$(notify "Training complete")`, want: []Command{{Kind: KindNotify, Title: "Praetor", Text: "Training complete"}}},
 		{name: "notify titled", in: `$(notify "Training" "Complete")`, want: []Command{{Kind: KindNotify, Title: "Training", Text: "Complete"}}},
 		{name: "notify title and message expand variables", in: `$(notify "${activity:Training}" "${result:Complete}")`, want: []Command{{Kind: KindNotify, Title: "Training", Text: "Complete"}}},
 		{name: "notify directive expands fallback", in: `$(notify "Training ${result:complete}")`, want: []Command{{Kind: KindNotify, Title: "Praetor", Text: "Training complete"}}},
+		{name: "notify keeps live values late bound", in: `$(notify "Vitals" "Health ${my.health}, fatigue ${my.fatigue:unknown}")`, want: []Command{{Kind: KindNotify, Title: "Vitals", Text: "Health ${my.health}, fatigue ${my.fatigue:unknown}"}}},
 		{name: "directive names and repeat keywords ignore case", in: `$(REPEAT "climb" UNTIL "done" CANCEL-ON "failed")`, want: []Command{{Kind: KindRepeat, Text: "climb", Match: "done", Cancel: "failed"}}},
 		{name: "repeat until success", in: `$(repeat "climb ${target}" until "You reach ${target}")`, vars: map[string]string{"target": "the wall"}, want: []Command{{Kind: KindRepeat, Text: "climb the wall", Match: "You reach the wall"}}},
 		{name: "repeat arguments use fallbacks", in: `$(repeat "climb ${target:wall}" until "You reach ${success:the top}")`, want: []Command{{Kind: KindRepeat, Text: "climb wall", Match: "You reach the top"}}},
 		{name: "repeat with cancellation", in: `$(repeat "climb wall" until "You reach the top" cancel-on "You fall")`, want: []Command{{Kind: KindRepeat, Text: "climb wall", Match: "You reach the top", Cancel: "You fall"}}},
+		{name: "repeat until live condition", in: `$(repeat "rest" until my.fatigue <= 20)`, want: []Command{{Kind: KindRepeat, Text: "rest", MatchCondition: &ValueCondition{Field: "fatigue", Operator: "<=", Operand: "20"}}}},
+		{name: "repeat text until with live cancellation", in: `$(repeat "advance" until "You arrive" cancel-on my.health <= 25 max 10)`, want: []Command{{Kind: KindRepeat, Text: "advance", Match: "You arrive", CancelCondition: &ValueCondition{Field: "health", Operator: "<=", Operand: "25"}, Max: 10}}},
 		{name: "repeat bounded", in: `$(repeat "climb wall" until "You reach the top" max 10)`, want: []Command{{Kind: KindRepeat, Text: "climb wall", Match: "You reach the top", Max: 10}}},
 		{name: "repeat clauses accept either order", in: `$(repeat "climb" until "done" max ${tries:3} cancel-on "failed")`, want: []Command{{Kind: KindRepeat, Text: "climb", Match: "done", Cancel: "failed", Max: 3}}},
 		{name: "repeat exact count", in: `$(repeat "search" count 5)`, want: []Command{{Kind: KindRepeat, Text: "search", Count: 5}}},
@@ -97,9 +106,11 @@ func TestExpand(t *testing.T) {
 		{name: "repeat text keeps punctuation", in: `$(repeat "say left | right && steady" until "Result | success" cancel-on "Result;;cancel")`, want: []Command{{Kind: KindRepeat, Text: "say left | right && steady", Match: "Result | success", Cancel: "Result;;cancel"}}},
 		{name: "set variable", in: `$(set-var speaker "A man in a hooded cloak")`, want: []Command{{Kind: KindSetVariable, Variable: "speaker", Value: "A man in a hooded cloak"}}},
 		{name: "set variable expands value", in: `$(set-var speaker ${target})`, vars: map[string]string{"target": "Apula"}, want: []Command{{Kind: KindSetVariable, Variable: "speaker", Value: "Apula"}}},
+		{name: "set variable keeps live value late bound", in: `$(set-var recorded_health ${my.health})`, want: []Command{{Kind: KindSetVariable, Variable: "recorded_health", Value: "${my.health}"}}},
 		{name: "set variable empty value", in: `$(set-var speaker "")`, want: []Command{{Kind: KindSetVariable, Variable: "speaker", Value: ""}}},
 		{name: "add variable", in: `$(add-var counter 2.5)`, want: []Command{{Kind: KindAddVariable, Variable: "counter", Amount: 2.5}}},
 		{name: "add variable expands amount", in: `$(add-var counter ${amount:-3})`, want: []Command{{Kind: KindAddVariable, Variable: "counter", Amount: -3}}},
+		{name: "add variable keeps live amount late bound", in: `$(add-var counter ${my.health})`, want: []Command{{Kind: KindAddVariable, Variable: "counter", AmountTemplate: "${my.health}"}}},
 		{name: "variable directives ignore case", in: `$(SET-VAR counter 1);;$(ADD-VAR counter 2)`, want: []Command{{Kind: KindSetVariable, Variable: "counter", Value: "1"}, {Kind: KindAddVariable, Variable: "counter", Amount: 2, Wait: WaitDelay}}},
 		{name: "quoted escapes", in: `$(repeat "say \"go\"" until "He says \"go\"")`, want: []Command{{Kind: KindRepeat, Text: `say "go"`, Match: `He says "go"`}}},
 		{name: "quoted backslash escape", in: `$(notify "C:\\scripts")`, want: []Command{{Kind: KindNotify, Title: "Praetor", Text: `C:\scripts`}}},
@@ -129,6 +140,11 @@ func TestExpandRejectsInvalidDirectivesAtomically(t *testing.T) {
 		`look;;$(wait-for "ready" timeout nope)`,
 		`look;;$(wait-for "ready" cancel-on "")`,
 		`look;;$(wait-for "ready" cancel-on "${cancel}")`,
+		`look;;$(wait-for my.mana >= 10)`,
+		`look;;$(wait-for my.health = 10)`,
+		`look;;$(wait-for my.health >= nope)`,
+		`look;;$(wait-for my.health >= 10 cancel-on my.mana < 5)`,
+		`look;;$(wait-for "ready" cancel-on my.health)`,
 		`look;;$(notify "")`,
 		`look;;$(notify "" "message")`,
 		`look;;$(notify "title" "")`,
@@ -139,6 +155,9 @@ func TestExpandRejectsInvalidDirectivesAtomically(t *testing.T) {
 		`look;;$(repeat "climb" until "done" cancel-on nope)`,
 		`look;;$(repeat "climb" until "done" cancel-on "")`,
 		`look;;$(repeat "climb" until "done" cancel-on "${cancel}")`,
+		`look;;$(repeat "climb" until my.mana > 5)`,
+		`look;;$(repeat "climb" until my.health about 5)`,
+		`look;;$(repeat "climb" until my.health > many)`,
 		`look;;$(repeat "climb" until "done" max 0)`,
 		`look;;$(repeat "climb" until "done" max 1.5)`,
 		`look;;$(repeat "climb" count)`,
@@ -175,6 +194,134 @@ func TestExpandRejectsInvalidDirectivesAtomically(t *testing.T) {
 				t.Fatalf("commands = %#v, want nil on validation failure", commands)
 			}
 		})
+	}
+}
+
+func TestResolveLiveCommand(t *testing.T) {
+	commands, err := Expand(`say health ${my.health}`, nil)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	got, err := ResolveLiveCommand(commands[0], map[string]string{"my.health": "70"})
+	if err != nil {
+		t.Fatalf("ResolveLiveCommand: %v", err)
+	}
+	if got.Text != "say health 70" {
+		t.Fatalf("Text = %q, want %q", got.Text, "say health 70")
+	}
+}
+
+func TestResolveLiveCommandResolvesDirectiveFieldsAndNumericArguments(t *testing.T) {
+	values := map[string]string{
+		"my.health":      "70",
+		"my.fatigue":     "2",
+		"my.encumbrance": "3",
+		"my.satiation":   "4",
+	}
+	tests := []struct {
+		input string
+		check func(t *testing.T, command Command)
+	}{
+		{input: `$(notify "Health ${my.health}" "Fatigue ${my.fatigue}")`, check: func(t *testing.T, command Command) {
+			if command.Title != "Health 70" || command.Text != "Fatigue 2" {
+				t.Fatalf("notification = %#v", command)
+			}
+		}},
+		{input: `$(set-var snapshot ${my.health})`, check: func(t *testing.T, command Command) {
+			if command.Value != "70" {
+				t.Fatalf("set-var value = %q", command.Value)
+			}
+		}},
+		{input: `$(add-var total ${my.fatigue})`, check: func(t *testing.T, command Command) {
+			if command.Amount != 2 || command.AmountTemplate != "" {
+				t.Fatalf("add-var = %#v", command)
+			}
+		}},
+		{input: `$(wait ${my.fatigue})`, check: func(t *testing.T, command Command) {
+			if command.Duration != 2*time.Second || command.DurationTemplate != "" {
+				t.Fatalf("wait = %#v", command)
+			}
+		}},
+		{input: `$(wait-for "ready" timeout ${my.fatigue})`, check: func(t *testing.T, command Command) {
+			if command.Timeout != 2*time.Second || command.TimeoutTemplate != "" {
+				t.Fatalf("wait-for = %#v", command)
+			}
+		}},
+		{input: `$(repeat "rest ${my.health}" until "done" max ${my.encumbrance})`, check: func(t *testing.T, command Command) {
+			if command.Text != "rest 70" || command.Max != 3 || command.MaxTemplate != "" {
+				t.Fatalf("repeat max = %#v", command)
+			}
+		}},
+		{input: `$(repeat "search" count ${my.satiation})`, check: func(t *testing.T, command Command) {
+			if command.Count != 4 || command.CountTemplate != "" {
+				t.Fatalf("repeat count = %#v", command)
+			}
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			commands, err := Expand(test.input, nil)
+			if err != nil {
+				t.Fatalf("Expand: %v", err)
+			}
+			resolved, err := ResolveLiveCommand(commands[0], values)
+			if err != nil {
+				t.Fatalf("ResolveLiveCommand: %v", err)
+			}
+			test.check(t, resolved)
+		})
+	}
+}
+
+func TestResolveLiveCommandFallbackAndLiteralEscape(t *testing.T) {
+	commands, err := Expand(`say ${my.health:unknown} \${my.fatigue}`, nil)
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	resolved, err := ResolveLiveCommand(commands[0], nil)
+	if err != nil {
+		t.Fatalf("ResolveLiveCommand: %v", err)
+	}
+	if resolved.Text != `say unknown ${my.fatigue}` {
+		t.Fatalf("Text = %q", resolved.Text)
+	}
+}
+
+func TestResolveLiveCommandDoesNotRecursivelyExpandSavedVariableValue(t *testing.T) {
+	commands, err := Expand(`say ${message}`, map[string]string{"message": `${my.health}`})
+	if err != nil {
+		t.Fatalf("Expand: %v", err)
+	}
+	resolved, err := ResolveLiveCommand(commands[0], map[string]string{"my.health": "70"})
+	if err != nil {
+		t.Fatalf("ResolveLiveCommand: %v", err)
+	}
+	if resolved.Text != `say ${my.health}` {
+		t.Fatalf("Text = %q, want a literal non-recursive reference", resolved.Text)
+	}
+}
+
+func TestEvaluateValueCondition(t *testing.T) {
+	values := map[string]string{"my.health": "70", "my.fatigue": "20"}
+	for _, test := range []struct {
+		condition ValueCondition
+		want      bool
+	}{
+		{condition: ValueCondition{Field: "health", Operator: "==", Operand: "70"}, want: true},
+		{condition: ValueCondition{Field: "health", Operator: "!=", Operand: "60"}, want: true},
+		{condition: ValueCondition{Field: "fatigue", Operator: "<", Operand: "21"}, want: true},
+		{condition: ValueCondition{Field: "fatigue", Operator: "<=", Operand: "20"}, want: true},
+		{condition: ValueCondition{Field: "health", Operator: ">", Operand: "69"}, want: true},
+		{condition: ValueCondition{Field: "health", Operator: ">=", Operand: "${my.fatigue}"}, want: true},
+		{condition: ValueCondition{Field: "satiation", Operator: ">=", Operand: "1"}, want: false},
+	} {
+		got, err := EvaluateValueCondition(&test.condition, values)
+		if err != nil {
+			t.Fatalf("EvaluateValueCondition(%#v): %v", test.condition, err)
+		}
+		if got != test.want {
+			t.Errorf("EvaluateValueCondition(%#v) = %t, want %t", test.condition, got, test.want)
+		}
 	}
 }
 

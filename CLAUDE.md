@@ -142,7 +142,7 @@ The minimap renders rooms and walls to a pixel image and displays it inline usin
 - Default: `~/.config/praetor/scripts/`
 - Hot reload via Esc → Reload Scripts — clears `package.loaded` cache so lib changes take effect
 - Timer support: `set_timeout(fn, ms)`, `set_interval(fn, ms)`, `clear_timer(id)` — auto-cancel on mode switch
-- **Execution deadline:** every entry into Lua (reaction action/condition, timer callback, on_start/on_stop, delayed action) is bounded by a 2s deadline (`scriptTimeout` in `engine/lua.go`). A runaway script (`while true do end`) aborts with a logged error and the engine keeps processing — it no longer wedges the whole pipeline. **Not yet sandboxed:** the full stdlib (`os`, `io`) is still exposed; curated shims / a per-directory trust flag are a planned follow-up (`state.persist` already removes the need for `io` in normal scripts).
+- **Execution deadline and source sandbox:** every entry into Lua (reaction action/condition, timer callback, on_start/on_stop, delayed action) is bounded by a 2s deadline (`scriptTimeout` in `engine/lua.go`). Restricted managed sources run in separate Lua states with safe libraries and source-scoped `require`; Trusted managed sources and existing local directories retain the full legacy stdlib. Trust changes rebuild the runtime transactionally. Cross-state `state` reads copy portable data and reject capabilities such as functions and userdata.
 - Pattern matching in Go (substring + wildcard→regex), Lua only called on match
 - Action functions receive the matched text as first argument: `action = function(text)`
 - Mode names are resolved case-insensitively for `/mode`, `/sm`, and `set_mode` (the canonical stored name is used for `currentMode`, metrics, and events).
@@ -167,8 +167,11 @@ log(message)
 random_item(table)
 time.now() / time.since(ms)
 state.get(key) / state.set(key, val) -- per-mode state
-state.persist(key)                   -- mark key for disk persistence
+state.persist(key)                   -- long-term accumulated data only
+state.unpersist(key)                 -- delete a legacy persistent value
 state.mode
+variables.get(name)                  -- active character variable or nil
+variables.set(name, value)           -- synchronously persist character variable
 status.health / status.fatigue / status.encumbrance / status.satiation
 metrics.track(key, label)            -- declare a metric for current session
 metrics.inc(key) / metrics.dec(key)  -- increment/decrement a metric
@@ -339,6 +342,7 @@ commands:
   high_priority: []
 character_profiles:
   default_id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
+  auto_switch: true          # follow successful play/sleep commands
   profiles:
     - id: b7782d7d-5e5d-54d7-8c66-3e3c9a3b1f50
       name: Default
@@ -372,6 +376,7 @@ display_profiles:
       name: Default
       sidebars_visible: true
       main: []          # ordered {component_id} placements
+      bench: []         # ordered components not currently displayed
       sidebars: []      # UUID sidebars, each with an ordered components list
 highlights: []
 wound_highlights:
@@ -392,6 +397,13 @@ notifications:
       enabled: false
       threshold: 10
     patterns: []
+  discord:
+    enabled: false
+    webhook_url: ""
+    health: false
+    fatigue: false
+    patterns: false
+    scripts: false
 logging:
   app:
     level: info

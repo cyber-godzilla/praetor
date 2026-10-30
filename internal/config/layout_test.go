@@ -143,9 +143,83 @@ func TestValidateRepairsDisplayProfileWithoutThreeSidebarLimit(t *testing.T) {
 	if got := componentIDs(profile.Main); !equalStrings(got, []string{ComponentIDAll, ComponentIDMap}) {
 		t.Fatalf("normalized main = %v", got)
 	}
+	wantBench := []string{ComponentIDMetrics, ComponentIDDebug, ComponentIDCompass, ComponentIDVitals, ComponentIDActions, ComponentIDModes, ComponentIDVariables}
+	if got := componentIDs(profile.Bench); !equalStrings(got, wantBench) {
+		t.Fatalf("normalized bench = %v, want %v", got, wantBench)
+	}
 	customPlacement, ok := FindDisplayComponent(*profile, customID)
 	if !ok || customPlacement.SidebarHeight != 300 {
 		t.Fatalf("custom placement = %+v, %v", customPlacement, ok)
+	}
+}
+
+func TestValidatePreservesBenchOrderAndSidebarState(t *testing.T) {
+	cfg := Defaults()
+	profile := cfg.DefaultDisplayProfile()
+	profile.Bench = []DisplayComponentConfig{
+		{ComponentID: ComponentIDMap, SidebarHeight: 233, Collapsed: true},
+		{ComponentID: ComponentIDVitals, SidebarHeight: 144},
+	}
+	profile.Sidebars[0].Components = []DisplayComponentConfig{
+		{ComponentID: ComponentIDCompass},
+		{ComponentID: ComponentIDActions},
+		{ComponentID: ComponentIDModes},
+		{ComponentID: ComponentIDVariables},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	got := componentIDs(profile.Bench)
+	if len(got) < 2 || !equalStrings(got[:2], []string{ComponentIDMap, ComponentIDVitals}) {
+		t.Fatalf("bench order = %v", got)
+	}
+	if profile.Bench[0].SidebarHeight != 233 || !profile.Bench[0].Collapsed {
+		t.Fatalf("bench state = %+v", profile.Bench[0])
+	}
+}
+
+func TestValidateCreatesCharacterDisplayProfileAndRemapsCustomViews(t *testing.T) {
+	cfg := Defaults()
+	defaultViewID := "1fc95886-1541-4db4-8a49-d30391439c65"
+	characterViewID := "f7137849-3447-4408-830c-207af85c747d"
+	characterID := "2a764b7a-4145-44d9-9574-3bc2f0fe29cd"
+	cfg.DefaultCharacterProfile().CustomViews = []CustomTabConfig{{ID: defaultViewID, Name: "Think/OOC", Visible: true}}
+	cfg.DefaultDisplayProfile().Main = append(cfg.DefaultDisplayProfile().Main, DisplayComponentConfig{ComponentID: defaultViewID})
+	cfg.CharacterProfiles.Profiles = append(cfg.CharacterProfiles.Profiles, CharacterProfileConfig{
+		ID: characterID, Name: "Marcus", Account: "one", CharacterNumber: 1,
+		Variables: map[string]string{}, CustomViews: []CustomTabConfig{{ID: characterViewID, Name: "Think/OOC", Visible: true}}, ActionSets: []ActionSet{},
+	})
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	characterLayout := cfg.DisplayProfileForCharacter(characterID)
+	if characterLayout == nil || characterLayout.ID == cfg.DisplayProfiles.DefaultID {
+		t.Fatalf("character layout = %+v", characterLayout)
+	}
+	if characterLayout.CharacterProfileID != characterID {
+		t.Fatalf("layout character = %q, want %q", characterLayout.CharacterProfileID, characterID)
+	}
+	if _, ok := FindDisplayComponent(*characterLayout, characterViewID); !ok {
+		t.Fatalf("character custom view missing from layout: %+v", characterLayout)
+	}
+	if _, ok := FindDisplayComponent(*characterLayout, defaultViewID); ok {
+		t.Fatalf("default custom view leaked into character layout: %+v", characterLayout)
+	}
+	if _, ok := FindDisplayComponent(*cfg.DefaultDisplayProfile(), characterViewID); ok {
+		t.Fatalf("character custom view leaked into global Default layout")
+	}
+	if characterLayout.Sidebars[0].ID == cfg.DefaultDisplayProfile().Sidebars[0].ID {
+		t.Fatal("inherited character sidebar reused the Default sidebar UUID")
+	}
+	seenSidebars := map[string]bool{}
+	for _, display := range cfg.DisplayProfiles.Profiles {
+		for _, sidebar := range display.Sidebars {
+			if seenSidebars[sidebar.ID] {
+				t.Fatalf("sidebar UUID %q collides across display profiles", sidebar.ID)
+			}
+			seenSidebars[sidebar.ID] = true
+		}
 	}
 }
 

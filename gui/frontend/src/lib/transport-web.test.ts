@@ -46,6 +46,7 @@ describe("web transport operation parity", () => {
       SetSelectedActionSetID: "selected-action-set",
       SetGUISidebarsVisible: "gui-sidebars-visible",
       SetCharacterProfiles: "character-profiles",
+      SetCharacterProfileAutoSwitch: "character-profile-auto-switch",
     });
   });
 
@@ -103,6 +104,36 @@ describe("web transport operation parity", () => {
     });
 
     expect(revisions).toEqual([1, 3]);
+  });
+
+  it("accepts the config mutation returned by a one-click script update", async () => {
+    const config = {} as any;
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      status: {
+        available: false,
+        updated: true,
+        version: "v0.3.0",
+        commit: "commit-030",
+        tracking: "tag",
+        ref: "v0.3.0",
+      },
+      config,
+      revision: 4,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const transport = new WebTransport();
+    const revisions: number[] = [];
+    transport.subscribe({
+      events: () => {},
+      system: (update) => {
+        if (update.type === "config" && update.revision !== undefined) revisions.push(update.revision);
+      },
+    });
+
+    const status = await transport.invoke<any>("CheckManagedScript", undefined, "source-id");
+
+    expect(status).toMatchObject({ updated: true, available: false, version: "v0.3.0" });
+    expect(revisions).toEqual([4]);
   });
 
   it("returns a successful connection separately from a credential-save warning", async () => {

@@ -3,7 +3,9 @@
   import * as api from "../../lib/bridge";
   import { cycleIndex } from "../../lib/actions";
 
-  const sets = $derived(store.characterProfile()?.ActionSets ?? []);
+  let { compact = false }: { compact?: boolean } = $props();
+
+  const sets = $derived(store.resolvedActionSets());
   const current = $derived(sets.find((set) => set.ID === store.selectedActionSetID) ?? sets[0]);
   const canCycle = $derived(sets.length > 1);
 
@@ -47,7 +49,7 @@
 </div>
 
 {#if current}
-  <div class="buttons">
+  <div class="buttons" class:responsive={compact}>
     {#each current.Buttons ?? [] as b, i (i)}
       <button class="action" onclick={() => void fire(b.Command)} title={b.Command} tabindex="-1" disabled={!store.transportReady}>{b.Label}</button>
     {/each}
@@ -86,6 +88,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 6px;
+  }
+  .buttons.responsive {
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   }
   .action {
     padding: 8px 6px;

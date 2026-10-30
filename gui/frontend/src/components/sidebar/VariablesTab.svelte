@@ -9,10 +9,15 @@
   }
 
   let nextId = 1;
-  let rows = $state<Row[]>(
-    Object.entries(store.characterProfile()?.Variables ?? {})
+
+  function profileRows(): Row[] {
+    return Object.entries(store.resolvedVariables())
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([name, value]) => ({ id: nextId++, name, value })),
+      .map(([name, value]) => ({ id: nextId++, name, value }));
+  }
+
+  let rows = $state<Row[]>(
+    profileRows(),
   );
   let dirty = $state(false);
   let saving = $state(false);
@@ -21,10 +26,8 @@
   // events. Refresh an untouched editor immediately; once the user has a
   // local draft, leave it alone until they save or remount the editor.
   $effect(() => {
-    const entries = Object.entries(store.characterProfile()?.Variables ?? {})
-      .sort(([a], [b]) => a.localeCompare(b));
     if (dirty) return;
-    rows = entries.map(([name, value]) => ({ id: nextId++, name, value }));
+    rows = profileRows();
   });
 
   const namePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -92,7 +95,7 @@
           aria-label="Variable name"
           placeholder="name"
           bind:value={row.name}
-          oninput={() => (dirty = true)}
+          oninput={() => { dirty = true; }}
         />
         <span class="separator" aria-hidden="true">:</span>
         <input
@@ -101,7 +104,7 @@
           aria-label={`Value for ${row.name || "variable"}`}
           placeholder="value"
           bind:value={row.value}
-          oninput={() => (dirty = true)}
+          oninput={() => { dirty = true; }}
           onkeydown={(e) => {
             if (e.key === "Enter" && !validation) {
               e.preventDefault();
