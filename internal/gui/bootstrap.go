@@ -130,7 +130,16 @@ func Bootstrap(version string, debug bool) (*Deps, error) {
 	}
 	scriptSources := make([]engine.LuaSource, 0, len(scriptDirs)+len(cfg.ManagedScripts))
 	for _, dir := range scriptDirs {
-		scriptSources = append(scriptSources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		disabled := false
+		for _, candidate := range cfg.DisabledScripts {
+			if filepath.Clean(expandPath(candidate)) == filepath.Clean(dir) {
+				disabled = true
+				break
+			}
+		}
+		if !disabled {
+			scriptSources = append(scriptSources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		}
 	}
 	managedRoot := filepath.Join(configDir, "managed-scripts")
 	for _, source := range cfg.ManagedScripts {

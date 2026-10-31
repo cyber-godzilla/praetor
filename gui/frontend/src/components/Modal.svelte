@@ -34,6 +34,9 @@
   const parentRoute = $derived(back ? (menuParent(store.openModal) ?? "menu") : null);
   const parentLabel = $derived(menuRouteLabel(parentRoute));
   const inMenuShell = $derived(!!parentRoute?.startsWith("menu-"));
+  const stableSettings = $derived(
+    store.openModal === "menu" || !!store.openModal?.startsWith("menu-") || !!parentRoute,
+  );
 
   // Every submenu (anything with a Back button, a Save action, or custom footer
   // actions) gets the same footer control set: [custom actions] · Close · Save.
@@ -86,7 +89,7 @@
      the ✕ button, the Back button, or Esc (handled once in GameView). This
      prevents stray outside clicks from dismissing a submenu mid-interaction. -->
 <div class="backdrop" role="presentation">
-  <div class="modal" class:wide class:extra-wide={extraWide} class:menu-shell={inMenuShell} bind:this={modalEl} role="dialog" aria-label={title} aria-modal="true" tabindex="-1">
+  <div class="modal" class:wide class:extra-wide={extraWide} class:menu-shell={inMenuShell} class:stable-settings={stableSettings} bind:this={modalEl} role="dialog" aria-label={title} aria-modal="true" tabindex="-1">
     <div class="mhead">
       <div class="mhead-left">
         {#if back}
@@ -149,6 +152,12 @@
     width: 1040px;
   }
   .modal.menu-shell { width: 1040px; }
+  .modal.stable-settings {
+    width: 1040px;
+    height: min(740px, 86vh);
+  }
+  .modal.stable-settings .modal-content { flex: 1; }
+  .modal.stable-settings .mbody { height: 100%; box-sizing: border-box; }
   .mhead {
     display: flex;
     align-items: center;
@@ -243,6 +252,11 @@
       max-height: calc(100dvh - env(safe-area-inset-top));
       border-inline: none;
       border-bottom: none;
+    }
+    .modal.stable-settings {
+      width: 100%;
+      max-width: 100%;
+      height: calc(100dvh - env(safe-area-inset-top));
     }
     .modal-content.with-nav { display: block; }
     .editor-nav { display: none; }

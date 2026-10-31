@@ -806,9 +806,21 @@ func (a *GuiApp) SetScriptDirs(dirs []string) error {
 		expanded = append(expanded, expandPath(d))
 	}
 	oldDirs := append([]string(nil), a.cfg().Scripts...)
+	oldDisabled := append([]string(nil), a.cfg().DisabledScripts...)
 	oldExpanded := append([]string(nil), a.deps.ScriptDirs...)
 	oldRuntime := a.client().Engine.ScriptSources()
 	a.cfg().Scripts = append([]string(nil), dirs...)
+	dirKeys := make(map[string]bool, len(dirs))
+	for _, dir := range dirs {
+		dirKeys[localScriptDirectoryKey(dir)] = true
+	}
+	disabled := make([]string, 0, len(a.cfg().DisabledScripts))
+	for _, dir := range a.cfg().DisabledScripts {
+		if dirKeys[localScriptDirectoryKey(dir)] {
+			disabled = append(disabled, dir)
+		}
+	}
+	a.cfg().DisabledScripts = disabled
 	a.deps.ScriptDirs = expanded
 	nextRuntime := a.scriptGraphSourcesLocked()
 	a.configMu.Unlock()
@@ -818,6 +830,7 @@ func (a *GuiApp) SetScriptDirs(dirs []string) error {
 	if err := a.client().Engine.UpdateScriptSources(nextRuntime); err != nil {
 		a.configMu.Lock()
 		a.cfg().Scripts = oldDirs
+		a.cfg().DisabledScripts = oldDisabled
 		a.deps.ScriptDirs = oldExpanded
 		a.configMu.Unlock()
 		return err
@@ -825,6 +838,7 @@ func (a *GuiApp) SetScriptDirs(dirs []string) error {
 	a.configMu.Lock()
 	if err := a.save(); err != nil {
 		a.cfg().Scripts = oldDirs
+		a.cfg().DisabledScripts = oldDisabled
 		a.deps.ScriptDirs = oldExpanded
 		a.configMu.Unlock()
 		_ = a.client().Engine.UpdateScriptSources(oldRuntime)

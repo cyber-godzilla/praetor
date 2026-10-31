@@ -70,6 +70,10 @@ scripts:
   - ~/my-custom-scripts
   - $HOME/git/community-scripts
 
+# Maintained by Script Manager when a local folder is disabled.
+disabled_scripts:
+  - ~/my-custom-scripts
+
 managed_scripts:
   - id: 3d4bb90a-b9fb-4d82-8e1b-0f51bdd58e1a
     name: praetor-scripts
@@ -85,6 +89,9 @@ managed_scripts:
 
 List of trusted local directories to load Lua scripts from. Local directories
 share the legacy Lua state and `package.path`, and are scanned for mode files.
+Each directory can be enabled or disabled independently in Script Manager. A
+disabled directory remains in `scripts` and is recorded in `disabled_scripts`,
+so its order is preserved and it can be re-enabled without adding it again.
 
 Supports `~` and `$ENV_VAR` expansion. If empty, defaults to `~/.config/praetor/scripts/`.
 

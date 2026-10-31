@@ -369,6 +369,29 @@ func (s *Server) handleSetManagedScriptEnabled(w http.ResponseWriter, r *http.Re
 	s.writeJSON(w, http.StatusOK, map[string]any{"state": state, "config": configJSON, "revision": revision})
 }
 
+func (s *Server) handleSetLocalScriptEnabled(w http.ResponseWriter, r *http.Request, _ string) {
+	var req struct {
+		Path           string `json:"path"`
+		Enabled        bool   `json:"enabled"`
+		StopAutomation bool   `json:"stopAutomation"`
+	}
+	if err := decodeJSON(r, &req); err != nil || strings.TrimSpace(req.Path) == "" {
+		s.writeError(w, http.StatusBadRequest, "invalid_request", "Invalid local script enablement setting.")
+		return
+	}
+	s.opMu.Lock()
+	if err := s.app.SetLocalScriptEnabled(req.Path, req.Enabled, req.StopAutomation); err != nil {
+		s.opMu.Unlock()
+		s.writeError(w, http.StatusBadRequest, "script_setting_failed", err.Error())
+		return
+	}
+	configJSON := s.commitConfigLocked()
+	state := s.app.GetScriptManager()
+	revision := s.revision
+	s.opMu.Unlock()
+	s.writeJSON(w, http.StatusOK, map[string]any{"state": state, "config": configJSON, "revision": revision})
+}
+
 func (s *Server) handleSetManagedScriptTrust(w http.ResponseWriter, r *http.Request, _ string) {
 	var req struct {
 		Trust          string `json:"trust"`

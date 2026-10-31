@@ -42,4 +42,7 @@ func TestDefaultsHaveNoManagedScripts(t *testing.T) {
 	if cfg.ManagedScripts == nil || len(cfg.ManagedScripts) != 0 {
 		t.Fatalf("managed scripts default = %#v, want empty non-nil slice", cfg.ManagedScripts)
 	}
+	if cfg.DisabledScripts == nil || len(cfg.DisabledScripts) != 0 {
+		t.Fatalf("disabled local scripts default = %#v, want empty non-nil slice", cfg.DisabledScripts)
+	}
 }

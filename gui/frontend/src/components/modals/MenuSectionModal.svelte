@@ -157,7 +157,7 @@
   .settings-shell {
     display: grid;
     grid-template-columns: 210px minmax(0, 1fr);
-    min-height: min(660px, 72vh);
+    height: 100%;
     margin: -12px;
   }
   nav {
@@ -280,7 +280,7 @@
   .context-note { margin-top: 14px; }
   .context-note strong { color: var(--accent); }
   @media (max-width: 760px) {
-    .settings-shell { grid-template-columns: 1fr; min-height: 0; }
+    .settings-shell { grid-template-columns: 1fr; height: auto; min-height: 0; }
     nav { display: none; }
     .page-head { flex-direction: column; }
     .profile-grid,

@@ -140,6 +140,8 @@ export const setManagedScriptStartupCheck = (id: string, enabled: boolean) =>
   call<void>("SetManagedScriptStartupCheck", undefined, id, enabled);
 export const setManagedScriptEnabled = (id: string, enabled: boolean, stopAutomation = false) =>
   call<void>("SetManagedScriptEnabled", undefined, id, enabled, stopAutomation);
+export const setLocalScriptEnabled = (path: string, enabled: boolean, stopAutomation = false) =>
+  call<void>("SetLocalScriptEnabled", undefined, path, enabled, stopAutomation);
 export const setManagedScriptTrust = (id: string, trust: "restricted" | "trusted", stopAutomation = false) =>
   call<void>("SetManagedScriptTrust", undefined, id, trust, stopAutomation);
 export const reorderManagedScripts = (ids: string[]) =>

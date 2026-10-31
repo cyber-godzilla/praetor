@@ -49,6 +49,7 @@ type Config struct {
 	DisplayProfiles   DisplayProfilesConfig       `yaml:"display_profiles"`
 	Credentials       CredentialsConfig           `yaml:"credentials"`
 	Scripts           []string                    `yaml:"scripts"`
+	DisabledScripts   []string                    `yaml:"disabled_scripts,omitempty"`
 	ManagedScripts    []ManagedScriptSourceConfig `yaml:"managed_scripts,omitempty"`
 	UI                UIConfig                    `yaml:"ui"`
 	// Highlights is a migration-only alias for configurations written before
@@ -804,8 +805,9 @@ func Defaults() *Config {
 				KeyEnv: "PRAETOR_CREDENTIALS_KEY",
 			},
 		},
-		Scripts:        []string{},
-		ManagedScripts: []ManagedScriptSourceConfig{},
+		Scripts:         []string{},
+		DisabledScripts: []string{},
+		ManagedScripts:  []ManagedScriptSourceConfig{},
 		UI: UIConfig{
 			DisplayMode:          "sidebar",
 			DefaultTab:           "all",

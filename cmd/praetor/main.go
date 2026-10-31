@@ -491,7 +491,11 @@ func (w wrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if w.cfg != nil {
 				managed = w.cfg.ManagedScripts
 			}
-			sources := buildScriptSources(expanded, managed, w.configDir)
+			var disabled []string
+			if w.cfg != nil {
+				disabled = w.cfg.DisabledScripts
+			}
+			sources := buildScriptSources(expanded, disabled, managed, w.configDir)
 			if err := w.gc.Engine.UpdateScriptSources(sources); err != nil {
 				log.Printf("updating script dirs: %v", err)
 			}
@@ -713,10 +717,16 @@ func expandPath(path string) string {
 	return os.ExpandEnv(path)
 }
 
-func buildScriptSources(scriptDirs []string, managed []config.ManagedScriptSourceConfig, configDir string) []engine.LuaSource {
+func buildScriptSources(scriptDirs, disabledDirs []string, managed []config.ManagedScriptSourceConfig, configDir string) []engine.LuaSource {
 	sources := make([]engine.LuaSource, 0, len(scriptDirs)+len(managed))
+	disabled := make(map[string]bool, len(disabledDirs))
+	for _, dir := range disabledDirs {
+		disabled[filepath.Clean(expandPath(dir))] = true
+	}
 	for _, dir := range scriptDirs {
-		sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		if !disabled[filepath.Clean(dir)] {
+			sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		}
 	}
 	managedRoot := filepath.Join(configDir, "managed-scripts")
 	for _, source := range managed {
@@ -859,7 +869,7 @@ func main() {
 		log.Fatalf("creating credential store: %v", err)
 	}
 
-	scriptSources := buildScriptSources(scriptDirs, cfg.ManagedScripts, configDir)
+	scriptSources := buildScriptSources(scriptDirs, cfg.DisabledScripts, cfg.ManagedScripts, configDir)
 	gc, err := client.NewClientWithSources(cfg, scriptSources, dataDir, creds)
 	if err != nil {
 		log.Fatalf("creating client: %v", err)

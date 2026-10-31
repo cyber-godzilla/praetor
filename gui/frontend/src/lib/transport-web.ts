@@ -224,6 +224,14 @@ export class WebTransport implements PraetorTransport {
         this.acceptConfigMutation(result);
         return undefined as T;
       }
+      case "SetLocalScriptEnabled": {
+        const result = await this.request<ConfigMutationResponse>(
+          "PUT", "/api/v1/scripts/local/enabled",
+          { path: args[0], enabled: args[1], stopAutomation: args[2] ?? false },
+        );
+        this.acceptConfigMutation(result);
+        return undefined as T;
+      }
       case "SetManagedScriptTrust": {
         const result = await this.request<ConfigMutationResponse>(
           "PUT", `/api/v1/scripts/sources/${encodeURIComponent(args[0])}/trust`,
@@ -898,6 +906,7 @@ export const WEB_SUPPORTED_METHODS = new Set([
   "RemoveManagedScript",
   "SetManagedScriptStartupCheck",
   "SetManagedScriptEnabled",
+  "SetLocalScriptEnabled",
   "SetManagedScriptTrust",
   "ReorderManagedScripts",
   "PickScriptDir",

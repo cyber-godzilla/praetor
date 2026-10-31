@@ -112,6 +112,44 @@ func TestManagedScriptEnableLoadsRestrictedSourceAndDisableUnloadsIt(t *testing.
 	}
 }
 
+func TestLocalScriptDirectoryCanBeDisabledAndReenabled(t *testing.T) {
+	a, _ := newScriptManagerTestApp(t)
+	local := filepath.Join(t.TempDir(), "local-scripts")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "localmode.lua"), []byte(`return { desc = "local", reactions = {} }`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.SetScriptDirs([]string{local}); err != nil {
+		t.Fatal(err)
+	}
+	state := a.GetScriptManager()
+	if len(state.LocalDirectories) != 1 || !state.LocalDirectories[0].Enabled || !a.client().Engine.HasMode("localmode") {
+		t.Fatalf("enabled local directory state = %+v", state.LocalDirectories)
+	}
+	if err := a.SetLocalScriptEnabled(local, false, false); err != nil {
+		t.Fatal(err)
+	}
+	state = a.GetScriptManager()
+	if state.LocalDirectories[0].Enabled || a.client().Engine.HasMode("localmode") {
+		t.Fatalf("disabled local directory remains active: %+v", state.LocalDirectories[0])
+	}
+	loaded, err := config.Load(a.deps.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.DisabledScripts) != 1 || loaded.DisabledScripts[0] != local {
+		t.Fatalf("saved disabled directories = %#v", loaded.DisabledScripts)
+	}
+	if err := a.SetLocalScriptEnabled(local, true, false); err != nil {
+		t.Fatal(err)
+	}
+	if !a.GetScriptManager().LocalDirectories[0].Enabled || !a.client().Engine.HasMode("localmode") {
+		t.Fatal("re-enabled local directory was not restored")
+	}
+}
+
 func TestManagedScriptRuntimeChangeRequiresStoppingActiveMode(t *testing.T) {
 	a, backend := newScriptManagerTestApp(t)
 	backend.mode = `return { on_start = function() end, reactions = {} }`

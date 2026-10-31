@@ -1243,6 +1243,7 @@ func TestSaveLoadListsRoundTrip(t *testing.T) {
 	c.Ignorelist.Think = []string{"carol"}
 	c.Commands.HighPriority = []string{"flee", "quaff"}
 	c.Scripts = []string{"~/one/scripts", "~/two/scripts"}
+	c.DisabledScripts = []string{"~/two/scripts"}
 	c.SpeechColors = []SpeechColorConfig{
 		{Character: "Apula", Style: "cinnabar", Active: true, IncludeThink: true},
 		{Character: "Constantine", Style: "oranges", Active: true, IncludeOOC: true},
@@ -1267,6 +1268,9 @@ func TestSaveLoadListsRoundTrip(t *testing.T) {
 	}
 	if !reflect.DeepEqual(loaded.Scripts, c.Scripts) {
 		t.Errorf("Scripts not persisted: got %v want %v", loaded.Scripts, c.Scripts)
+	}
+	if !reflect.DeepEqual(loaded.DisabledScripts, c.DisabledScripts) {
+		t.Errorf("DisabledScripts not persisted: got %v want %v", loaded.DisabledScripts, c.DisabledScripts)
 	}
 	if !reflect.DeepEqual(loaded.SpeechColors, c.SpeechColors) {
 		t.Errorf("SpeechColors not persisted: got %v want %v", loaded.SpeechColors, c.SpeechColors)

@@ -161,7 +161,7 @@
     display: flex;
     flex-direction: column;
     gap: 22px;
-    min-height: min(610px, 72vh);
+    height: 100%;
   }
   section { min-width: 0; }
   .section-title {
@@ -246,7 +246,7 @@
     border-top: 1px solid var(--border);
   }
   @media (max-width: 599px) {
-    .home { min-height: 0; }
+    .home { height: auto; min-height: 0; }
     .quick-grid,
     .home-grid { grid-template-columns: 1fr; }
     .session-actions { flex-wrap: wrap; }

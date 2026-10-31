@@ -109,6 +109,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/scripts/sources", s.protected(true, s.handleInstallManagedScript))
 	s.mux.HandleFunc("POST /api/v1/scripts/sources/{id}/check", s.protected(true, s.handleCheckManagedScript))
 	s.mux.HandleFunc("POST /api/v1/scripts/sources/{id}/update", s.protected(true, s.handleUpdateManagedScript))
+	s.mux.HandleFunc("PUT /api/v1/scripts/local/enabled", s.protected(true, s.handleSetLocalScriptEnabled))
 	s.mux.HandleFunc("PUT /api/v1/scripts/sources/{id}/startup-check", s.protected(true, s.handleSetManagedScriptStartupCheck))
 	s.mux.HandleFunc("PUT /api/v1/scripts/sources/{id}/enabled", s.protected(true, s.handleSetManagedScriptEnabled))
 	s.mux.HandleFunc("PUT /api/v1/scripts/sources/{id}/trust", s.protected(true, s.handleSetManagedScriptTrust))

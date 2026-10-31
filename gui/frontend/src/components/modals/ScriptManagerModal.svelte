@@ -2,12 +2,12 @@
   import Modal from "../Modal.svelte";
   import { store } from "../../lib/store.svelte";
   import * as api from "../../lib/bridge";
-  import type { ScriptManagerState } from "../../lib/types";
+  import type { LocalScriptDirectoryView, ScriptManagerState } from "../../lib/types";
 
   let managerState: ScriptManagerState = $state({
     localDirectories: [], managed: [], suggestedURL: "", suggestedInstalled: false,
   });
-  let localDirectories: string[] = $state([]);
+  let localDirectories: LocalScriptDirectoryView[] = $state([]);
   let localDraft = $state("");
   let repositoryURL = $state("");
   let busy = $state("");
@@ -23,7 +23,7 @@
   async function refresh(resetLocal = false) {
     try {
       managerState = await api.getScriptManager();
-      if (resetLocal) localDirectories = [...managerState.localDirectories];
+      if (resetLocal) localDirectories = managerState.localDirectories.map((directory) => ({ ...directory }));
     } catch (error) {
       toastError("Unable to load Script Manager", error);
     }
@@ -148,7 +148,9 @@
 
   function addLocal(path = localDraft) {
     const trimmed = path.trim();
-    if (trimmed && !localDirectories.includes(trimmed)) localDirectories = [...localDirectories, trimmed];
+    if (trimmed && !localDirectories.some((directory) => directory.path === trimmed)) {
+      localDirectories = [...localDirectories, { path: trimmed, enabled: true }];
+    }
     localDraft = "";
   }
 
@@ -172,12 +174,39 @@
   async function saveLocal() {
     busy = "local";
     try {
-      await api.setScriptDirs(localDirectories);
-      if (store.config) store.config.Scripts = [...localDirectories];
-      managerState = { ...managerState, localDirectories: [...localDirectories] };
+      const paths = localDirectories.map((directory) => directory.path);
+      await api.setScriptDirs(paths);
+      if (store.config) store.config.Scripts = [...paths];
+      managerState = { ...managerState, localDirectories: localDirectories.map((directory) => ({ ...directory })) };
       store.addToast("Local script directories", "Saved and reloaded.");
     } catch (error) {
       toastError("Save failed", error);
+    } finally {
+      busy = "";
+    }
+  }
+
+  async function setLocalEnabled(directory: LocalScriptDirectoryView, enabled: boolean, stopAutomation = false) {
+    busy = directory.path + ":enabled";
+    try {
+      await api.setLocalScriptEnabled(directory.path, enabled, stopAutomation);
+      localDirectories = localDirectories.map((candidate) =>
+        candidate.path === directory.path ? { ...candidate, enabled } : candidate,
+      );
+      managerState = {
+        ...managerState,
+        localDirectories: managerState.localDirectories.map((candidate) =>
+          candidate.path === directory.path ? { ...candidate, enabled } : candidate,
+        ),
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!stopAutomation && message.includes("stop automation") && window.confirm(`${message}\n\nStop the active Lua mode and continue?`)) {
+        busy = "";
+        await setLocalEnabled(directory, enabled, true);
+        return;
+      }
+      toastError(enabled ? "Enable failed" : "Disable failed", error);
     } finally {
       busy = "";
     }
@@ -254,11 +283,16 @@
       <div><h3>Local directories</h3><p>Existing folders remain fully trusted and reload when saved.</p></div>
     </div>
     <div class="local-list">
-      {#each localDirectories as directory, index (directory)}
+      {#each localDirectories as directory, index (directory.path)}
         <div class="local-row">
-          <code>{directory}</code><span class="spacer"></span>
-          <button aria-label={`Move ${directory} up`} disabled={index === 0} onclick={() => moveLocal(index, -1)}>↑</button>
-          <button aria-label={`Move ${directory} down`} disabled={index === localDirectories.length - 1} onclick={() => moveLocal(index, 1)}>↓</button>
+          <code>{directory.path}</code><span class="badges"><span>{directory.enabled ? "enabled" : "disabled"}</span></span><span class="spacer"></span>
+          <button
+            disabled={!!busy || !managerState.localDirectories.some((candidate) => candidate.path === directory.path)}
+            title={managerState.localDirectories.some((candidate) => candidate.path === directory.path) ? undefined : "Save directories before changing enablement"}
+            onclick={() => setLocalEnabled(directory, !directory.enabled)}
+          >{directory.enabled ? "Disable" : "Enable"}</button>
+          <button aria-label={`Move ${directory.path} up`} disabled={index === 0 || !!busy} onclick={() => moveLocal(index, -1)}>↑</button>
+          <button aria-label={`Move ${directory.path} down`} disabled={index === localDirectories.length - 1 || !!busy} onclick={() => moveLocal(index, 1)}>↓</button>
           <button class="danger" onclick={() => localDirectories = localDirectories.filter((_, i) => i !== index)}>Remove</button>
         </div>
       {/each}

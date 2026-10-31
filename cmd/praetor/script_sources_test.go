@@ -10,7 +10,7 @@ import (
 
 func TestBuildScriptSourcesKeepsEnabledManagedSources(t *testing.T) {
 	configDir := t.TempDir()
-	sources := buildScriptSources([]string{"/local"}, []config.ManagedScriptSourceConfig{
+	sources := buildScriptSources([]string{"/local"}, nil, []config.ManagedScriptSourceConfig{
 		{ID: "off", Enabled: false, Trust: config.ScriptTrustRestricted},
 		{ID: "safe", Enabled: true, Trust: config.ScriptTrustRestricted},
 		{ID: "legacy", Enabled: true, Trust: config.ScriptTrustTrusted},
@@ -27,5 +27,17 @@ func TestBuildScriptSourcesKeepsEnabledManagedSources(t *testing.T) {
 		if sources[index] != want[index] {
 			t.Fatalf("sources[%d] = %#v, want %#v", index, sources[index], want[index])
 		}
+	}
+}
+
+func TestBuildScriptSourcesOmitsDisabledLocalDirectories(t *testing.T) {
+	sources := buildScriptSources(
+		[]string{"/local/one", "/local/two"},
+		[]string{"/local/two"},
+		nil,
+		t.TempDir(),
+	)
+	if len(sources) != 1 || sources[0].Path != "/local/one" {
+		t.Fatalf("sources = %#v, want only enabled local directory", sources)
 	}
 }

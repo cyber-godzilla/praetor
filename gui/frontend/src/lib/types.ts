@@ -348,6 +348,7 @@ export interface AppConfig {
   CharacterProfiles: CharacterProfilesConfig;
   DisplayProfiles: DisplayProfilesConfig;
   Scripts: string[] | null;
+  DisabledScripts?: string[] | null;
   ManagedScripts?: ManagedScriptSourceConfig[] | null;
   UI: UIConfig;
   /** Legacy pre-profile field; new configurations store highlights per character. */
@@ -404,8 +405,13 @@ export interface ManagedScriptSourceView {
   canEnable: boolean;
 }
 
+export interface LocalScriptDirectoryView {
+  path: string;
+  enabled: boolean;
+}
+
 export interface ScriptManagerState {
-  localDirectories: string[];
+  localDirectories: LocalScriptDirectoryView[];
   managed: ManagedScriptSourceView[];
   suggestedURL: string;
   suggestedInstalled: boolean;

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/cyber-godzilla/praetor/internal/config"
 	"github.com/cyber-godzilla/praetor/internal/engine"
@@ -15,10 +16,15 @@ import (
 // browser shells. Local directories stay user-owned; managed sources live in
 // Praetor-owned storage and enter the runtime only when explicitly enabled.
 type ScriptManagerState struct {
-	LocalDirectories   []string                  `json:"localDirectories"`
-	Managed            []ManagedScriptSourceView `json:"managed"`
-	SuggestedURL       string                    `json:"suggestedURL"`
-	SuggestedInstalled bool                      `json:"suggestedInstalled"`
+	LocalDirectories   []LocalScriptDirectoryView `json:"localDirectories"`
+	Managed            []ManagedScriptSourceView  `json:"managed"`
+	SuggestedURL       string                     `json:"suggestedURL"`
+	SuggestedInstalled bool                       `json:"suggestedInstalled"`
+}
+
+type LocalScriptDirectoryView struct {
+	Path    string `json:"path"`
+	Enabled bool   `json:"enabled"`
 }
 
 type ManagedScriptSourceView struct {
@@ -38,7 +44,11 @@ type ManagedScriptSourceView struct {
 
 func (a *GuiApp) GetScriptManager() ScriptManagerState {
 	a.configMu.RLock()
-	dirs := append([]string{}, a.cfg().Scripts...)
+	dirs := a.effectiveLocalScriptDirsLocked()
+	local := make([]LocalScriptDirectoryView, 0, len(dirs))
+	for _, dir := range dirs {
+		local = append(local, LocalScriptDirectoryView{Path: dir, Enabled: !a.localScriptDisabledLocked(dir)})
+	}
 	sources := append([]config.ManagedScriptSourceConfig(nil), a.cfg().ManagedScripts...)
 	a.configMu.RUnlock()
 	a.scriptStatusMu.RLock()
@@ -52,9 +62,64 @@ func (a *GuiApp) GetScriptManager() ScriptManagerState {
 		views = append(views, managedScriptView(source, a.scriptStatuses[source.ID]))
 	}
 	return ScriptManagerState{
-		LocalDirectories: dirs, Managed: views,
+		LocalDirectories: local, Managed: views,
 		SuggestedURL: scriptmanager.SuggestedRepositoryURL, SuggestedInstalled: suggestedInstalled,
 	}
+}
+
+// SetLocalScriptEnabled reloads the script graph with one user-owned directory
+// included or excluded. The path remains configured so it can be re-enabled
+// without finding or typing it again.
+func (a *GuiApp) SetLocalScriptEnabled(path string, enabled, stopAutomation bool) error {
+	if a.client() == nil || a.client().Engine == nil {
+		return errors.New("script runtime is unavailable")
+	}
+	a.scriptManagerMu.Lock()
+	defer a.scriptManagerMu.Unlock()
+	a.activityMu.Lock()
+	defer a.activityMu.Unlock()
+	activeMode := a.client().Engine.CurrentMode()
+	if activeMode != "" && activeMode != "disable" {
+		if !stopAutomation {
+			return fmt.Errorf("Lua mode %q is active; stop automation before changing script sources", activeMode)
+		}
+		a.client().Engine.SetMode("disable", nil)
+	}
+
+	a.configMu.Lock()
+	found := false
+	for _, configured := range a.effectiveLocalScriptDirsLocked() {
+		if localScriptDirectoryKey(configured) == localScriptDirectoryKey(path) {
+			path = configured
+			found = true
+			break
+		}
+	}
+	if !found {
+		a.configMu.Unlock()
+		return errors.New("local script directory not found")
+	}
+	previousDisabled := append([]string(nil), a.cfg().DisabledScripts...)
+	previousRuntime := a.client().Engine.ScriptSources()
+	a.setLocalScriptDisabledLocked(path, !enabled)
+	nextRuntime := a.scriptGraphSourcesLocked()
+	a.configMu.Unlock()
+
+	if err := a.client().Engine.UpdateScriptSources(nextRuntime); err != nil {
+		a.configMu.Lock()
+		a.cfg().DisabledScripts = previousDisabled
+		a.configMu.Unlock()
+		return err
+	}
+	a.configMu.Lock()
+	if err := a.save(); err != nil {
+		a.cfg().DisabledScripts = previousDisabled
+		a.configMu.Unlock()
+		_ = a.client().Engine.UpdateScriptSources(previousRuntime)
+		return err
+	}
+	a.configMu.Unlock()
+	return nil
 }
 
 func managedScriptView(source config.ManagedScriptSourceConfig, status scriptmanager.UpdateStatus) ManagedScriptSourceView {
@@ -442,7 +507,9 @@ func (a *GuiApp) scriptGraphSourcesLocked() []engine.LuaSource {
 func (a *GuiApp) scriptGraphSourcesExcludingLocked(excludedID string) []engine.LuaSource {
 	sources := make([]engine.LuaSource, 0, len(a.deps.ScriptDirs)+len(a.cfg().ManagedScripts))
 	for _, dir := range a.deps.ScriptDirs {
-		sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		if !a.localScriptDisabledLocked(dir) {
+			sources = append(sources, engine.LuaSource{Path: dir, Trust: engine.LuaTrustTrusted})
+		}
 	}
 	for _, source := range a.cfg().ManagedScripts {
 		if source.Enabled && source.ID != excludedID {
@@ -450,6 +517,41 @@ func (a *GuiApp) scriptGraphSourcesExcludingLocked(excludedID string) []engine.L
 		}
 	}
 	return sources
+}
+
+func (a *GuiApp) effectiveLocalScriptDirsLocked() []string {
+	if len(a.cfg().Scripts) > 0 {
+		return append([]string(nil), a.cfg().Scripts...)
+	}
+	return append([]string(nil), a.deps.ScriptDirs...)
+}
+
+func localScriptDirectoryKey(path string) string {
+	return filepath.Clean(expandPath(path))
+}
+
+func (a *GuiApp) localScriptDisabledLocked(path string) bool {
+	key := localScriptDirectoryKey(path)
+	for _, disabled := range a.cfg().DisabledScripts {
+		if localScriptDirectoryKey(disabled) == key {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *GuiApp) setLocalScriptDisabledLocked(path string, disabled bool) {
+	key := localScriptDirectoryKey(path)
+	next := make([]string, 0, len(a.cfg().DisabledScripts)+1)
+	for _, candidate := range a.cfg().DisabledScripts {
+		if localScriptDirectoryKey(candidate) != key {
+			next = append(next, candidate)
+		}
+	}
+	if disabled {
+		next = append(next, path)
+	}
+	a.cfg().DisabledScripts = next
 }
 
 func (a *GuiApp) setManagedScriptStatus(id string, status scriptmanager.UpdateStatus) {
