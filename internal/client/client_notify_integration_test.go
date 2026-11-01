@@ -1,6 +1,8 @@
 package client
 
 import (
+	"encoding/json"
+	"net/http"
 	"testing"
 	"time"
 
@@ -34,8 +36,49 @@ func TestLuaNotifyReachesClientEvents(t *testing.T) {
 	}
 }
 
+func TestLuaNotifyForwardsToDiscordWhenEnabled(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Notifications.Desktop.AllowScriptNotifications = true
+	cfg.Notifications.Discord = config.DiscordNotificationsConfig{
+		Enabled: true, Scripts: true, WebhookURL: "https://discord.com/api/webhooks/123/token",
+	}
+	c, err := NewClient(cfg, nil, t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer c.Engine.Close()
+	c.desktopNotify = func(string, string, bool) {}
+
+	requests := make(chan discordWebhookPayload, 1)
+	discord := NewDiscordNotifier(cfg.Notifications.Discord)
+	discord.httpClient = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var payload discordWebhookPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		requests <- payload
+		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody, Header: make(http.Header)}, nil
+	})}
+	c.SetDiscordNotifier(discord)
+
+	c.Engine.OnNotify("Alert", "Incoming attack")
+
+	select {
+	case payload := <-requests:
+		if payload.Content != "**Alert**\nIncoming attack" {
+			t.Fatalf("Discord payload = %q", payload.Content)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Lua notification did not reach Discord")
+	}
+}
+
 func TestLuaNotifyIsSuppressedWhenScriptNotificationsAreDisabled(t *testing.T) {
-	c, err := NewClient(config.Defaults(), nil, t.TempDir(), nil)
+	cfg := config.Defaults()
+	cfg.Notifications.Discord = config.DiscordNotificationsConfig{
+		Enabled: true, Scripts: true, WebhookURL: "https://discord.com/api/webhooks/123/token",
+	}
+	c, err := NewClient(cfg, nil, t.TempDir(), nil)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -43,6 +86,13 @@ func TestLuaNotifyIsSuppressedWhenScriptNotificationsAreDisabled(t *testing.T) {
 
 	desktopCalled := make(chan struct{}, 1)
 	c.desktopNotify = func(string, string, bool) { desktopCalled <- struct{}{} }
+	discordCalled := make(chan struct{}, 1)
+	discord := NewDiscordNotifier(cfg.Notifications.Discord)
+	discord.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		discordCalled <- struct{}{}
+		return &http.Response{StatusCode: http.StatusNoContent, Body: http.NoBody, Header: make(http.Header)}, nil
+	})}
+	c.SetDiscordNotifier(discord)
 	c.Engine.OnNotify("Alert", "Incoming attack")
 
 	select {
@@ -50,6 +100,8 @@ func TestLuaNotifyIsSuppressedWhenScriptNotificationsAreDisabled(t *testing.T) {
 		t.Fatalf("disabled script notification emitted %T", event)
 	case <-desktopCalled:
 		t.Fatal("disabled script notification reached the desktop notifier")
+	case <-discordCalled:
+		t.Fatal("disabled script notification reached Discord")
 	case <-time.After(100 * time.Millisecond):
 	}
 }

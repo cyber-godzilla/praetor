@@ -1072,6 +1072,11 @@ func (c *Client) sendInputNotification(title, message string) {
 	if c.desktopNotify != nil {
 		go c.desktopNotify(title, message, c.notificationSound.Load())
 	}
+	c.sendDiscordScriptNotification(title, message)
+	c.emit(types.NotificationEvent{Title: title, Message: message})
+}
+
+func (c *Client) sendDiscordScriptNotification(title, message string) {
 	if c.discordNotify != nil {
 		go func() {
 			if err := c.discordNotify.Send(context.Background(), NotificationCategoryScript, title, message); err != nil {
@@ -1079,7 +1084,6 @@ func (c *Client) sendInputNotification(title, message string) {
 			}
 		}()
 	}
-	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
 
 func (c *Client) inputChainIsActive(chain *inputChain) bool {
@@ -1832,6 +1836,7 @@ func (c *Client) sendNotification(title, message string) {
 	if c.desktopNotify != nil {
 		go c.desktopNotify(title, message, c.notificationSound.Load())
 	}
+	c.sendDiscordScriptNotification(title, message)
 	c.emit(types.NotificationEvent{Title: title, Message: message})
 }
 
