@@ -368,9 +368,11 @@ func (a *GuiApp) runPlayStep(s *playSession, step client.PlayStep) (completed, s
 	switch step.Kind {
 	case client.StepText:
 		if gap := time.Since(s.lastSend); !s.lastSend.IsZero() {
-			// Commands.MinInterval is config.Duration, a YAML wrapper — the real
-			// time.Duration is its .Duration field.
-			if floor := a.cfg().Commands.MinInterval.Duration; gap < floor {
+			// Read the live setting under the same lock used by settings updates.
+			a.configMu.Lock()
+			floor := a.cfg().Commands.MinInterval.Duration
+			a.configMu.Unlock()
+			if gap < floor {
 				if done, stopped := a.playSleep(s, floor-gap); !done {
 					return done, stopped
 				}

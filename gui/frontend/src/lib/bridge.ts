@@ -158,6 +158,8 @@ export const setColorWords = (v: boolean) => call<void>("SetColorWords", undefin
 export const setHideIPs = (v: boolean) => call<void>("SetHideIPs", undefined, v);
 export const setInputSpellcheck = (v: boolean) => call<void>("SetInputSpellcheck", undefined, v);
 export const setKeepInputOnSend = (v: boolean) => call<void>("SetKeepInputOnSend", undefined, v);
+export const setScriptDelay = (ms: number) => call<void>("SetScriptDelay", undefined, ms);
+export const setCommandMinInterval = (ms: number) => call<void>("SetCommandMinInterval", undefined, ms);
 export const setSemicolonDelay = (ms: number) => call<void>("SetSemicolonDelay", undefined, ms);
 export const setUnbusyDelay = (ms: number) => call<void>("SetUnbusyDelay", undefined, ms);
 export const setUpdateCheck = (v: boolean) => call<void>("SetUpdateCheck", undefined, v);

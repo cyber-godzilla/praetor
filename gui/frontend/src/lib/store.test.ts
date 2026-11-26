@@ -72,6 +72,24 @@ describe("store connection routing", () => {
     expect(store.disconnectNotice).toBe("connection closed");
   });
 
+  it("returns to All after disconnect and reconnect with a custom view", () => {
+    const customID = "reconnect-custom-view";
+    const customViews = [{
+      ID: customID, Name: "Chat", Visible: true, EchoCommands: false, Rules: [],
+    }];
+    store.characterProfile()!.CustomViews = customViews;
+    store.rebuildTabs(customViews);
+    // Custom views precede built-ins internally, regardless of display order.
+    expect(store.tabs[0].id).toBe(customID);
+    store.apply(conn("connected"));
+    store.selectTabByID(COMPONENT_IDS.all);
+
+    store.apply(conn("disconnected", "connection closed"));
+    store.apply(conn("connected"));
+
+    expect(store.tabs[store.activeTab]?.id).toBe(COMPONENT_IDS.all);
+  });
+
   it("resetSession clears output, status, mode, and graphics", () => {
     store.apply(conn("connected"));
     store.apply([

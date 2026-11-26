@@ -8,8 +8,9 @@ import (
 
 // QueuedCommand represents a command waiting to be sent with its delay.
 type QueuedCommand struct {
-	Command string
-	Delay   time.Duration
+	Command  string
+	Delay    time.Duration
+	QueuedAt time.Time
 }
 
 // CommandQueue is a thread-safe command queue with priority, dedup, and size limits.
@@ -32,6 +33,7 @@ type CommandQueue struct {
 	notify chan struct{}
 
 	lastDropLog map[string]time.Time
+	telemetry   queueTelemetry
 }
 
 // NewCommandQueue creates a new CommandQueue with the given configuration.
@@ -51,12 +53,24 @@ func NewCommandQueue(maxSize int, defaultDelay, minInterval time.Duration, highP
 		highPriority: hp,
 		notify:       make(chan struct{}, 1),
 		lastDropLog:  make(map[string]time.Time),
+		telemetry:    queueTelemetry{id: nextQueueTelemetryID.Add(1), started: time.Now()},
 	}
 }
 
 // recordDrop logs a refused command at warn, rate-limited to once
 // per second per reason so a runaway script can't flood the log. Caller holds mu.
 func (q *CommandQueue) recordDrop(command, reason string) {
+	q.telemetry.revision++
+	switch reason {
+	case "duplicate":
+		q.telemetry.duplicate++
+	case "full":
+		q.telemetry.full++
+	case "full-all-priority":
+		q.telemetry.fullPriority++
+	case "evicted-for-priority":
+		q.telemetry.evicted++
+	}
 	now := time.Now()
 	if last, ok := q.lastDropLog[reason]; !ok || now.Sub(last) >= time.Second {
 		q.lastDropLog[reason] = now
@@ -145,8 +159,9 @@ func (q *CommandQueue) Enqueue(command string, delayMs int) {
 	}
 
 	qc := QueuedCommand{
-		Command: command,
-		Delay:   delay,
+		Command:  command,
+		Delay:    delay,
+		QueuedAt: time.Now(),
 	}
 
 	if q.highPriority[command] {
@@ -165,6 +180,11 @@ func (q *CommandQueue) Enqueue(command string, delayMs int) {
 		q.items = append(q.items, qc)
 	}
 
+	q.telemetry.admitted++
+	q.telemetry.revision++
+	if len(q.items) > q.telemetry.peak {
+		q.telemetry.peak = len(q.items)
+	}
 	q.signal()
 }
 
@@ -180,6 +200,9 @@ func (q *CommandQueue) DequeueGen() (QueuedCommand, uint64, bool) {
 		return QueuedCommand{}, q.gen, false
 	}
 
+	q.telemetry.dequeued++
+	q.telemetry.inFlight++
+	q.telemetry.revision++
 	cmd := q.items[0]
 	q.items = q.items[1:]
 	return cmd, q.gen, true
@@ -189,6 +212,8 @@ func (q *CommandQueue) DequeueGen() (QueuedCommand, uint64, bool) {
 // command already dequeued by a sleeping drainer is recognized as stale.
 func (q *CommandQueue) Clear() {
 	q.mu.Lock()
+	q.telemetry.cleared += uint64(len(q.items))
+	q.telemetry.revision++
 	q.items = q.items[:0]
 	q.gen++
 	q.mu.Unlock()
@@ -203,5 +228,23 @@ func (q *CommandQueue) Len() int {
 
 // MinInterval returns the minimum interval between sends.
 func (q *CommandQueue) MinInterval() time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	return q.minInterval
+}
+
+// SetDefaultDelay applies to commands enqueued after this update.
+func (q *CommandQueue) SetDefaultDelay(delay time.Duration) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.defaultDelay = delay
+	q.telemetry.revision++
+}
+
+// SetMinInterval updates the floor used by command drainers.
+func (q *CommandQueue) SetMinInterval(interval time.Duration) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.minInterval = interval
+	q.telemetry.revision++
 }

@@ -436,6 +436,8 @@ test("relocated input and display settings persist from their categories", async
   let dialog = page.getByRole("dialog");
   await openMenuItem(page, "Input & commands", "Input behavior");
   dialog = page.getByRole("dialog");
+  await dialog.getByRole("spinbutton", { name: "Time between script actions", exact: true }).fill("1500");
+  await dialog.getByRole("spinbutton", { name: "Minimum time between script commands", exact: true }).fill("750");
   await dialog.getByRole("spinbutton", { name: "Command chain delay" }).fill("1250");
   await dialog.getByRole("spinbutton", { name: "Unbusy response delay" }).fill("250");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
@@ -446,6 +448,8 @@ test("relocated input and display settings persist from their categories", async
   await dialog.getByRole("spinbutton", { name: "Minimap Scale (Zoom)" }).fill("1.4");
   await dialog.getByRole("button", { name: "Save", exact: true }).click();
 
+  await expect.poll(() => backend.args("SetScriptDelay")).toEqual([[1500]]);
+  await expect.poll(() => backend.args("SetCommandMinInterval")).toEqual([[750]]);
   await expect.poll(() => backend.args("SetSemicolonDelay")).toEqual([[1250]]);
   await expect.poll(() => backend.args("SetUnbusyDelay")).toEqual([[250]]);
   await expect.poll(() => backend.args("SetMinimapScale")).toEqual([[1.4]]);

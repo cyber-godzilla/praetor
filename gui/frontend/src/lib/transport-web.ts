@@ -837,6 +837,8 @@ export const settingsOperations: Record<string, string> = {
   SetHideIPs: "hide-ips",
   SetInputSpellcheck: "input-spellcheck",
   SetKeepInputOnSend: "keep-input-on-send",
+  SetScriptDelay: "script-delay",
+  SetCommandMinInterval: "command-min-interval",
   SetSemicolonDelay: "semicolon-delay",
   SetUnbusyDelay: "unbusy-delay",
   SetUpdateCheck: "update-check",

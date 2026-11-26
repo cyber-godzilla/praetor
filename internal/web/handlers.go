@@ -515,6 +515,10 @@ func (s *Server) applySetting(operation string, raw json.RawMessage) error {
 		return settingValue(raw, s.app.SetInputSpellcheck)
 	case "keep-input-on-send":
 		return settingValue(raw, s.app.SetKeepInputOnSend)
+	case "script-delay":
+		return settingValue(raw, s.app.SetScriptDelay)
+	case "command-min-interval":
+		return settingValue(raw, s.app.SetCommandMinInterval)
 	case "semicolon-delay":
 		return settingValue(raw, s.app.SetSemicolonDelay)
 	case "unbusy-delay":

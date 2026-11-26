@@ -1762,6 +1762,25 @@ func (c *Client) emitStatusUpdate() {
 func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 	queue := c.Engine.Queue()
 	var lastSend time.Time
+	// Temporary sampled diagnostics; join the reporter before leaving so the
+	// final snapshot includes cancellation or failure of an in-flight command.
+	telemetryStop := make(chan struct{})
+	telemetryDone := make(chan struct{})
+	go func() {
+		defer close(telemetryDone)
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				queue.LogTelemetry()
+			case <-telemetryStop:
+				queue.LogTelemetry()
+				return
+			}
+		}
+	}()
+	defer func() { close(telemetryStop); <-telemetryDone }()
 
 	for {
 		cmd, gen, ok := queue.DequeueGen()
@@ -1775,11 +1794,20 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 			}
 		}
 
+		backlog := time.Since(cmd.QueuedAt)
+		var pacingDelay, intervalWait time.Duration
+		record := func(outcome string, sendTime time.Duration) {
+			queue.RecordDelivery(cmd, outcome, backlog, pacingDelay, intervalWait, sendTime)
+		}
 		// Respect the command's own delay, interruptibly.
 		if cmd.Delay > 0 {
+			started := time.Now()
 			select {
 			case <-time.After(cmd.Delay):
+				pacingDelay = time.Since(started)
 			case <-stop:
+				pacingDelay = time.Since(started)
+				record("cancelled", 0)
 				return
 			}
 		}
@@ -1787,10 +1815,14 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 		// Enforce the minimum interval since the last send. The first send (zero
 		// lastSend) goes immediately.
 		if !lastSend.IsZero() {
-			if gap := time.Since(lastSend); gap < queue.MinInterval() {
+			if gap, floor := time.Since(lastSend), queue.MinInterval(); gap < floor {
+				started := time.Now()
 				select {
-				case <-time.After(queue.MinInterval() - gap):
+				case <-time.After(floor - gap):
+					intervalWait = time.Since(started)
 				case <-stop:
+					intervalWait = time.Since(started)
+					record("cancelled", 0)
 					return
 				}
 			}
@@ -1800,10 +1832,13 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 		// belongs to a retired generation — drop it instead of sending stale
 		// old-mode output onto the wire.
 		if queue.Generation() != gen {
+			record("cancelled", 0)
 			continue
 		}
 
+		sendStarted := time.Now()
 		if err := sess.Send(cmd.Command); err != nil {
+			record("failed", time.Since(sendStarted))
 			log.Printf("[CLIENT] queue send error: %v", err)
 			// A WebSocket write error is terminal. Close the session so the
 			// involuntary-disconnect flow runs promptly instead of waiting out
@@ -1812,6 +1847,7 @@ func (c *Client) drainLoop(sess *session.Session, stop <-chan struct{}) {
 			return
 		}
 		lastSend = time.Now()
+		record("sent", lastSend.Sub(sendStarted))
 
 		// Echo engine commands in the output if script echo is enabled.
 		if c.EchoScript() {

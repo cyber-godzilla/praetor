@@ -103,6 +103,30 @@ func (a *GuiApp) SetKeepInputOnSend(v bool) error {
 	return a.withConfig(func() { a.cfg().UI.KeepInputOnSend = v })
 }
 
+// SetScriptDelay persists and applies the default delay for newly queued script commands.
+func (a *GuiApp) SetScriptDelay(ms int) error {
+	if ms < 100 || ms > 86400000 {
+		return fmt.Errorf("script action delay must be between 100 and 86400000 milliseconds")
+	}
+	delay := time.Duration(ms) * time.Millisecond
+	return a.withConfigApplied(
+		func() { a.cfg().Commands.DefaultDelay = config.Duration{Duration: delay} },
+		func() { a.client().Engine.Queue().SetDefaultDelay(delay) },
+	)
+}
+
+// SetCommandMinInterval persists and applies the minimum gap between script sends.
+func (a *GuiApp) SetCommandMinInterval(ms int) error {
+	if ms < 50 || ms > 86400000 {
+		return fmt.Errorf("minimum command interval must be between 50 and 86400000 milliseconds")
+	}
+	interval := time.Duration(ms) * time.Millisecond
+	return a.withConfigApplied(
+		func() { a.cfg().Commands.MinInterval = config.Duration{Duration: interval} },
+		func() { a.client().Engine.Queue().SetMinInterval(interval) },
+	)
+}
+
 // SetSemicolonDelay persists and applies the delay for newly submitted ;;
 // command chains.
 func (a *GuiApp) SetSemicolonDelay(ms int) error {

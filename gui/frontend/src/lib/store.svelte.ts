@@ -435,7 +435,7 @@ class AppStore {
       tab.lines = [];
       tab.unread = false;
     }
-    this.activeTab = 0;
+    this.selectTabByID(COMPONENT_IDS.all);
     this.health = null;
     this.fatigue = null;
     this.encumbrance = null;

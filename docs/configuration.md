@@ -118,6 +118,12 @@ modifies configured local directories.
 
 ## Commands
 
+In the GUI and web client, open **Input & commands → Input behavior** to set
+**Time between script actions** (`default_delay`) and **Minimum time between script
+commands** (`min_interval`) in milliseconds. Saving applies them immediately.
+The default delay affects newly queued commands; commands already queued retain
+their delay. The minimum also applies to `/play` scripts.
+
 ```yaml
 commands:
   default_delay: 1s               # Delay between queued commands
@@ -724,6 +730,39 @@ The app log level controls how much detail the current `tec.log` or retained
   `SECRET` lines are always redacted.
 - **`warn`/`error`** — progressively quieter; note these hide the operational
   `info` messages that are useful for support.
+
+Temporary queue diagnostics for the responsiveness investigation are enabled at
+`info`: look for `[QUEUE:METRICS]` in the application log. A connected command
+drainer samples every five seconds, logs only changed snapshots, and flushes a
+final snapshot when it stops. No command text is included in these summaries.
+
+Each `queue` ID identifies one queue within the running process. Counts and
+millisecond totals are cumulative for its lifetime, including reconnects; use
+differences between snapshots and `elapsed_ms` to calculate rates. `depth` is
+waiting commands, excluding `in_flight` (a dequeued command sleeping or sending).
+`peak` is the highest waiting depth observed, including between samples.
+`admitted`, `dequeued`, `sent`, `cancelled`, `failed`, and `cleared` track the
+command lifecycle. Drop counts (`duplicate`, `full`, `full_priority`, `evicted`)
+include every event even when the existing drop messages are rate limited.
+
+Timing totals cover commands whose send attempt finished or was cancelled:
+`backlog_ms` is admission-to-dequeue waiting; `pacing_ms` is actual time spent in
+the command's delay; `interval_wait_ms` is the additional minimum-gap wait;
+`send_ms` is the network write duration (not server acknowledgement); `total_ms`
+is admission-to-outcome time. `max_backlog_ms` and `max_total_ms` retain the
+worst observations. Divide totals by `sent + cancelled + failed` for averages.
+Successful sends also have dedicated admission-to-execution measurements:
+`enqueue_to_send_ms` is their cumulative latency, with `avg_enqueue_to_send_ms`,
+`max_enqueue_to_send_ms`, and `last_enqueue_to_send_ms` reporting the average,
+worst, and most recent value. This clock starts when the item enters the queue
+and ends when its network write completes, including all backlog and pacing
+waits. Cancelled, failed, cleared, and evicted items do not enter these metrics.
+Execution here means sending to the game, not confirmation that the game has
+processed the command.
+
+These diagnostics cover the Lua command queue, not typed `;;`/`&&` chains,
+`/send`, or `/play`, which use separate sending paths. To preserve a longer
+capture, enable **Logging → Retain application logs** before the next launch.
 
 The **session transcript** (Esc → Game Logs) is the user-controlled game log and
 is unaffected by the app log level — it records exactly as configured.

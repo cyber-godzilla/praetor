@@ -399,3 +399,55 @@ func TestSetDisplayModeRejectsUnknownValues(t *testing.T) {
 		t.Fatalf("invalid update changed mode to %q", got)
 	}
 }
+
+func TestScriptTimingSettings(t *testing.T) {
+	for _, kind := range []string{"delay", "interval"} {
+		t.Run(kind, func(t *testing.T) {
+			cfg := config.Defaults()
+			c, err := client.NewClient(cfg, nil, t.TempDir(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(c.Engine.Close)
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			a := NewGuiApp(&Deps{Config: cfg, ConfigPath: path, Client: c}, &captureEmitter{})
+			set := a.SetScriptDelay
+			read := func(cfg *config.Config) time.Duration { return cfg.Commands.DefaultDelay.Duration }
+			live := func() time.Duration {
+				c.Engine.Queue().Enqueue("timing-test", 0)
+				cmd, _, _ := c.Engine.Queue().DequeueGen()
+				return cmd.Delay
+			}
+			min := 100
+			if kind == "interval" {
+				set = a.SetCommandMinInterval
+				read = func(cfg *config.Config) time.Duration { return cfg.Commands.MinInterval.Duration }
+				live = c.Engine.Queue().MinInterval
+				min = 50
+			}
+			for _, invalid := range []int{-1, 0, min - 1, 86400001} {
+				if err := set(invalid); err == nil {
+					t.Fatalf("accepted %d", invalid)
+				}
+			}
+			if err := set(1250); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := config.Load(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := 1250 * time.Millisecond
+			if read(loaded) != want || live() != want {
+				t.Fatal("timing was not persisted and applied")
+			}
+			a.deps.ConfigPath = t.TempDir()
+			if err := set(2000); err == nil {
+				t.Fatal("expected save failure")
+			}
+			if read(cfg) != want || live() != want {
+				t.Fatal("failed save changed timing")
+			}
+		})
+	}
+}

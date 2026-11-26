@@ -340,6 +340,8 @@ export interface UIConfig {
 export interface AppConfig {
   Server: Record<string, unknown>;
   Commands: {
+    DefaultDelay?: { Duration: number };
+    MinInterval?: { Duration: number };
     SemicolonDelayMS: number;
     UnbusyDelayMS: number;
     HighPriority: string[] | null;

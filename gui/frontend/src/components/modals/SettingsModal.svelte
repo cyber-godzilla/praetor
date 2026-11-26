@@ -33,6 +33,8 @@
   let hideIPs = $state(seed?.UI?.HideIPs ?? false);
   let inputSpellcheck = $state(seed?.UI?.InputSpellcheck ?? true);
   let keepInputOnSend = $state(seed?.UI?.KeepInputOnSend ?? false);
+  let scriptDelayMS = $state((seed?.Commands?.DefaultDelay?.Duration ?? 1000000000) / 1000000);
+  let commandMinIntervalMS = $state((seed?.Commands?.MinInterval?.Duration ?? 500000000) / 1000000);
   let semicolonDelayMS = $state(seed?.Commands?.SemicolonDelayMS ?? 900);
   let unbusyDelayMS = $state(seed?.Commands?.UnbusyDelayMS ?? 100);
   let updateCheck = $state(seed?.Updates?.Check ?? true);
@@ -63,6 +65,8 @@
         await api.setEchoScript(echoScript);
         await api.setInputSpellcheck(inputSpellcheck);
         await api.setKeepInputOnSend(keepInputOnSend);
+        await api.setScriptDelay(scriptDelayMS);
+        await api.setCommandMinInterval(commandMinIntervalMS);
         await api.setSemicolonDelay(semicolonDelayMS);
         await api.setUnbusyDelay(unbusyDelayMS);
         await api.setNumpadNavigation(numpadNav);
@@ -105,6 +109,8 @@
             KeepInputOnSend: keepInputOnSend,
             NumpadNavigation: numpadNav,
           });
+          store.config.Commands.DefaultDelay = { Duration: scriptDelayMS * 1000000 };
+          store.config.Commands.MinInterval = { Duration: commandMinIntervalMS * 1000000 };
           store.config.Commands.SemicolonDelayMS = semicolonDelayMS;
           store.config.Commands.UnbusyDelayMS = unbusyDelayMS;
         }
@@ -153,6 +159,16 @@
       <label class="t"><span>Echo script commands</span><input type="checkbox" bind:checked={echoScript} /></label>
       <label class="t"><span>Input spellcheck</span><input type="checkbox" bind:checked={inputSpellcheck} /></label>
       <label class="t"><span>Retain Input After Send</span><input type="checkbox" bind:checked={keepInputOnSend} /></label>
+      <div class="field">
+        <span>Time between script actions (ms)</span>
+        <input aria-label="Time between script actions" type="number" min="100" max="86400000" step="50" bind:value={scriptDelayMS} />
+        <small>Default delay for queued script commands. Scripts can specify their own delay.</small>
+      </div>
+      <div class="field">
+        <span>Minimum time between script commands (ms)</span>
+        <input aria-label="Minimum time between script commands" type="number" min="50" max="86400000" step="50" bind:value={commandMinIntervalMS} />
+        <small>Minimum gap for queued commands and /play scripts.</small>
+      </div>
       <div class="field">
         <span>;; chain delay (ms)</span>
         <input aria-label="Command chain delay" type="number" min="100" max="10000" step="50" bind:value={semicolonDelayMS} />
